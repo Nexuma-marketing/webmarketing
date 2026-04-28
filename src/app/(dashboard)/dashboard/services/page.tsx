@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { MatchedPropertyCard } from "@/components/tenant/matched-property-card";
+import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions-banner";
 
 // ─── Owner Service Tiers ─────────────────────────────
 const OWNER_TIERS: Record<
@@ -485,6 +486,14 @@ export default async function ServicesPage() {
   // ─── PYMES plan details ────────────────────────
   const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
 
+  // Determine the user's primary city for promotion targeting
+  const userCity =
+    profile.role === "pymes"
+      ? null
+      : profile.role.startsWith("inquilino")
+        ? null // tenants don't have a fixed city — could later infer from preferences
+        : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -493,6 +502,8 @@ export default async function ServicesPage() {
           Services recommended for your profile
         </p>
       </div>
+
+      <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />
 
       {/* ═══ Owner: Service Tier Card ═══ */}
       {isOwnerRole && tierDetails && (

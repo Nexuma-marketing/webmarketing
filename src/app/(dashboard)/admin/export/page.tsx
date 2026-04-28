@@ -82,6 +82,9 @@ const COLUMN_DEFS: Record<ExportTarget, { key: string; label: string }[]> = {
     { key: "elite_tier", label: "Elite Tier" },
     { key: "cfp_monthly", label: "CFP Monthly" },
     { key: "payback_months", label: "Payback Months" },
+    { key: "owner_full_name", label: "Owner Name" },
+    { key: "owner_email", label: "Owner Email" },
+    { key: "owner_phone", label: "Owner Phone" },
     { key: "created_at", label: "Created" },
   ],
   leads: [
@@ -130,13 +133,16 @@ export default function AdminExportPage() {
       case "properties":
         query = supabase
           .from("properties")
-          .select("address, city, province, property_type, monthly_rent, bedrooms, bathrooms, is_available, service_tier, elite_tier, cfp_monthly, payback_months, created_at");
+          .select("address, city, province, property_type, monthly_rent, bedrooms, bathrooms, is_available, service_tier, elite_tier, cfp_monthly, payback_months, created_at, owner:owner_id(full_name, email, phone)");
         break;
 
       case "leads":
         query = supabase
           .from("leads")
-          .select("full_name, email, phone, role, source, status, notes, created_at");
+          .select("full_name, email, phone, role, source, status, notes, created_at, user_id, profiles:user_id(role)");
+        if (roleFilter !== "all") {
+          query = query.eq("role", roleFilter);
+        }
         break;
 
       case "payments":
@@ -157,15 +163,36 @@ export default function AdminExportPage() {
     const { data } = await query.order("created_at", { ascending: false });
 
     if (data && data.length > 0) {
-      // Flatten payment user emails
       const rawData = data as Record<string, unknown>[];
-      const processedData =
-        target === "payments"
-          ? rawData.map((row) => ({
-              ...row,
-              user_email: (row.profiles as { email: string } | null)?.email || "",
-            }))
-          : rawData;
+      let processedData: Record<string, unknown>[] = rawData;
+
+      if (target === "payments") {
+        processedData = rawData.map((row) => ({
+          ...row,
+          user_email: (row.profiles as { email: string } | null)?.email || "",
+        }));
+      } else if (target === "properties") {
+        processedData = rawData.map((row) => {
+          const owner = row.owner as { full_name: string; email: string; phone: string | null } | null;
+          return {
+            ...row,
+            owner_full_name: owner?.full_name || "",
+            owner_email: owner?.email || "",
+            owner_phone: owner?.phone || "",
+          };
+        });
+      } else if (target === "leads") {
+        // Steve 4/28: leads.role can be NULL when the lead came from a public
+        // form (contact_form). Fall back to the linked profile's role so the
+        // CSV is never blank in column "Role".
+        processedData = rawData.map((row) => {
+          const profile = row.profiles as { role: string } | null;
+          return {
+            ...row,
+            role: row.role || profile?.role || "",
+          };
+        });
+      }
 
       const csv = generateCSV(
         processedData as Record<string, unknown>[],
@@ -225,7 +252,7 @@ export default function AdminExportPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Role (users only)</Label>
+              <Label>Role (Users + Leads)</Label>
               <Select value={roleFilter} onValueChange={(v) => v && setRoleFilter(v)}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />

@@ -49,6 +49,7 @@ interface ServicePrice {
 interface Promotion {
   id: string;
   code: string;
+  description: string | null;
   discount_type: "percentage" | "fixed";
   discount_value: number;
   valid_from: string;
@@ -56,7 +57,18 @@ interface Promotion {
   is_active: boolean;
   max_uses: number | null;
   used_count: number;
+  target_zones: string[];
+  target_roles: string[];
 }
+
+const ROLE_TARGET_OPTIONS = [
+  { value: "propietario", label: "Property Owner" },
+  { value: "propietario_preferido", label: "Preferred Owner" },
+  { value: "inversionista", label: "Investor" },
+  { value: "inquilino", label: "Tenant" },
+  { value: "inquilino_premium", label: "Premium Tenant" },
+  { value: "pymes", label: "Business Owner" },
+];
 
 export default function AdminPricingPage() {
   const [services, setServices] = useState<ServicePrice[]>([]);
@@ -139,12 +151,15 @@ export default function AdminPricingPage() {
 
     const payload = {
       code: editPromo.code,
+      description: editPromo.description || null,
       discount_type: editPromo.discount_type || "percentage",
       discount_value: editPromo.discount_value || 0,
       valid_from: editPromo.valid_from || new Date().toISOString().split("T")[0],
-      valid_until: editPromo.valid_until || "",
+      valid_until: editPromo.valid_until || null,
       is_active: editPromo.is_active ?? true,
       max_uses: editPromo.max_uses || null,
+      target_zones: editPromo.target_zones || [],
+      target_roles: editPromo.target_roles || [],
     };
 
     if (isNewPromo) {
@@ -322,12 +337,15 @@ export default function AdminPricingPage() {
             onClick={() => {
               setEditPromo({
                 code: "",
+                description: "",
                 discount_type: "percentage",
                 discount_value: 10,
                 valid_from: new Date().toISOString().split("T")[0],
                 valid_until: "",
                 is_active: true,
                 max_uses: null,
+                target_zones: [],
+                target_roles: [],
               });
               setIsNewPromo(true);
             }}
@@ -490,6 +508,62 @@ export default function AdminPricingPage() {
                     })
                   }
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Description (shown to clients)</Label>
+                <Input
+                  value={editPromo.description || ""}
+                  onChange={(e) =>
+                    setEditPromo({ ...editPromo, description: e.target.value })
+                  }
+                  placeholder="e.g., Spring season — Vancouver only"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Target zones (cities, comma-separated; blank = all)</Label>
+                <Input
+                  value={(editPromo.target_zones || []).join(", ")}
+                  onChange={(e) =>
+                    setEditPromo({
+                      ...editPromo,
+                      target_zones: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="e.g., Vancouver, Burnaby, Richmond"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Target client types (blank = all)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {ROLE_TARGET_OPTIONS.map((opt) => {
+                    const active = (editPromo.target_roles || []).includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          const current = editPromo.target_roles || [];
+                          setEditPromo({
+                            ...editPromo,
+                            target_roles: active
+                              ? current.filter((r) => r !== opt.value)
+                              : [...current, opt.value],
+                          });
+                        }}
+                        className={`rounded-full border px-3 py-1 text-xs ${
+                          active
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background hover:bg-muted"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <Switch

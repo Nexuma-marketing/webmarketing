@@ -58,20 +58,29 @@ export interface TenantCriteriaInput {
   contract_duration: string | null;
 }
 
-export function countPremiumCriteria(data: TenantCriteriaInput): number {
-  let count = 0;
+type RuleMap = Record<string, { weight: number; is_active: boolean }>;
 
-  // 1. Stable employment (Steve Old#1 4/19: verifiable checkbox removed from UI,
-  //    so we no longer require employment_verifiable — just stable employment type)
-  if (
-    data.employment_type === "full_time" ||
-    data.employment_type === "self_employed"
-  ) {
-    count++;
+export function countPremiumCriteria(
+  data: TenantCriteriaInput,
+  rules?: RuleMap,
+): number {
+  let count = 0;
+  const w = (key: string, fallback: number) => {
+    const r = rules?.[key];
+    if (!r) return fallback;
+    if (!r.is_active) return 0;
+    return r.weight;
+  };
+
+  // 1. Stable employment
+  if (data.employment_type === "full_time" || data.employment_type === "self_employed") {
+    count += w("tenant_premium.stable_employment", 1);
   }
 
   // 2. Budget >= $2,500 CAD/month
-  if (data.max_budget != null && data.max_budget >= 2500) count++;
+  if (data.max_budget != null && data.max_budget >= 2500) {
+    count += w("tenant_premium.budget_2500", 1);
+  }
 
   // 3. Seeks premium amenities
   const premiumAmenities = [
@@ -84,11 +93,11 @@ export function countPremiumCriteria(data: TenantCriteriaInput): number {
     "Sauna",
   ];
   if (data.preferred_amenities.some((a) => premiumAmenities.includes(a))) {
-    count++;
+    count += w("tenant_premium.premium_amenities", 1);
   }
 
   // 4. Preferred urban zones
-  if (data.prefers_urban_zone) count++;
+  if (data.prefers_urban_zone) count += w("tenant_premium.urban_zone", 1);
 
   // 5. Needs 2-4 bedrooms
   if (
@@ -96,18 +105,15 @@ export function countPremiumCriteria(data: TenantCriteriaInput): number {
     data.bedrooms_needed >= 2 &&
     data.bedrooms_needed <= 4
   ) {
-    count++;
+    count += w("tenant_premium.bedrooms_2_4", 1);
   }
 
   // 6. Interested in smart home features
-  if (data.smart_home_interest) count++;
+  if (data.smart_home_interest) count += w("tenant_premium.smart_home", 1);
 
   // 7. Modern/contemporary style preference
-  if (
-    data.style_preference === "modern" ||
-    data.style_preference === "elegant"
-  ) {
-    count++;
+  if (data.style_preference === "modern" || data.style_preference === "elegant") {
+    count += w("tenant_premium.modern_style", 1);
   }
 
   // 8. Contract duration 12-24 months
@@ -116,14 +122,14 @@ export function countPremiumCriteria(data: TenantCriteriaInput): number {
     data.contract_duration === "12_24_months" ||
     data.contract_duration === "24_months"
   ) {
-    count++;
+    count += w("tenant_premium.long_contract", 1);
   }
 
   return count;
 }
 
-export function isPremiumTenant(criteriaCount: number): boolean {
-  return criteriaCount >= 3;
+export function isPremiumTenant(criteriaCount: number, threshold = 3): boolean {
+  return criteriaCount >= threshold;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -249,6 +255,9 @@ export async function profileOwner(userId: string) {
 
 /**
  * Run tenant profiling: count premium criteria, update preferences + profile.
+ *
+ * Steve 4/28: respects manual admin overrides — if profiles.role_locked is true
+ * the role assignment is skipped (admin's choice in /admin/users wins).
  */
 export async function profileTenant(userId: string) {
   const supabase = await createClient();
@@ -264,6 +273,17 @@ export async function profileTenant(userId: string) {
 
   if (!prefs) return null;
 
+  // Pull live weights/threshold from matching_rules so admin edits in /admin/matching apply
+  const { data: ruleRows } = await supabase
+    .from("matching_rules")
+    .select("rule_key, weight, is_active")
+    .like("rule_key", "tenant_premium.%");
+  const rules: RuleMap = {};
+  for (const r of ruleRows || []) {
+    rules[r.rule_key] = { weight: Number(r.weight), is_active: r.is_active };
+  }
+  const threshold = rules["tenant_premium.threshold"]?.weight ?? 3;
+
   // 2. Count premium criteria
   const criteriaCount = countPremiumCriteria({
     employment_type: prefs.employment_type,
@@ -276,9 +296,9 @@ export async function profileTenant(userId: string) {
     style_preference: prefs.style_preference,
     furnished: prefs.furnished ?? false,
     contract_duration: prefs.contract_duration,
-  });
+  }, rules);
 
-  const premium = isPremiumTenant(criteriaCount);
+  const premium = isPremiumTenant(criteriaCount, threshold);
 
   // 3. Update tenant_preferences
   await supabase
@@ -289,18 +309,29 @@ export async function profileTenant(userId: string) {
     })
     .eq("id", prefs.id);
 
-  // 4. Sync to profiles
-  const role: UserRole = premium ? "inquilino_premium" : "inquilino";
-  await supabase
+  // 4. Sync to profiles. Steve 4/28: do NOT overwrite role if admin locked it.
+  const { data: existing } = await supabase
     .from("profiles")
-    .update({
-      role,
-      is_premium_tenant: premium,
-      premium_criteria_met: criteriaCount,
-    })
-    .eq("id", userId);
+    .select("role, role_locked")
+    .eq("id", userId)
+    .single();
 
-  return { criteriaCount, premium, role };
+  const role: UserRole = premium ? "inquilino_premium" : "inquilino";
+  const updates: Record<string, unknown> = {
+    is_premium_tenant: premium,
+    premium_criteria_met: criteriaCount,
+  };
+  if (!existing?.role_locked) {
+    updates.role = role;
+  }
+  await supabase.from("profiles").update(updates).eq("id", userId);
+
+  return {
+    criteriaCount,
+    premium,
+    role: existing?.role_locked ? (existing.role as UserRole) : role,
+    locked: !!existing?.role_locked,
+  };
 }
 
 // ═══════════════════════════════════════════════════════

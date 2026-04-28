@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ROLE_LABELS } from "@/lib/constants";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, FilterFn } from "@tanstack/react-table";
 
 interface UserRow {
   id: string;
@@ -31,6 +31,22 @@ interface UserRow {
   is_premium_tenant: boolean;
   created_at: string;
 }
+
+// Steve 4/28: when admin filters by "inquilino" or "propietario" he expects to
+// see ALL tenants / owners regardless of premium/preferred/investor sub-role.
+// We expose grouped pseudo-roles ("group:tenant" etc.) on top of the exact roles.
+const ROLE_GROUPS: Record<string, string[]> = {
+  "group:tenant": ["inquilino", "inquilino_premium"],
+  "group:owner": ["propietario", "propietario_preferido", "inversionista"],
+};
+
+const groupRoleFilter: FilterFn<UserRow> = (row, columnId, filterValue) => {
+  const role = row.getValue<string>(columnId);
+  if (!filterValue || filterValue === "all") return true;
+  const group = ROLE_GROUPS[filterValue as string];
+  if (group) return group.includes(role);
+  return role === filterValue;
+};
 
 const columns: ColumnDef<UserRow>[] = [
   {
@@ -52,7 +68,17 @@ const columns: ColumnDef<UserRow>[] = [
         {ROLE_LABELS[row.getValue("role") as string] || row.getValue("role")}
       </Badge>
     ),
-    filterFn: "equals",
+    filterFn: groupRoleFilter,
+  },
+  {
+    accessorKey: "is_premium_tenant",
+    header: "Premium Tenant",
+    cell: ({ row }) =>
+      row.getValue("is_premium_tenant") ? (
+        <Badge className="bg-amber-50 text-amber-800">Premium</Badge>
+      ) : (
+        <span className="text-muted-foreground text-xs">—</span>
+      ),
   },
   {
     accessorKey: "property_count",
@@ -66,7 +92,15 @@ const columns: ColumnDef<UserRow>[] = [
   },
 ];
 
-const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
+// Filter dropdown shows umbrella groups (so "All Tenants" includes premium) plus exact roles
+const roleFilterOptions = [
+  { value: "group:tenant", label: "All Tenants (incl. Premium)" },
+  { value: "group:owner", label: "All Owners (incl. Preferred & Investor)" },
+  ...Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label })),
+];
+
+// Edit-role dropdown uses only real assignable roles (no umbrella groups)
+const roleAssignOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
   value,
   label,
 }));
@@ -98,9 +132,11 @@ export default function AdminUsersPage() {
     if (!selectedUser || !newRole) return;
     setSaving(true);
 
+    // Steve 4/28: lock the role so the auto-profiling job won't override the
+    // admin's manual choice on the next form submission.
     await supabase
       .from("profiles")
-      .update({ role: newRole })
+      .update({ role: newRole, role_locked: true })
       .eq("id", selectedUser.id);
 
     setSelectedUser(null);
@@ -148,7 +184,7 @@ export default function AdminUsersPage() {
           {
             key: "role",
             label: "Role",
-            options: roleOptions,
+            options: roleFilterOptions,
           },
         ]}
       />
@@ -170,7 +206,7 @@ export default function AdminUsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {roleOptions.map((opt) => (
+                  {roleAssignOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>

@@ -8,8 +8,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Building2, FileText, DollarSign } from "lucide-react";
+import { Users, Building2, FileText, DollarSign, ArrowRight } from "lucide-react";
 import { ROLE_LABELS, LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "@/lib/constants";
+import Link from "next/link";
 
 export default async function AdminDashboardPage() {
   const { supabase } = await requireAdmin();
@@ -66,72 +67,92 @@ export default async function AdminDashboardPage() {
         </p>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — clickable, drill into the corresponding section */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalUsers || 0}</div>
-            {usersByRole && usersByRole.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {usersByRole.map((r) => (
-                  <Badge key={r.role} variant="outline" className="text-xs">
-                    {ROLE_LABELS[r.role] || r.role}: {r.count}
-                  </Badge>
-                ))}
+        <Link href="/admin/users" className="block">
+          <Card className="transition-shadow hover:shadow-md cursor-pointer h-full">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end justify-between">
+                <div className="text-2xl font-bold">{totalUsers || 0}</div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Properties</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalProperties || 0}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalLeads || 0}</div>
-            {leadsByStatus && leadsByStatus.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {leadsByStatus.map((l) => {
-                  const colors = LEAD_STATUS_COLORS[l.status];
-                  return (
-                    <Badge
-                      key={l.status}
-                      variant="outline"
-                      className={`text-xs ${colors?.bg || ""} ${colors?.text || ""}`}
-                    >
-                      {LEAD_STATUS_LABELS[l.status] || l.status}: {l.count}
+              {usersByRole && usersByRole.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {usersByRole.map((r) => (
+                    <Badge key={r.role} variant="outline" className="text-xs">
+                      {ROLE_LABELS[r.role] || r.role}: {r.count}
                     </Badge>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
-          </CardContent>
-        </Card>
+        <Link href="/admin/properties" className="block">
+          <Card className="transition-shadow hover:shadow-md cursor-pointer h-full">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Properties</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end justify-between">
+                <div className="text-2xl font-bold">{totalProperties || 0}</div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/leads" className="block">
+          <Card className="transition-shadow hover:shadow-md cursor-pointer h-full">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end justify-between">
+                <div className="text-2xl font-bold">{totalLeads || 0}</div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+              {leadsByStatus && leadsByStatus.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {leadsByStatus.map((l) => {
+                    const colors = LEAD_STATUS_COLORS[l.status];
+                    return (
+                      <Badge
+                        key={l.status}
+                        variant="outline"
+                        className={`text-xs ${colors?.bg || ""} ${colors?.text || ""}`}
+                      >
+                        {LEAD_STATUS_LABELS[l.status] || l.status}: {l.count}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/payments" className="block">
+          <Card className="transition-shadow hover:shadow-md cursor-pointer h-full">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end justify-between">
+                <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Recent Activity */}

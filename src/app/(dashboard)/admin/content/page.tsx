@@ -31,13 +31,90 @@ interface ContentItem {
   updated_at: string;
 }
 
-const SECTIONS = [
-  { value: "landing_hero", label: "Landing Page - Hero" },
-  { value: "landing_features", label: "Landing Page - Features" },
-  { value: "landing_cta", label: "Landing Page - CTA" },
-  { value: "testimonials", label: "Testimonials" },
-  { value: "faq", label: "FAQ" },
-  { value: "service_descriptions", label: "Service Descriptions" },
+interface SectionDef {
+  value: string;
+  label: string;
+  hint: string;
+  starter: { key: string; value: string; helper?: string }[];
+}
+
+const SECTIONS: SectionDef[] = [
+  {
+    value: "landing_hero",
+    label: "Landing Page - Hero",
+    hint: "Headline and subtitle shown at the very top of the home page.",
+    starter: [
+      { key: "hero_title", value: "We turn marketing into rentals.", helper: "Big headline at the top of /" },
+      { key: "hero_subtitle", value: "Marketing for property owners and tailored services for tenants and investors.", helper: "Subtitle under the headline" },
+      { key: "hero_cta", value: "Get Started", helper: "Main CTA button label" },
+    ],
+  },
+  {
+    value: "landing_features",
+    label: "Landing Page - Features",
+    hint: "Three highlighted feature blocks under the hero.",
+    starter: [
+      { key: "feature_1_title", value: "Maximize your rental income" },
+      { key: "feature_1_body", value: "Performance marketing campaigns until your tenant is found." },
+      { key: "feature_2_title", value: "Find the right tenants" },
+      { key: "feature_2_body", value: "Verified tenant matching with premium screening." },
+      { key: "feature_3_title", value: "Grow your business" },
+      { key: "feature_3_body", value: "Sales-leak diagnosis and rescue plans for SMBs." },
+    ],
+  },
+  {
+    value: "landing_cta",
+    label: "Landing Page - CTA",
+    hint: "Call-to-action band near the bottom of the home page.",
+    starter: [
+      { key: "cta_title", value: "Ready to get started?" },
+      { key: "cta_subtitle", value: "Pick the plan that fits you and we will take it from there." },
+      { key: "cta_button", value: "Schedule My Session" },
+    ],
+  },
+  {
+    value: "testimonials",
+    label: "Testimonials",
+    hint: "Client testimonials shown on the home page. Use one row per testimonial; the value is the body text.",
+    starter: [
+      { key: "testimonial_1_author", value: "Maria L." },
+      { key: "testimonial_1_text", value: "We rented out our property in 11 days. The whole process was effortless." },
+      { key: "testimonial_2_author", value: "Carlos M." },
+      { key: "testimonial_2_text", value: "Their sales-leak diagnosis pinpointed exactly what was hurting our revenue." },
+    ],
+  },
+  {
+    value: "faq",
+    label: "FAQ",
+    hint: "Frequently asked questions. Pair each *_question with a *_answer.",
+    starter: [
+      { key: "faq_1_question", value: "How long until my property is rented?" },
+      { key: "faq_1_answer", value: "Average time-to-rent is 14-16 days for properties listed on the platform." },
+      { key: "faq_2_question", value: "Are tenants screened?" },
+      { key: "faq_2_answer", value: "Yes, all tenants complete a verified screening before they can apply to a property." },
+    ],
+  },
+  {
+    value: "service_descriptions",
+    label: "Service Descriptions",
+    hint: "Long-form descriptions per service. Key format: <service_slug>_short or <service_slug>_long.",
+    starter: [
+      { key: "basic_short", value: "Essential property management for single-property owners." },
+      { key: "preferred_short", value: "Enhanced services for growing portfolios." },
+      { key: "elite_short", value: "Full-service management for investment portfolios." },
+    ],
+  },
+  {
+    value: "articles",
+    label: "Articles & Resources",
+    hint: "Blog-style articles. Key format: <slug>_title, <slug>_excerpt, <slug>_body, <slug>_published.",
+    starter: [
+      { key: "welcome_title", value: "Welcome to Nexuma" },
+      { key: "welcome_excerpt", value: "An introduction to our marketing-first approach to residential rentals." },
+      { key: "welcome_body", value: "Nexuma marketing ltd helps Canadian property owners turn marketing performance into reliable rental income..." },
+      { key: "welcome_published", value: "true" },
+    ],
+  },
 ];
 
 export default function AdminContentPage() {
@@ -67,6 +144,7 @@ export default function AdminContentPage() {
   }, [load]);
 
   const filteredItems = items.filter((i) => i.section === selectedSection);
+  const currentSection = SECTIONS.find((s) => s.value === selectedSection);
 
   async function handleUpdate(id: string, value: string) {
     setSaving(id);
@@ -95,7 +173,31 @@ export default function AdminContentPage() {
     setNewKey("");
     setNewValue("");
     setSaving(null);
+    setMessage("Item added");
+    setTimeout(() => setMessage(null), 2000);
     load();
+  }
+
+  async function seedSection() {
+    const def = SECTIONS.find((s) => s.value === selectedSection);
+    if (!def) return;
+    setSaving("seed");
+    const rows = def.starter.map((s) => ({
+      section: selectedSection,
+      key: s.key,
+      value: s.value,
+    }));
+    const { error } = await supabase
+      .from("site_content")
+      .upsert(rows, { onConflict: "section,key" });
+    setSaving(null);
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+    } else {
+      setMessage(`Seeded ${rows.length} starter items.`);
+      setTimeout(() => setMessage(null), 3000);
+      load();
+    }
   }
 
   async function handleDelete(id: string) {
@@ -128,7 +230,7 @@ export default function AdminContentPage() {
       )}
 
       {/* Section selector */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <PenSquare className="h-4 w-4 text-muted-foreground" />
         <Select value={selectedSection} onValueChange={(v) => v && setSelectedSection(v)}>
           <SelectTrigger className="w-[300px]">
@@ -144,6 +246,10 @@ export default function AdminContentPage() {
         </Select>
         <Badge variant="outline">{filteredItems.length} items</Badge>
       </div>
+
+      {currentSection?.hint && (
+        <p className="text-sm text-muted-foreground">{currentSection.hint}</p>
+      )}
 
       {/* Content items */}
       <div className="space-y-4">
@@ -171,10 +277,24 @@ export default function AdminContentPage() {
           </Card>
         ))}
 
-        {filteredItems.length === 0 && (
+        {filteredItems.length === 0 && currentSection && (
           <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No content items in this section yet.
+            <CardContent className="py-8 text-center space-y-3">
+              <p className="text-muted-foreground">
+                No content items in this section yet.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Tip: click <b>&ldquo;Seed starter items&rdquo;</b> to populate this section with{" "}
+                {currentSection.starter.length} example entries you can edit.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={seedSection}
+                disabled={saving === "seed"}
+              >
+                {saving === "seed" ? "Seeding..." : "Seed starter items"}
+              </Button>
             </CardContent>
           </Card>
         )}

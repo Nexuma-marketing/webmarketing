@@ -24,6 +24,11 @@ import {
   Scale,
   Download,
   LogOut,
+  Crown,
+  Newspaper,
+  Sliders,
+  Image as ImageIcon2,
+  ArrowRightLeft,
 } from "lucide-react";
 
 interface NavItem {
@@ -126,6 +131,18 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin"],
   },
   {
+    label: "Plans",
+    href: "/admin/plans",
+    icon: Crown,
+    roles: ["admin"],
+  },
+  {
+    label: "Reassign Services",
+    href: "/admin/reassign",
+    icon: ArrowRightLeft,
+    roles: ["admin"],
+  },
+  {
     label: "Forms",
     href: "/admin/forms",
     icon: ClipboardList,
@@ -147,6 +164,24 @@ const NAV_ITEMS: NavItem[] = [
     label: "Content",
     href: "/admin/content",
     icon: PenSquare,
+    roles: ["admin"],
+  },
+  {
+    label: "Articles",
+    href: "/admin/articles",
+    icon: Newspaper,
+    roles: ["admin"],
+  },
+  {
+    label: "Image Library",
+    href: "/admin/images",
+    icon: ImageIcon2,
+    roles: ["admin"],
+  },
+  {
+    label: "Internal Team",
+    href: "/admin/team",
+    icon: Sliders,
     roles: ["admin"],
   },
   {

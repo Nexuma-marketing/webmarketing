@@ -14,7 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Download, Scale, Shield, FileText } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Download, Scale, Shield } from "lucide-react";
 import { generateCSV, formatDateTime } from "@/lib/admin";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -48,6 +57,7 @@ export default function AdminLegalPage() {
   const [loading, setLoading] = useState(true);
   const [editDoc, setEditDoc] = useState<LegalDoc | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -108,8 +118,9 @@ export default function AdminLegalPage() {
   async function saveLegalDoc() {
     if (!editDoc) return;
     setSaving(true);
+    setSaveMessage(null);
 
-    await supabase
+    const { error } = await supabase
       .from("legal_documents")
       .upsert(
         {
@@ -117,12 +128,19 @@ export default function AdminLegalPage() {
           type: editDoc.type,
           content: editDoc.content,
           version: editDoc.version,
+          updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
       );
 
     setSaving(false);
+    if (error) {
+      setSaveMessage(`Error: ${error.message}`);
+      return;
+    }
     setEditDoc(null);
+    setSaveMessage("Document saved successfully.");
+    setTimeout(() => setSaveMessage(null), 4000);
     load();
   }
 
@@ -260,42 +278,53 @@ export default function AdminLegalPage() {
         </CardContent>
       </Card>
 
-      {/* Edit Legal Doc */}
-      {editDoc && (
-        <Card className="border-primary">
-          <CardHeader>
-            <CardTitle className="text-base">
-              Editing: {editDoc.type.replace(/_/g, " ")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Version</Label>
-              <input
-                className="flex h-9 w-32 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                value={editDoc.version}
-                onChange={(e) => setEditDoc({ ...editDoc, version: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Content</Label>
-              <Textarea
-                value={editDoc.content}
-                onChange={(e) => setEditDoc({ ...editDoc, content: e.target.value })}
-                rows={12}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditDoc(null)}>
-                Cancel
-              </Button>
-              <Button onClick={saveLegalDoc} disabled={saving}>
-                {saving ? "Saving..." : "Save Document"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {saveMessage && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 shadow-lg">
+          {saveMessage}
+        </div>
       )}
+
+      <Dialog open={!!editDoc} onOpenChange={(o) => !o && setEditDoc(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="capitalize">
+              Editing: {editDoc?.type.replace(/_/g, " ")}
+            </DialogTitle>
+            <DialogDescription>
+              Update the document content and bump the version when meaningful changes are made.
+            </DialogDescription>
+          </DialogHeader>
+          {editDoc && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label>Version</Label>
+                <Input
+                  className="w-32"
+                  value={editDoc.version}
+                  onChange={(e) => setEditDoc({ ...editDoc, version: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Content (HTML or plain text)</Label>
+                <Textarea
+                  value={editDoc.content}
+                  onChange={(e) => setEditDoc({ ...editDoc, content: e.target.value })}
+                  rows={16}
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDoc(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveLegalDoc} disabled={saving}>
+              {saving ? "Saving..." : "Save Document"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
