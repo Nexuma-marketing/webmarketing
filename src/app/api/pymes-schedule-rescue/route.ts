@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       full_name: profile?.full_name || user.email,
       email: profile?.email || user.email,
       phone: profile?.phone || null,
+      role: "pymes",
       source: "pymes_schedule_rescue",
       status: "nuevo",
       notes: `Schedule Rescue Session request — diagnosis ${diagnosis.id}, recommended plan: ${diagnosis.recommended_plan}, urgency: ${diagnosis.urgency_level}, score: ${diagnosis.total_score}/35`,

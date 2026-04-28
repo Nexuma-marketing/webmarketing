@@ -43,6 +43,7 @@ export async function POST(request: Request) {
       full_name: profile?.full_name || user.email,
       email: profile?.email || user.email,
       phone: profile?.phone || null,
+      role: profile?.role || "inquilino",
       source: "tenant_apply",
       status: "nuevo",
       notes: `Tenant application for property ${property.id} — ${property.property_type} at ${property.address}, ${property.city}`,

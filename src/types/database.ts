@@ -152,14 +152,23 @@ export interface Service {
   id: string;
   name: string;
   description: string | null;
+  long_description: string | null;
   category: string;
   subcategory: string | null;
   tier: string | null;
   price: number;
   currency: string;
   is_active: boolean;
+  status: string;
+  visible_on_web: boolean;
+  target_time: string | null;
+  recurring_interval: string | null;
+  media_urls: string[];
   target_roles: UserRole[];
   features: string[];
+  features_basic: string[];
+  features_preferred: string[];
+  features_elite: string[];
   created_at: string;
   updated_at: string;
 }

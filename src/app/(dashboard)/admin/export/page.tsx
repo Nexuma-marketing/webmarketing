@@ -137,12 +137,12 @@ export default function AdminExportPage() {
         break;
 
       case "leads":
+        // Steve 4/28: leads.role can be NULL for contact_form / older inserts.
+        // Don't apply server-side role filter here — filter client-side after
+        // we've resolved the effective role (leads.role || profiles.role).
         query = supabase
           .from("leads")
           .select("full_name, email, phone, role, source, status, notes, created_at, user_id, profiles:user_id(role)");
-        if (roleFilter !== "all") {
-          query = query.eq("role", roleFilter);
-        }
         break;
 
       case "payments":
@@ -192,6 +192,11 @@ export default function AdminExportPage() {
             role: row.role || profile?.role || "",
           };
         });
+        // Apply role filter AFTER fallback resolution so NULL-role leads with
+        // a known profile role still match (Steve 4/28: Pymes filter "trajo todo").
+        if (roleFilter !== "all") {
+          processedData = processedData.filter((row) => row.role === roleFilter);
+        }
       }
 
       const csv = generateCSV(

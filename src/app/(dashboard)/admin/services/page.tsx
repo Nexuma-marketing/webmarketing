@@ -23,7 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Plus, Trash2, Upload, ExternalLink, Crown } from "lucide-react";
+import Link from "next/link";
 import { ROLE_LABELS } from "@/lib/constants";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -31,6 +32,7 @@ interface ServiceRow {
   id: string;
   name: string;
   description: string | null;
+  long_description: string | null;
   category: string;
   subcategory: string | null;
   tier: string | null;
@@ -44,6 +46,9 @@ interface ServiceRow {
   media_urls: string[];
   target_roles: string[];
   features: string[];
+  features_basic: string[];
+  features_preferred: string[];
+  features_elite: string[];
   created_at: string;
 }
 
@@ -79,6 +84,7 @@ const ASSIGNABLE_ROLES = [
 const EMPTY_SERVICE: Partial<ServiceRow> = {
   name: "",
   description: "",
+  long_description: "",
   category: "",
   subcategory: "",
   tier: "",
@@ -92,7 +98,30 @@ const EMPTY_SERVICE: Partial<ServiceRow> = {
   media_urls: [],
   target_roles: [],
   features: [],
+  features_basic: [],
+  features_preferred: [],
+  features_elite: [],
 };
+
+// Steve 4/28: per-tier checklists. Admin can fill any subset — empty tiers
+// fall back to the generic `features` list when shown on the public site.
+const TIER_CHECKLISTS: { key: "features_basic" | "features_preferred" | "features_elite"; label: string; placeholder: string }[] = [
+  {
+    key: "features_basic",
+    label: "Basic tier checklist",
+    placeholder: "Professional listing\nTenant screening\nEmail support",
+  },
+  {
+    key: "features_preferred",
+    label: "Preferred Owners tier checklist",
+    placeholder: "Everything in Basic, plus:\nProfessional photography\nPriority matching",
+  },
+  {
+    key: "features_elite",
+    label: "Elite Assets / Investor tier checklist",
+    placeholder: "Everything in Preferred, plus:\nDedicated account manager\nQuarterly portfolio review",
+  },
+];
 
 export default function AdminServicesPage() {
   const [services, setServices] = useState<ServiceRow[]>([]);
@@ -101,6 +130,11 @@ export default function AdminServicesPage() {
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [featuresText, setFeaturesText] = useState("");
+  const [tierFeaturesText, setTierFeaturesText] = useState<{
+    features_basic: string;
+    features_preferred: string;
+    features_elite: string;
+  }>({ features_basic: "", features_preferred: "", features_elite: "" });
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
   const supabase = createClient();
@@ -123,13 +157,23 @@ export default function AdminServicesPage() {
   function openNew() {
     setEditService({ ...EMPTY_SERVICE });
     setFeaturesText("");
+    setTierFeaturesText({ features_basic: "", features_preferred: "", features_elite: "" });
     setIsNew(true);
   }
 
   function openEdit(service: ServiceRow) {
     setEditService({ ...service });
     setFeaturesText((service.features || []).join("\n"));
+    setTierFeaturesText({
+      features_basic: (service.features_basic || []).join("\n"),
+      features_preferred: (service.features_preferred || []).join("\n"),
+      features_elite: (service.features_elite || []).join("\n"),
+    });
     setIsNew(false);
+  }
+
+  function linesToArray(text: string): string[] {
+    return text.split("\n").map((f) => f.trim()).filter(Boolean);
   }
 
   async function handleSave() {
@@ -140,6 +184,7 @@ export default function AdminServicesPage() {
     const payload = {
       name: editService.name,
       description: editService.description || null,
+      long_description: editService.long_description || null,
       category: editService.category || "",
       subcategory: editService.subcategory || null,
       tier: editService.tier || null,
@@ -152,10 +197,10 @@ export default function AdminServicesPage() {
       recurring_interval: editService.recurring_interval || "one_time",
       media_urls: editService.media_urls || [],
       target_roles: editService.target_roles || [],
-      features: featuresText
-        .split("\n")
-        .map((f) => f.trim())
-        .filter(Boolean),
+      features: linesToArray(featuresText),
+      features_basic: linesToArray(tierFeaturesText.features_basic),
+      features_preferred: linesToArray(tierFeaturesText.features_preferred),
+      features_elite: linesToArray(tierFeaturesText.features_elite),
     };
 
     if (isNew) {
@@ -384,6 +429,18 @@ export default function AdminServicesPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label>Long description</Label>
+                <Textarea
+                  value={editService.long_description || ""}
+                  onChange={(e) =>
+                    setEditService({ ...editService, long_description: e.target.value })
+                  }
+                  rows={3}
+                  placeholder="Multi-paragraph description shown on the service detail page."
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category</Label>
@@ -483,13 +540,49 @@ export default function AdminServicesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>What it includes (one bullet per line)</Label>
+                <Label>What it includes — generic checklist (one bullet per line)</Label>
                 <Textarea
                   value={featuresText}
                   onChange={(e) => setFeaturesText(e.target.value)}
                   rows={4}
                   placeholder={"Marketing campaign\nProfessional photography\nDedicated account manager"}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Generic list shown when no per-tier checklist is set. Use the per-tier sections below to differentiate Basic / Preferred Owners / Elite.
+                </p>
+              </div>
+
+              <div className="space-y-3 rounded-md border bg-muted/30 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <Crown className="h-4 w-4" />
+                    Per-tier checklists
+                  </Label>
+                  <Link
+                    href="/admin/plans"
+                    className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    Or edit master plan checklists <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Define what&apos;s included for Basic, Preferred Owners, and Elite tiers separately.
+                  Leave empty to fall back to the generic checklist above.
+                </p>
+                {TIER_CHECKLISTS.map((t) => (
+                  <div key={t.key} className="space-y-1.5">
+                    <Label className="text-xs">{t.label}</Label>
+                    <Textarea
+                      value={tierFeaturesText[t.key]}
+                      onChange={(e) =>
+                        setTierFeaturesText({ ...tierFeaturesText, [t.key]: e.target.value })
+                      }
+                      rows={3}
+                      placeholder={t.placeholder}
+                      className="text-sm"
+                    />
+                  </div>
+                ))}
               </div>
 
               <div className="space-y-2">

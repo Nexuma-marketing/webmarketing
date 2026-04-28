@@ -310,26 +310,44 @@ export async function profileTenant(userId: string) {
     .eq("id", prefs.id);
 
   // 4. Sync to profiles. Steve 4/28: do NOT overwrite role if admin locked it.
+  // Steve 4/28 (second pass): a user who signed up as a regular "inquilino"
+  // must STAY "inquilino" — premium criteria flip is_premium_tenant=true but
+  // the role itself only changes when (a) the user has no role yet, or
+  // (b) the user signed up as inquilino_premium directly. This mirrors the
+  // owner pattern (a propietario never auto-promotes to inversionista).
   const { data: existing } = await supabase
     .from("profiles")
     .select("role, role_locked")
     .eq("id", userId)
     .single();
 
-  const role: UserRole = premium ? "inquilino_premium" : "inquilino";
+  const currentRole = existing?.role as UserRole | undefined;
+  const isCurrentTenant =
+    currentRole === "inquilino" || currentRole === "inquilino_premium";
+
+  const fallbackRole: UserRole = premium ? "inquilino_premium" : "inquilino";
+  let nextRole: UserRole;
+  if (existing?.role_locked && currentRole) {
+    nextRole = currentRole;
+  } else if (isCurrentTenant && currentRole) {
+    nextRole = currentRole;
+  } else {
+    nextRole = fallbackRole;
+  }
+
   const updates: Record<string, unknown> = {
     is_premium_tenant: premium,
     premium_criteria_met: criteriaCount,
   };
-  if (!existing?.role_locked) {
-    updates.role = role;
+  if (nextRole !== currentRole) {
+    updates.role = nextRole;
   }
   await supabase.from("profiles").update(updates).eq("id", userId);
 
   return {
     criteriaCount,
     premium,
-    role: existing?.role_locked ? (existing.role as UserRole) : role,
+    role: nextRole,
     locked: !!existing?.role_locked,
   };
 }

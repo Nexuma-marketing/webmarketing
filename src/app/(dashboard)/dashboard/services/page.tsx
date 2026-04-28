@@ -470,6 +470,24 @@ export default async function ServicesPage() {
   const foundersLimit = Number(cfg.limit ?? "20");
 
   // Filter services relevant to user role
+  // Steve 4/28: services have tier-specific checklists. Pick the right one for
+  // the viewing user (owners see basic/preferred/elite, tenants & pymes default
+  // to the generic features). Falls back to features[] when the tier list is empty.
+  const userTierKey: "features_basic" | "features_preferred" | "features_elite" | null = (() => {
+    if (ownerTier === "elite") return "features_elite";
+    if (ownerTier === "preferred_owners") return "features_preferred";
+    if (ownerTier === "basic") return "features_basic";
+    return null;
+  })();
+
+  function pickFeatures(service: { features?: string[] | null; features_basic?: string[] | null; features_preferred?: string[] | null; features_elite?: string[] | null }): string[] {
+    if (userTierKey) {
+      const tierList = service[userTierKey];
+      if (tierList && tierList.length > 0) return tierList;
+    }
+    return service.features || [];
+  }
+
   const relevantServices = allServices?.filter((s) => {
     if (!s.target_roles || s.target_roles.length === 0) return true;
     return s.target_roles.includes(profile.role);
@@ -991,16 +1009,19 @@ export default async function ServicesPage() {
                   <CardDescription>{service.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1">
-                  {service.features && service.features.length > 0 && (
-                    <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
-                      {service.features.map((feature: string, i: number) => (
-                        <li key={i} className="flex items-center gap-1.5">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {(() => {
+                    const feats = pickFeatures(service);
+                    return feats.length > 0 ? (
+                      <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
+                        {feats.map((feature: string, i: number) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null;
+                  })()}
                   <span className="text-lg font-bold">
                     ${service.price?.toLocaleString()}{" "}
                     {service.currency || "CAD"}
@@ -1039,23 +1060,24 @@ export default async function ServicesPage() {
                   <CardDescription>{service.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {service.features && service.features.length > 0 && (
-                    <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
-                      {service.features
-                        .slice(0, 3)
-                        .map((feature: string, i: number) => (
+                  {(() => {
+                    const feats = pickFeatures(service);
+                    return feats.length > 0 ? (
+                      <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
+                        {feats.slice(0, 3).map((feature: string, i: number) => (
                           <li key={i} className="flex items-center gap-1.5">
                             <span className="text-primary">&#8226;</span>{" "}
                             {feature}
                           </li>
                         ))}
-                      {service.features.length > 3 && (
-                        <li className="text-xs text-muted-foreground">
-                          +{service.features.length - 3} more features
-                        </li>
-                      )}
-                    </ul>
-                  )}
+                        {feats.length > 3 && (
+                          <li className="text-xs text-muted-foreground">
+                            +{feats.length - 3} more features
+                          </li>
+                        )}
+                      </ul>
+                    ) : null;
+                  })()}
                   <span className="text-lg font-bold">
                     ${service.price?.toLocaleString()}{" "}
                     {service.currency || "CAD"}

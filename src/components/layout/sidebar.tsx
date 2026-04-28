@@ -131,7 +131,7 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin"],
   },
   {
-    label: "Plans",
+    label: "Plan Checklists",
     href: "/admin/plans",
     icon: Crown,
     roles: ["admin"],
