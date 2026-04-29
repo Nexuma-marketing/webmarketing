@@ -26,6 +26,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FileText } from "lucide-react";
+import { useFormFieldMeta, fieldDisplay } from "@/lib/form-meta";
+import { DynamicField } from "@/components/forms/dynamic-field";
 
 // ─── Legal document texts ────────────────────────────
 const LEGAL_DOCS: Record<string, { title: string; text: string }> = {
@@ -206,6 +208,13 @@ export default function TenantFormPage() {
   const [showConsentDetails, setShowConsentDetails] = useState(false);
   const [expandedLegal, setExpandedLegal] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+
+  // Steve 4/28 round 2: load admin-editable form metadata so changes
+  // in /admin/forms (label, helper text, required, visibility) are
+  // reflected on this user-facing page without redeploys.
+  const fieldMeta = useFormFieldMeta("tenant_preferences");
+  const fld = (key: string, label: string, helper?: string | null, required?: boolean) =>
+    fieldDisplay(fieldMeta, key, { label, helper, required });
 
   const {
     register,
@@ -465,14 +474,16 @@ export default function TenantFormPage() {
             {/* ═══ Step 1: Personal & Employment ═══ */}
             {step === 1 && (
               <>
-                <div className="space-y-2">
-                  <Label>What is your current situation?</Label>
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="employment_type"
+                  fallbackLabel="What is your current situation?"
+                >
                   <Select
                     value={employmentType}
                     onValueChange={(val: string | null) => {
                       if (!val) return;
                       setValue("employment_type", val as TenantFormData["employment_type"]);
-                      // Steve Old#1: reset employment_verifiable when switching to international_student
                       if (val === "international_student") {
                         setValue("employment_verifiable", false);
                       }
@@ -492,7 +503,7 @@ export default function TenantFormPage() {
                   {errors.employment_type && (
                     <p className="text-sm text-destructive">{errors.employment_type.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 {/* Student sub-questions */}
                 {employmentType === "international_student" && (
@@ -526,8 +537,11 @@ export default function TenantFormPage() {
                 {/* Steve Old#1 (4/19 expanded): employment_verifiable checkbox removed
                     for ALL tenants regardless of current_situation due to legal requirements */}
 
-                <div className="space-y-2">
-                  <Label>How many people are you looking for housing?</Label>
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="number_of_people"
+                  fallbackLabel="How many people are you looking for housing?"
+                >
                   <Select value={numberOfPeople} onValueChange={(val: string | null) => val && setValue("number_of_people", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select number of people" />
@@ -543,10 +557,11 @@ export default function TenantFormPage() {
                   {errors.number_of_people && (
                     <p className="text-sm text-destructive">{errors.number_of_people.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
+                {(() => { const f = fld("property_type_desired", "Type of property desired", null, true); if (f.hidden) return null; return (
                 <div className="space-y-3">
-                  <Label>Type of property desired</Label>
+                  <Label>{f.label}</Label>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {PROPERTY_TYPES.map((type) => (
                       <div key={type} className="flex items-center gap-2">
@@ -561,10 +576,12 @@ export default function TenantFormPage() {
                       </div>
                     ))}
                   </div>
+                  {f.helper && <p className="text-xs text-muted-foreground">{f.helper}</p>}
                   {errors.property_type_desired && (
                     <p className="text-sm text-destructive">{errors.property_type_desired.message}</p>
                   )}
                 </div>
+                ); })()}
               </>
             )}
 
@@ -620,8 +637,7 @@ export default function TenantFormPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Bedrooms</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="bedrooms_needed" fallbackLabel="Bedrooms">
                     <Select value={bedroomsNeeded} onValueChange={(val: string | null) => val && setValue("bedrooms_needed", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -637,9 +653,8 @@ export default function TenantFormPage() {
                     {errors.bedrooms_needed && (
                       <p className="text-sm text-destructive">{errors.bedrooms_needed.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bathrooms</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="bathrooms_needed" fallbackLabel="Bathrooms">
                     <Select value={bathroomsNeeded} onValueChange={(val: string | null) => val && setValue("bathrooms_needed", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -655,7 +670,7 @@ export default function TenantFormPage() {
                     {errors.bathrooms_needed && (
                       <p className="text-sm text-destructive">{errors.bathrooms_needed.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -703,8 +718,7 @@ export default function TenantFormPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Style preference</Label>
+                <DynamicField meta={fieldMeta} fieldKey="style_preference" fallbackLabel="Style preference">
                   <Select value={stylePreference} onValueChange={(val: string | null) => val && setValue("style_preference", val as TenantFormData["style_preference"])}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select style" />
@@ -717,11 +731,10 @@ export default function TenantFormPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {/* #8: Other text field for style */}
                   {(watch("style_preference") as string) === "other" && (
                     <Input placeholder="Please specify your style preference" {...register("style_other")} />
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                   {[
@@ -774,8 +787,7 @@ export default function TenantFormPage() {
             {step === 3 && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="min_budget">Monthly budget min (CAD)</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="min_budget" fallbackLabel="Monthly budget min (CAD)" htmlFor="min_budget">
                     <Input
                       id="min_budget"
                       type="number"
@@ -787,9 +799,8 @@ export default function TenantFormPage() {
                     {errors.min_budget && (
                       <p className="text-sm text-destructive">{errors.min_budget.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_budget">Monthly budget max (CAD)</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="max_budget" fallbackLabel="Monthly budget max (CAD)" htmlFor="max_budget">
                     <Input
                       id="max_budget"
                       type="number"
@@ -806,11 +817,16 @@ export default function TenantFormPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="move_in_date">When are you planning to move?</Label>
-                    <Input id="move_in_date" type="date" {...register("move_in_date")} />
-                    {errors.move_in_date && (
-                      <p className="text-sm text-destructive">{errors.move_in_date.message}</p>
-                    )}
+                    {(() => { const f = fld("move_in_date", "When are you planning to move?", null, true); if (f.hidden) return null; return (
+                      <>
+                        <Label htmlFor="move_in_date">{f.label}</Label>
+                        <Input id="move_in_date" type="date" {...register("move_in_date")} />
+                        {f.helper && <p className="text-xs text-muted-foreground">{f.helper}</p>}
+                        {errors.move_in_date && (
+                          <p className="text-sm text-destructive">{errors.move_in_date.message}</p>
+                        )}
+                      </>
+                    ); })()}
                   </div>
                   <div className="flex items-end pb-1">
                     <div className="flex items-center gap-2">
@@ -826,8 +842,7 @@ export default function TenantFormPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Lease contract duration</Label>
+                <DynamicField meta={fieldMeta} fieldKey="contract_duration" fallbackLabel="Lease contract duration">
                   <Select value={contractDuration} onValueChange={(val: string | null) => val && setValue("contract_duration", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select duration" />
@@ -843,7 +858,7 @@ export default function TenantFormPage() {
                   {errors.contract_duration && (
                     <p className="text-sm text-destructive">{errors.contract_duration.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="space-y-3">
                   <Label>Preferred amenities</Label>

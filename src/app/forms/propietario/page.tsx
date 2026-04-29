@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/card";
 import { Building2, ArrowLeft, ArrowRight, FileText } from "lucide-react";
 import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload";
+import { useFormFieldMeta } from "@/lib/form-meta";
+import { DynamicField } from "@/components/forms/dynamic-field";
 
 // ─── Objectives (PDF 5.2.1 - 8 options) ─────────────
 const OBJECTIVES = [
@@ -242,6 +244,9 @@ export default function OwnerFormPage() {
   const [investorProps, setInvestorProps] = useState<InvestorPropertyData[]>([]);
   const [propIdx, setPropIdx] = useState(0);
   const formRef = useRef<HTMLDivElement>(null);
+
+  // Steve 4/28 round 2: admin-editable form metadata overlay.
+  const fieldMeta = useFormFieldMeta("owner_property");
 
   const {
     register,
@@ -958,8 +963,7 @@ export default function OwnerFormPage() {
             {step === 3 && !isInvestor && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Property type</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="property_type" fallbackLabel="Property type">
                     <Select value={watch("property_type") as string | undefined} onValueChange={(val: string | null) => val && setValue("property_type", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select type" />
@@ -973,7 +977,7 @@ export default function OwnerFormPage() {
                     {errors.property_type && (
                       <p className="text-sm text-destructive" data-error="true">{errors.property_type.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                   <div className="space-y-2">
                     <Label>Current occupancy status</Label>
                     <Select
@@ -1009,8 +1013,7 @@ export default function OwnerFormPage() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Bedrooms</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="bedrooms" fallbackLabel="Bedrooms">
                     <Select value={watch("bedrooms") as string | undefined} onValueChange={(val: string | null) => val && setValue("bedrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -1024,9 +1027,8 @@ export default function OwnerFormPage() {
                     {errors.bedrooms && (
                       <p className="text-sm text-destructive" data-error="true">{errors.bedrooms.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bathrooms</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="bathrooms" fallbackLabel="Bathrooms">
                     <Select value={watch("bathrooms") as string | undefined} onValueChange={(val: string | null) => val && setValue("bathrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -1040,7 +1042,7 @@ export default function OwnerFormPage() {
                     {errors.bathrooms && (
                       <p className="text-sm text-destructive" data-error="true">{errors.bathrooms.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                   <div className="space-y-2">
                     <Label>Size</Label>
                     <div className="flex gap-1">
@@ -1419,8 +1421,7 @@ export default function OwnerFormPage() {
             {step === 4 && !isInvestor && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="zone_city">City</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="city" fallbackLabel="City" htmlFor="zone_city">
                     <Select
                       value={(watch("zone_city") as string) ?? ""}
                       onValueChange={(val: string | null) => val && setValue("zone_city", val)}
@@ -1437,20 +1438,19 @@ export default function OwnerFormPage() {
                     {errors.zone_city && (
                       <p className="text-sm text-destructive" data-error="true">{errors.zone_city.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                   <div className="space-y-2">
                     <Label htmlFor="postal_code">Postal code</Label>
                     <Input id="postal_code" placeholder="V6B 1A1" {...register("postal_code")} />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
+                <DynamicField meta={fieldMeta} fieldKey="address" fallbackLabel="Address" htmlFor="address">
                   <Input id="address" placeholder="123 Main St" {...register("address")} />
                   {errors.address && (
                     <p className="text-sm text-destructive" data-error="true">{errors.address.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="space-y-3">
                   <Label>Nearby features</Label>

@@ -134,70 +134,110 @@ INSERT INTO forms_dynamic (slug, name, description, target_role, is_active) VALU
    'pymes', true)
 ON CONFLICT (slug) DO NOTHING;
 
--- Tenant preference questions (mirrors src/lib/profiling.ts criteria)
+-- Tenant preference questions — full set matching production form
 INSERT INTO form_questions (form_id, position, field_key, label, question_type, options, required, is_active, helper_text)
 SELECT f.id, q.position, q.field_key, q.label, q.question_type, q.options::jsonb, q.required, true, q.helper_text
 FROM forms_dynamic f
 CROSS JOIN (VALUES
-  (0, 'employment_type',    'Employment type',                         'select',
-   '[{"value":"full_time","label":"Full-time employed"},{"value":"self_employed","label":"Self-employed"},{"value":"part_time","label":"Part-time"},{"value":"student","label":"Student"},{"value":"other","label":"Other"}]',
-   true,  'Stable employment is one of the premium tenant criteria.'),
-  (1, 'employment_verifiable', 'Can you provide employment verification?', 'yesno', NULL, true,  'Pay stubs, employment letter, or equivalent.'),
-  (2, 'max_budget',         'Maximum monthly rent budget (CAD)',       'number',  NULL, true,  'Premium criteria triggers at $2,500+'),
-  (3, 'preferred_amenities','Preferred amenities',                     'multiselect',
-   '[{"value":"Gym","label":"Gym"},{"value":"Pool","label":"Pool"},{"value":"Rooftop","label":"Rooftop"},{"value":"Coworking","label":"Coworking"},{"value":"Jacuzzi","label":"Jacuzzi"},{"value":"Private parking","label":"Private parking"},{"value":"Sauna","label":"Sauna"}]',
-   false, 'Pick all that apply.'),
-  (4, 'prefers_urban_zone', 'Do you prefer urban zones (downtown, transit hubs)?', 'yesno', NULL, true, NULL),
-  (5, 'bedrooms_needed',    'Bedrooms needed',                         'number',  NULL, true,  '2–4 bedrooms count toward premium classification.'),
-  (6, 'smart_home_interest','Interested in smart-home features?',      'yesno',   NULL, false, NULL),
-  (7, 'style_preference',   'Preferred design style',                  'select',
-   '[{"value":"modern","label":"Modern"},{"value":"elegant","label":"Elegant"},{"value":"classic","label":"Classic"},{"value":"minimalist","label":"Minimalist"},{"value":"any","label":"No preference"}]',
-   false, NULL),
-  (8, 'furnished',          'Furnished property required?',             'yesno',   NULL, false, NULL),
-  (9, 'contract_duration',  'Desired contract duration',                'select',
-   '[{"value":"month_to_month","label":"Month to month"},{"value":"6_months","label":"6 months"},{"value":"12_months","label":"12 months"},{"value":"12_24_months","label":"12–24 months"},{"value":"24_months","label":"24 months"}]',
-   true,  '12+ month contracts contribute to premium classification.')
+  (0,  'employment_type',         'What is your current situation?',          'select', NULL, true,  'Stable employment is one of the premium tenant criteria.'),
+  (1,  'institution_type',        'Type of institution',                       'select', NULL, false, 'Only shown for international students.'),
+  (2,  'institution_name',        'Name of institution (optional)',            'text',   NULL, false, NULL),
+  (3,  'employment_verifiable',   'Can you provide employment verification?',  'yesno',  NULL, true,  'Pay stubs, employment letter, or equivalent.'),
+  (4,  'number_of_people',        'How many people are you looking for housing?', 'select', NULL, true, NULL),
+  (5,  'property_type_desired',   'Type of property desired',                  'multiselect', NULL, true, 'Select all that apply.'),
+  (6,  'preferred_zones',         'Preferred zone (British Columbia)',         'multiselect', NULL, true, NULL),
+  (7,  'bedrooms_needed',         'Bedrooms',                                  'select', NULL, true,  '2–4 bedrooms count toward premium classification.'),
+  (8,  'bathrooms_needed',        'Bathrooms',                                 'select', NULL, true,  NULL),
+  (9,  'size_sqft',               'Size (optional)',                           'number', NULL, false, NULL),
+  (10, 'levels_preferred',        'Levels / Floor',                            'select', NULL, false, NULL),
+  (11, 'style_preference',        'Style preference',                          'select', NULL, false, NULL),
+  (12, 'pet_friendly',            'Pet-friendly required?',                    'yesno',  NULL, false, NULL),
+  (13, 'smart_home_interest',     'Smart home features',                       'yesno',  NULL, false, NULL),
+  (14, 'furnished',               'Furnished property required?',              'yesno',  NULL, false, NULL),
+  (15, 'utilities_included',      'Utilities included required?',              'yesno',  NULL, false, NULL),
+  (16, 'min_budget',              'Monthly budget min (CAD)',                  'number', NULL, true,  NULL),
+  (17, 'max_budget',              'Monthly budget max (CAD)',                  'number', NULL, true,  'Premium criteria triggers at $2,500+'),
+  (18, 'move_in_date',            'When are you planning to move?',            'date',   NULL, true,  NULL),
+  (19, 'move_in_flexible',        'Move-in date is flexible',                  'yesno',  NULL, false, NULL),
+  (20, 'contract_duration',       'Lease contract duration',                   'select', NULL, true,  '12+ month contracts contribute to premium classification.'),
+  (21, 'preferred_amenities',     'Preferred amenities',                       'multiselect', NULL, false, NULL),
+  (22, 'common_areas',            'Building common areas',                     'multiselect', NULL, false, NULL),
+  (23, 'parking_needed',          'Parking needed',                            'yesno',  NULL, false, NULL),
+  (24, 'near_bus',                'Near bus stop',                             'yesno',  NULL, false, NULL),
+  (25, 'near_skytrain',           'Near SkyTrain',                             'yesno',  NULL, false, NULL),
+  (26, 'near_downtown',           'Near downtown',                             'yesno',  NULL, false, NULL),
+  (27, 'near_social',             'Near social venues',                        'yesno',  NULL, false, NULL),
+  (28, 'near_banks',              'Near banks',                                'yesno',  NULL, false, NULL),
+  (29, 'prefers_urban_zone',      'Prefers urban zone',                        'yesno',  NULL, false, NULL),
+  (30, 'additional_requirements', 'Additional requirements (optional)',         'textarea', NULL, false, NULL),
+  (31, 'consent_data_processing', 'Consent: data processing',                  'checkbox', NULL, true, 'Required by PIPA/PIPEDA.'),
+  (32, 'consent_screening',       'Consent: background screening',             'checkbox', NULL, false, NULL),
+  (33, 'consent_references',      'Consent: reference verification',           'checkbox', NULL, false, NULL),
+  (34, 'consent_communications',  'Consent: electronic communications (CASL)', 'checkbox', NULL, false, NULL),
+  (35, 'consent_truthfulness',    'Declaration of truthfulness',               'checkbox', NULL, false, NULL),
+  (36, 'consent_marketing',       'Consent: marketing communications (optional)', 'checkbox', NULL, false, NULL)
 ) AS q(position, field_key, label, question_type, options, required, helper_text)
 WHERE f.slug = 'tenant_preferences'
 ON CONFLICT (form_id, field_key) DO NOTHING;
 
--- Owner property registration questions
+-- Owner property registration questions — full set matching production form
 INSERT INTO form_questions (form_id, position, field_key, label, question_type, options, required, is_active, helper_text)
 SELECT f.id, q.position, q.field_key, q.label, q.question_type, q.options::jsonb, q.required, true, q.helper_text
 FROM forms_dynamic f
 CROSS JOIN (VALUES
-  (0, 'property_type',  'Property type', 'select',
-   '[{"value":"house","label":"House"},{"value":"condo","label":"Condo"},{"value":"penthouse","label":"Penthouse"},{"value":"basement","label":"Basement"},{"value":"studio","label":"Studio"}]',
-   true,  NULL),
-  (1, 'address',        'Street address',                  'text',     NULL, true, NULL),
-  (2, 'city',           'City',                            'text',     NULL, true, NULL),
-  (3, 'province',       'Province',                        'text',     NULL, true, 'British Columbia, Ontario, etc.'),
-  (4, 'monthly_rent',   'Asking monthly rent (CAD)',       'number',   NULL, true, 'Used to compute CFP and Elite tier classification.'),
-  (5, 'bedrooms',       'Bedrooms',                        'number',   NULL, true, NULL),
-  (6, 'bathrooms',      'Bathrooms',                       'number',   NULL, true, NULL),
-  (7, 'is_available',   'Currently available for tenants?', 'yesno',   NULL, true, NULL),
-  (8, 'description',    'Description',                     'textarea', NULL, false, 'Highlights for the listing.')
+  (0,  'user_type',          'Are you a property owner or an investor?',        'select', NULL, true,  NULL),
+  (1,  'property_count',     'Number of properties',                            'number', NULL, true,  NULL),
+  (2,  'objectives',         'What are your objectives?',                       'multiselect', NULL, true, 'Select all that apply.'),
+  (3,  'property_type',      'Property type',                                   'select', NULL, true,  NULL),
+  (4,  'occupancy_status',   'Current occupancy status',                        'select', NULL, true,  NULL),
+  (5,  'vacancy_date',       'When does the property become available?',        'date',   NULL, false, 'Approximate date when the current tenant moves out.'),
+  (6,  'availability_date',  'Availability date (for new tenants)',             'date',   NULL, false, NULL),
+  (7,  'bedrooms',           'Bedrooms',                                        'select', NULL, true,  NULL),
+  (8,  'bathrooms',          'Bathrooms',                                       'select', NULL, true,  NULL),
+  (9,  'area_sqft',          'Size',                                            'number', NULL, false, NULL),
+  (10, 'style',              'Style',                                           'select', NULL, false, NULL),
+  (11, 'levels',             'Levels / Floor',                                  'select', NULL, false, NULL),
+  (12, 'furnished',          'Furnished',                                       'yesno',  NULL, false, NULL),
+  (13, 'utilities_included', 'Utilities included',                              'yesno',  NULL, false, NULL),
+  (14, 'pet_friendly',       'Pet-friendly',                                    'yesno',  NULL, false, NULL),
+  (15, 'shared_unit',        'Shared unit',                                     'yesno',  NULL, false, NULL),
+  (16, 'smart_home',         'Smart home',                                      'yesno',  NULL, false, NULL),
+  (17, 'amenities',          'Amenities',                                       'multiselect', NULL, false, NULL),
+  (18, 'common_areas',       'Building common areas',                           'multiselect', NULL, false, NULL),
+  (19, 'city',               'City',                                            'select', NULL, true,  NULL),
+  (20, 'postal_code',        'Postal code',                                     'text',   NULL, false, NULL),
+  (21, 'address',            'Address',                                         'text',   NULL, true,  NULL),
+  (22, 'near_parks',         'Parks nearby',                                    'yesno',  NULL, false, NULL),
+  (23, 'near_churches',      'Churches nearby',                                 'yesno',  NULL, false, NULL),
+  (24, 'near_bus',           'Bus stop nearby',                                 'yesno',  NULL, false, NULL),
+  (25, 'near_skytrain',      'SkyTrain nearby',                                 'yesno',  NULL, false, NULL),
+  (26, 'near_mall',          'Shopping mall nearby',                            'yesno',  NULL, false, NULL),
+  (27, 'listing_platforms',  'Listing platforms',                               'multiselect', NULL, false, NULL),
+  (28, 'consent_image_usage','Consent: image usage',                            'checkbox', NULL, true, NULL),
+  (29, 'consent_data_processing','Consent: data processing',                    'checkbox', NULL, true, NULL),
+  (30, 'consent_third_party','Consent: third-party verification',               'checkbox', NULL, true, NULL),
+  (31, 'consent_marketing',  'Consent: marketing communications',               'checkbox', NULL, false, NULL)
 ) AS q(position, field_key, label, question_type, options, required, helper_text)
 WHERE f.slug = 'owner_property'
 ON CONFLICT (form_id, field_key) DO NOTHING;
 
--- Pymes diagnosis questions (subset — full scoring logic stays in code)
+-- Pymes diagnosis questions — matches actual production form
 INSERT INTO form_questions (form_id, position, field_key, label, question_type, options, required, is_active, helper_text)
 SELECT f.id, q.position, q.field_key, q.label, q.question_type, q.options::jsonb, q.required, true, q.helper_text
 FROM forms_dynamic f
 CROSS JOIN (VALUES
-  (0, 'business_name',     'Business name',                   'text',     NULL, true,  NULL),
-  (1, 'industry',          'Industry / sector',               'text',     NULL, true,  NULL),
-  (2, 'monthly_revenue',   'Average monthly revenue (CAD)',   'number',   NULL, true,  'Used to estimate the sales leak.'),
-  (3, 'years_operating',   'Years operating',                 'number',   NULL, true,  NULL),
-  (4, 'main_pain_point',   'Biggest pain point right now',    'select',
+  (0, 'business_name',     'Company name',                                'text',   NULL, true,  NULL),
+  (1, 'contact_position',  'Your position / Job title',                   'text',   NULL, false, NULL),
+  (2, 'industry',          'Industry sector',                             'select', NULL, true,  NULL),
+  (3, 'monthly_revenue',   'Monthly revenue (CAD)',                       'number', NULL, true,  'This is used to calculate your estimated annual loss.'),
+  (4, 'main_pain_point',   'Biggest pain point right now',                'select',
    '[{"value":"low_leads","label":"Not enough leads"},{"value":"low_conversion","label":"Leads do not convert"},{"value":"churn","label":"High customer churn"},{"value":"brand","label":"Weak brand presence"},{"value":"team","label":"Team / operational chaos"}]',
-   true, NULL),
-  (5, 'has_marketing_team','Do you have an internal marketing team?', 'yesno', NULL, true, NULL),
-  (6, 'urgency_level',     'How urgent is solving this?',     'select',
+   false, NULL),
+  (5, 'has_marketing_team','Do you have an internal marketing team?',     'yesno',  NULL, false, NULL),
+  (6, 'urgency_level',     'How urgent is solving this?',                 'select',
    '[{"value":"critical","label":"Critical — bleeding revenue"},{"value":"high","label":"High — losing ground"},{"value":"medium","label":"Medium — want to grow faster"},{"value":"low","label":"Low — exploring options"}]',
-   true, 'Drives the recommended Rescue / Growth / Scale plan.'),
-  (7, 'preferred_contact', 'Preferred contact channel',       'select',
+   false, 'Drives the recommended Rescue / Growth / Scale plan.'),
+  (7, 'preferred_contact', 'Preferred contact channel',                   'select',
    '[{"value":"email","label":"Email"},{"value":"phone","label":"Phone"},{"value":"whatsapp","label":"WhatsApp"}]',
    false, NULL)
 ) AS q(position, field_key, label, question_type, options, required, helper_text)

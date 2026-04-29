@@ -25,6 +25,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { BarChart3, TrendingDown, Users, ArrowRight, CheckCircle2, Calendar } from "lucide-react";
+import { useFormFieldMeta, fieldDisplay } from "@/lib/form-meta";
+import { DynamicField } from "@/components/forms/dynamic-field";
 
 const SECTORS = [
   { value: "retail", label: "Retail / Commerce" },
@@ -530,6 +532,9 @@ export default function PymesCalculatorPage() {
   const [error, setError] = useState<string | null>(null);
   const [reviewCountdown, setReviewCountdown] = useState(0); // Steve #6-2: force read time on review step
 
+  // Steve 4/28 round 2: admin-editable form metadata overlay.
+  const fieldMeta = useFormFieldMeta("pymes_diagnosis");
+
   const {
     register,
     handleSubmit,
@@ -804,8 +809,7 @@ export default function PymesCalculatorPage() {
             {/* Step 1: Company Info */}
             {step === 1 && (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="company_name">Company name</Label>
+                <DynamicField meta={fieldMeta} fieldKey="business_name" fallbackLabel="Company name" htmlFor="company_name">
                   <Input
                     id="company_name"
                     placeholder="Your Business Inc."
@@ -816,7 +820,7 @@ export default function PymesCalculatorPage() {
                       {errors.company_name.message}
                     </p>
                   )}
-                </div>
+                </DynamicField>
                 <div className="space-y-2">
                   <Label htmlFor="contact_position">Your position / Job title</Label>
                   <Input
@@ -825,8 +829,7 @@ export default function PymesCalculatorPage() {
                     {...register("contact_position")}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Industry sector</Label>
+                <DynamicField meta={fieldMeta} fieldKey="industry" fallbackLabel="Industry sector">
                   <Select
                     value={watch("sector") as string | undefined}
                     onValueChange={(val: string | null) =>
@@ -852,11 +855,8 @@ export default function PymesCalculatorPage() {
                       {errors.sector.message}
                     </p>
                   )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="monthly_revenue">
-                    Monthly revenue (CAD)
-                  </Label>
+                </DynamicField>
+                <DynamicField meta={fieldMeta} fieldKey="monthly_revenue" fallbackLabel="Monthly revenue (CAD)" fallbackHelper="This is used to calculate your estimated annual loss." htmlFor="monthly_revenue">
                   <Input
                     id="monthly_revenue"
                     type="number"
@@ -868,10 +868,7 @@ export default function PymesCalculatorPage() {
                       {errors.monthly_revenue.message}
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    This is used to calculate your estimated annual loss.
-                  </p>
-                </div>
+                </DynamicField>
               </div>
             )}
 
