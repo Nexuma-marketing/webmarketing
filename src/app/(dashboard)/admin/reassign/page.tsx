@@ -77,10 +77,14 @@ export default function AdminReassignPage() {
         .select("id, full_name, email, role")
         .in("role", ["propietario", "propietario_preferido", "inversionista", "inquilino", "inquilino_premium", "pymes"])
         .order("full_name"),
+      // Steve 4/28 round 2: dropdown was empty for the client.
+      // .neq("status", "archived") excludes rows where status IS NULL,
+      // which is the case for any service inserted before migration v9
+      // backfilled the column. Use .or() so NULL status passes too.
       supabase
         .from("services")
         .select("id, name, category, price, currency, status")
-        .neq("status", "archived")
+        .or("status.is.null,status.neq.archived")
         .order("category")
         .order("name"),
     ]);

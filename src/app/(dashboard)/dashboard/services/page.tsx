@@ -469,6 +469,33 @@ export default async function ServicesPage() {
   const foundersTaken = Number(cfg.taken ?? "0");
   const foundersLimit = Number(cfg.limit ?? "20");
 
+  // ─── Plan tier overrides (admin-editable from /admin/plans) ─────
+  // Steve 4/28 round 2: when admin edits the per-tier checklist in
+  // /admin/plans, the values are stored as app_config rows with
+  // category="plan_features:<key>". If a row exists, it should
+  // override the hardcoded OWNER_TIERS defaults shown to the client.
+  const { data: planFeatureRows } = await supabase
+    .from("app_config")
+    .select("category, key, value")
+    .like("category", "plan_features:%");
+  const planOverrides: Record<string, { tagline?: string; features?: string[] }> = {};
+  for (const row of planFeatureRows || []) {
+    const key = (row.category as string).replace("plan_features:", "");
+    if (!planOverrides[key]) planOverrides[key] = {};
+    if (row.key === "tagline") planOverrides[key].tagline = row.value as string;
+    if (row.key === "features") {
+      planOverrides[key].features = (row.value as string)
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
+    }
+  }
+  const tierToPlanKey: Record<string, string> = {
+    basic: "owner_basic",
+    preferred_owners: "owner_preferred",
+    elite: "owner_elite",
+  };
+
   // Filter services relevant to user role
   // Steve 4/28: services have tier-specific checklists. Pick the right one for
   // the viewing user (owners see basic/preferred/elite, tenants & pymes default
@@ -499,10 +526,39 @@ export default async function ServicesPage() {
   });
 
   // ─── Owner tier details ────────────────────────
-  const tierDetails = ownerTier ? OWNER_TIERS[ownerTier] : null;
+  const baseTier = ownerTier ? OWNER_TIERS[ownerTier] : null;
+  const tierDetails = baseTier
+    ? (() => {
+        const planKey = tierToPlanKey[ownerTier as string];
+        const override = planKey ? planOverrides[planKey] : undefined;
+        if (!override) return baseTier;
+        return {
+          ...baseTier,
+          tagline: override.tagline ?? baseTier.tagline,
+          features:
+            override.features && override.features.length > 0
+              ? override.features
+              : baseTier.features,
+        };
+      })()
+    : null;
 
   // ─── PYMES plan details ────────────────────────
-  const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
+  const basePymesDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
+  const pymesPlanDetails = basePymesDetails
+    ? (() => {
+        const override = planOverrides[`pymes_${pymesPlan}`];
+        if (!override) return basePymesDetails;
+        return {
+          ...basePymesDetails,
+          tagline: override.tagline ?? basePymesDetails.tagline,
+          features:
+            override.features && override.features.length > 0
+              ? override.features
+              : basePymesDetails.features,
+        };
+      })()
+    : null;
 
   // Determine the user's primary city for promotion targeting
   const userCity =

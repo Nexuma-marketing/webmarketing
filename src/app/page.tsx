@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { buttonVariants } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/server";
 import {
   Building2,
   Users,
@@ -14,6 +15,119 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+interface Testimonial {
+  name: string;
+  role: string;
+  text: string;
+  img: string;
+}
+
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
+const DEFAULT_TESTIMONIALS: Testimonial[] = [
+  {
+    name: "Sarah Mitchell",
+    role: "Property Owner",
+    text: "Thanks to WebMarketing, I rented my apartment in record time. The professional photos and digital strategy made all the difference.",
+    img: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=face",
+  },
+  {
+    name: "Caroline Tremblay",
+    role: "Business Owner",
+    text: "The Sales Leak Calculator was eye-opening. Now I have a clear digital strategy and my sales have increased significantly.",
+    img: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop&crop=face",
+  },
+  {
+    name: "Anna Chen",
+    role: "Tenant",
+    text: "I found my ideal home in less than a week. The preference profile connected me with exactly what I was looking for.",
+    img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face",
+  },
+];
+
+const DEFAULT_FAQS: FaqItem[] = [
+  {
+    q: "Do I have to pay to register?",
+    a: "Initial registration is free. Some premium or specialized services have a cost, which is always disclosed before any payment.",
+  },
+  {
+    q: "How is the communication — will I talk to a bot or a junior executive?",
+    a: "Closeness is our core value. You'll have a direct channel with the person responsible for your strategy. We believe in total transparency: you'll know what we're working on each week through clear reports.",
+  },
+  {
+    q: "What is the differential value of this platform?",
+    a: "For property owners, as our motto says \"your property, your money\": you pay us only once, and once tenants move in, the tenant pays you directly — no intermediaries, no rent increases to cover third-party costs and profits.\n\nFor tenants, you not only pay less rent than with real-estate agencies or sub-leasing third parties, but we are also the only ones who show you properties that truly match your preferences.\n\nFor businesses, we target small and medium companies with prices within their reach. We know marketing agencies only care about clients with big budgets — we are truly your allies and we care about your business actually growing.",
+  },
+  {
+    q: "How do you balance marketing for B2B and B2C audiences?",
+    a: "We understand that even if channels change, we are always dealing with people. That's why all our marketing is personalized and handled by an advisor — we prioritize emotional connection and passion for the product. Our methodology unites both worlds through \"Human Service\": marketing designed by people for people.",
+  },
+  {
+    q: "What happens if my needs change mid-project?",
+    a: "Flexibility is one of our greatest strengths. As an agile and human organization, we can pivot and adjust strategies without the bureaucratic delays of traditional agencies.",
+  },
+  {
+    q: "How do you ensure marketing attracts the ideal tenant and not just curious visitors?",
+    a: "Our approach isn't limited to \"filling the space\" — it's about protecting your investment. We use a segmented marketing strategy that combines profiling formats with specific qualification filters and tenant credit screening services.",
+  },
+  {
+    q: "How do I know my information is secure?",
+    a: "We use secure connections and strong data-protection practices. Your information is used only to manage your request and deliver the service.",
+  },
+];
+
+// Build admin-editable testimonials and FAQ from site_content rows.
+// Steve 4/28 round 2: testimonials/FAQ were hardcoded — admin edits in
+// /admin/content did nothing on the public homepage.
+function buildTestimonials(rows: { key: string; value: string }[]): Testimonial[] {
+  // Pair keys testimonial_<n>_author / _role / _text / _img
+  const byIdx: Record<string, Partial<Testimonial>> = {};
+  for (const r of rows) {
+    const m = r.key.match(/^testimonial_(\d+)_(author|role|text|img)$/);
+    if (!m) continue;
+    const idx = m[1];
+    if (!byIdx[idx]) byIdx[idx] = {};
+    if (m[2] === "author") byIdx[idx].name = r.value;
+    if (m[2] === "role") byIdx[idx].role = r.value;
+    if (m[2] === "text") byIdx[idx].text = r.value;
+    if (m[2] === "img") byIdx[idx].img = r.value;
+  }
+  const list = Object.keys(byIdx)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((idx) => byIdx[idx])
+    .filter((t) => t.name && t.text)
+    .map((t) => ({
+      name: t.name!,
+      role: t.role || "",
+      text: t.text!,
+      img:
+        t.img ||
+        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face",
+    }));
+  return list.length > 0 ? list : DEFAULT_TESTIMONIALS;
+}
+
+function buildFaqs(rows: { key: string; value: string }[]): FaqItem[] {
+  const byIdx: Record<string, Partial<FaqItem>> = {};
+  for (const r of rows) {
+    const m = r.key.match(/^faq_(\d+)_(question|answer)$/);
+    if (!m) continue;
+    const idx = m[1];
+    if (!byIdx[idx]) byIdx[idx] = {};
+    if (m[2] === "question") byIdx[idx].q = r.value;
+    if (m[2] === "answer") byIdx[idx].a = r.value;
+  }
+  const list = Object.keys(byIdx)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((idx) => byIdx[idx])
+    .filter((f) => f.q && f.a)
+    .map((f) => ({ q: f.q!, a: f.a! }));
+  return list.length > 0 ? list : DEFAULT_FAQS;
+}
+
 export default async function HomePage({
   searchParams,
 }: {
@@ -21,6 +135,17 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
   const contactStatus = params.contact;
+
+  const supabase = await createClient();
+  const { data: contentRows } = await supabase
+    .from("site_content")
+    .select("section, key, value")
+    .in("section", ["testimonials", "faq"]);
+
+  const testimonialRows = (contentRows || []).filter((r) => r.section === "testimonials");
+  const faqRows = (contentRows || []).filter((r) => r.section === "faq");
+  const testimonials = buildTestimonials(testimonialRows);
+  const faqs = buildFaqs(faqRows);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -643,26 +768,7 @@ export default async function HomePage({
           </div>
 
           <div className="grid gap-6 md:grid-cols-3">
-            {[
-              {
-                name: "Sarah Mitchell",
-                role: "Property Owner",
-                text: "Thanks to WebMarketing, I rented my apartment in record time. The professional photos and digital strategy made all the difference.",
-                img: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=face",
-              },
-              {
-                name: "Caroline Tremblay",
-                role: "Business Owner",
-                text: "The Sales Leak Calculator was eye-opening. Now I have a clear digital strategy and my sales have increased significantly.",
-                img: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop&crop=face",
-              },
-              {
-                name: "Anna Chen",
-                role: "Tenant",
-                text: "I found my ideal home in less than a week. The preference profile connected me with exactly what I was looking for.",
-                img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face",
-              },
-            ].map((testimonial) => (
+            {testimonials.map((testimonial) => (
               <div
                 key={testimonial.name}
                 className="rounded-2xl border border-primary/10 bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-md"
@@ -757,36 +863,7 @@ export default async function HomePage({
           </div>
 
           <div className="space-y-4">
-            {[
-              {
-                q: "Do I have to pay to register?",
-                a: "Initial registration is free. Some premium or specialized services have a cost, which is always disclosed before any payment.",
-              },
-              {
-                q: "How is the communication — will I talk to a bot or a junior executive?",
-                a: "Closeness is our core value. You'll have a direct channel with the person responsible for your strategy. We believe in total transparency: you'll know what we're working on each week through clear reports.",
-              },
-              {
-                q: "What is the differential value of this platform?",
-                a: "For property owners, as our motto says \"your property, your money\": you pay us only once, and once tenants move in, the tenant pays you directly — no intermediaries, no rent increases to cover third-party costs and profits.\n\nFor tenants, you not only pay less rent than with real-estate agencies or sub-leasing third parties, but we are also the only ones who show you properties that truly match your preferences.\n\nFor businesses, we target small and medium companies with prices within their reach. We know marketing agencies only care about clients with big budgets — we are truly your allies and we care about your business actually growing.",
-              },
-              {
-                q: "How do you balance marketing for B2B and B2C audiences?",
-                a: "We understand that even if channels change, we are always dealing with people. That's why all our marketing is personalized and handled by an advisor — we prioritize emotional connection and passion for the product. Our methodology unites both worlds through \"Human Service\": marketing designed by people for people.",
-              },
-              {
-                q: "What happens if my needs change mid-project?",
-                a: "Flexibility is one of our greatest strengths. As an agile and human organization, we can pivot and adjust strategies without the bureaucratic delays of traditional agencies.",
-              },
-              {
-                q: "How do you ensure marketing attracts the ideal tenant and not just curious visitors?",
-                a: "Our approach isn't limited to \"filling the space\" — it's about protecting your investment. We use a segmented marketing strategy that combines profiling formats with specific qualification filters and tenant credit screening services.",
-              },
-              {
-                q: "How do I know my information is secure?",
-                a: "We use secure connections and strong data-protection practices. Your information is used only to manage your request and deliver the service.",
-              },
-            ].map((item, i) => (
+            {faqs.map((item, i) => (
               <details
                 key={i}
                 className="group rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/30"
