@@ -50,11 +50,22 @@ CREATE POLICY "Authenticated can read public app_config" ON app_config
 -- a public-read policy, the tenant gets an empty result and the
 -- engine silently falls back to hardcoded defaults — meaning admin
 -- edits in /admin/matching never take effect for real submissions.
+-- Guarded so v10 can run even if v9 (which creates matching_rules)
+-- has not been applied yet.
 -- ============================================================
-DROP POLICY IF EXISTS "Authenticated can read matching_rules" ON matching_rules;
-CREATE POLICY "Authenticated can read matching_rules" ON matching_rules
-  FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'matching_rules'
+  ) THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Authenticated can read matching_rules" ON matching_rules';
+    EXECUTE 'CREATE POLICY "Authenticated can read matching_rules" ON matching_rules
+             FOR SELECT USING (auth.uid() IS NOT NULL)';
+  ELSE
+    RAISE NOTICE 'Skipped matching_rules policy — table not present (run migration v9 first).';
+  END IF;
+END $$;
 
 -- ============================================================
 -- Seed site_content with the public homepage testimonials & FAQ
@@ -99,7 +110,18 @@ ON CONFLICT (section, key) DO NOTHING;
 -- from /admin/forms instead of an empty page.
 -- Steve 4/28 round 2: "Editar preguntas existentes" was Pendiente
 -- because the table was empty.
+-- Guarded so v10 still completes when v9 has not been applied.
 -- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'forms_dynamic'
+  ) THEN
+    RAISE NOTICE 'Skipped form seed — forms_dynamic missing (run migration v9 first).';
+    RETURN;
+  END IF;
+
 INSERT INTO forms_dynamic (slug, name, description, target_role, is_active) VALUES
   ('tenant_preferences', 'Tenant Preferences',
    'Profiling questionnaire filled out by tenants to enable property matching and premium classification.',
@@ -181,3 +203,5 @@ CROSS JOIN (VALUES
 ) AS q(position, field_key, label, question_type, options, required, helper_text)
 WHERE f.slug = 'pymes_diagnosis'
 ON CONFLICT (form_id, field_key) DO NOTHING;
+
+END $$;

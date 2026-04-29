@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS app_config (
 
 ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Admins can manage app_config" ON app_config;
 CREATE POLICY "Admins can manage app_config" ON app_config
   FOR ALL
   USING (
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS promotions (
 
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Admins can manage promotions" ON promotions;
 CREATE POLICY "Admins can manage promotions" ON promotions
   FOR ALL
   USING (
@@ -76,9 +78,11 @@ CREATE TABLE IF NOT EXISTS site_content (
 ALTER TABLE site_content ENABLE ROW LEVEL SECURITY;
 
 -- Public read for landing page content
+DROP POLICY IF EXISTS "Anyone can read site_content" ON site_content;
 CREATE POLICY "Anyone can read site_content" ON site_content
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage site_content" ON site_content;
 CREATE POLICY "Admins can manage site_content" ON site_content
   FOR ALL
   USING (
@@ -101,9 +105,11 @@ CREATE TABLE IF NOT EXISTS legal_documents (
 
 ALTER TABLE legal_documents ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can read legal_documents" ON legal_documents;
 CREATE POLICY "Anyone can read legal_documents" ON legal_documents
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage legal_documents" ON legal_documents;
 CREATE POLICY "Admins can manage legal_documents" ON legal_documents
   FOR ALL
   USING (
