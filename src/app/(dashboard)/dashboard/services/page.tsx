@@ -474,20 +474,35 @@ export default async function ServicesPage() {
   // /admin/plans, the values are stored as app_config rows with
   // category="plan_features:<key>". If a row exists, it should
   // override the hardcoded OWNER_TIERS defaults shown to the client.
-  const { data: planFeatureRows } = await supabase
+  // Steve 4/29: also pull plan_timing:<key> so admin can edit the
+  // "tiempo objetivo" string (e.g. "~16 days avg.") that is spliced
+  // into the first feature bullet.
+  const { data: planConfigRows } = await supabase
     .from("app_config")
     .select("category, key, value")
-    .like("category", "plan_features:%");
-  const planOverrides: Record<string, { tagline?: string; features?: string[] }> = {};
-  for (const row of planFeatureRows || []) {
-    const key = (row.category as string).replace("plan_features:", "");
-    if (!planOverrides[key]) planOverrides[key] = {};
-    if (row.key === "tagline") planOverrides[key].tagline = row.value as string;
-    if (row.key === "features") {
-      planOverrides[key].features = (row.value as string)
-        .split("\n")
-        .map((f) => f.trim())
-        .filter(Boolean);
+    .or("category.like.plan_features:%,category.like.plan_timing:%");
+  const planOverrides: Record<
+    string,
+    { tagline?: string; features?: string[]; timeToTenant?: string }
+  > = {};
+  for (const row of planConfigRows || []) {
+    const cat = row.category as string;
+    if (cat.startsWith("plan_features:")) {
+      const key = cat.replace("plan_features:", "");
+      if (!planOverrides[key]) planOverrides[key] = {};
+      if (row.key === "tagline") planOverrides[key].tagline = row.value as string;
+      if (row.key === "features") {
+        planOverrides[key].features = (row.value as string)
+          .split("\n")
+          .map((f) => f.trim())
+          .filter(Boolean);
+      }
+    } else if (cat.startsWith("plan_timing:")) {
+      const key = cat.replace("plan_timing:", "");
+      if (!planOverrides[key]) planOverrides[key] = {};
+      if (row.key === "time_to_tenant") {
+        planOverrides[key].timeToTenant = row.value as string;
+      }
     }
   }
   const tierToPlanKey: Record<string, string> = {
@@ -495,6 +510,14 @@ export default async function ServicesPage() {
     preferred_owners: "owner_preferred",
     elite: "owner_elite",
   };
+
+  // Splice the admin-editable timing string into the marketing-campaign
+  // feature line so changing it in /admin/plans (Tiempo objetivo) is
+  // reflected on the user's services view.
+  function applyTimingToFeatures(features: string[], timing: string | undefined): string[] {
+    if (!timing) return features;
+    return features.map((f) => f.replace(/\(~[^)]+\)/, `(${timing})`));
+  }
 
   // Filter services relevant to user role
   // Steve 4/28: services have tier-specific checklists. Pick the right one for
@@ -531,14 +554,14 @@ export default async function ServicesPage() {
     ? (() => {
         const planKey = tierToPlanKey[ownerTier as string];
         const override = planKey ? planOverrides[planKey] : undefined;
-        if (!override) return baseTier;
+        const featuresBase =
+          override?.features && override.features.length > 0
+            ? override.features
+            : baseTier.features;
         return {
           ...baseTier,
-          tagline: override.tagline ?? baseTier.tagline,
-          features:
-            override.features && override.features.length > 0
-              ? override.features
-              : baseTier.features,
+          tagline: override?.tagline ?? baseTier.tagline,
+          features: applyTimingToFeatures(featuresBase, override?.timeToTenant),
         };
       })()
     : null;
