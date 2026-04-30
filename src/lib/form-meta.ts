@@ -18,8 +18,10 @@ const cache: Record<string, FieldMetaMap> = {};
 const inflight: Record<string, Promise<FieldMetaMap>> = {};
 
 async function fetchFormMeta(formSlug: string): Promise<FieldMetaMap> {
-  if (cache[formSlug]) return cache[formSlug];
-  if (inflight[formSlug]) return inflight[formSlug];
+  const cached = cache[formSlug];
+  if (cached) return cached;
+  const pending = inflight[formSlug];
+  if (pending) return pending;
 
   const supabase = createClient();
   inflight[formSlug] = (async () => {

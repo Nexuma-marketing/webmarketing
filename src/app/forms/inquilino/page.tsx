@@ -812,7 +812,7 @@ export default function TenantFormPage() {
                     {errors.max_budget && (
                       <p className="text-sm text-destructive">{errors.max_budget.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
