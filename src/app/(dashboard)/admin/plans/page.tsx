@@ -20,48 +20,79 @@ import { Crown, Save } from "lucide-react";
 // Elite Assets / Investor portfolios (Essentials / Signature / Lujo) / PYMES Rescue /
 // Growth / Scale. Stored as app_config rows with category="plan_features:<key>" so
 // admin can edit them without redeploying.
-const PLANS: { key: string; label: string; defaultTagline: string; defaultFeatures: string[]; color: string }[] = [
+//
+// Steve 4/29: defaults below mirror EXACTLY what the user sees on /dashboard/services
+// (Marketing campaign per property until tenant found …) so an admin opening this
+// page for the first time sees the live copy and their edits replace it 1:1.
+// `supportsTiming` adds a "Tiempo objetivo" field that maps to plan_timing:<key>
+// — Steve 4/29 #9 ("no vi donde cambiar esto").
+const PLANS: {
+  key: string;
+  label: string;
+  defaultTagline: string;
+  defaultFeatures: string[];
+  color: string;
+  supportsTiming?: boolean;
+  defaultTiming?: string;
+}[] = [
   {
     key: "owner_basic",
     label: "Owner — Basic",
-    defaultTagline: "Essential property management for single-property owners",
+    defaultTagline: "Marketing that maximizes your profitability — your property, your money",
     defaultFeatures: [
-      "Professional property listing",
-      "Tenant screening & matching",
-      "Basic photography guidance",
-      "Standard listing optimization",
-      "Email support",
+      "Marketing campaign per property until tenant found (~16 days avg.)",
+      "Client-uploaded photos with validation",
+      "Visual recommendations prior to listing",
+      "Unit verification (on-site visit)",
+      "Tenant credit screening",
+      "RTB-1 (BC) contract drafting & signing",
     ],
     color: "border-blue-200",
+    supportsTiming: true,
+    defaultTiming: "~16 days avg.",
   },
   {
     key: "owner_preferred",
     label: "Owner — Preferred Owners",
-    defaultTagline: "Enhanced services for growing property portfolios",
+    defaultTagline: "Enhanced services for growing property portfolios (2–3 properties)",
     defaultFeatures: [
-      "Everything in Basic, plus:",
-      "Professional photography session",
-      "Priority tenant matching",
-      "Multi-property dashboard",
-      "Market analysis reports",
-      "Priority email & chat support",
+      "Marketing campaign per property until tenant found (~15 days avg.)",
+      "Client-uploaded photos",
+      "Weekly interested-parties report",
+      "Priority credit analysis of best applicants",
+      "Full credit screening of tenants",
+      "Unit handover with inventory checklist",
+      "RTB-1 (BC) contract drafting & signing",
     ],
     color: "border-emerald-200",
+    supportsTiming: true,
+    defaultTiming: "~15 days avg.",
   },
   {
     key: "owner_elite",
     label: "Owner — Elite Assets & Legacy",
-    defaultTagline: "Full-service management for investment portfolios",
+    defaultTagline: "Full-service management for investment portfolios (4+ properties)",
     defaultFeatures: [
-      "Everything in Preferred, plus:",
-      "Dedicated account manager",
-      "Premium photography & virtual tours",
-      "Revenue optimization strategy",
-      "Legal compliance review",
-      "Quarterly portfolio analysis",
-      "Concierge-level support",
+      "Targeted marketing campaign per property (~15 days avg.)",
+      "Professional 3D photography & virtual tour",
+      "Interior design recommendations",
+      "360° tenant verification (credit + behavioral references)",
+      "Priority search positioning",
+      "On-site unit verification & showing",
+      "Handover with detailed checklist",
+      "RTB-1 (BC) contract drafting & signing",
+      "Free rent price optimization",
+      "Free event packages (concerts, sports, seasonal)",
+      "KPI performance report per property",
+      "Local vendor alliances for repairs & maintenance",
+      "Premium portal listing + targeted campaigns",
+      "Expansion & wealth growth analysis",
+      "Premium tenant welcome program",
+      "Satisfaction surveys to reduce turnover",
     ],
     color: "border-amber-200",
+    supportsTiming: true,
+    defaultTiming: "~15 days avg.",
   },
   {
     key: "investor_essentials",
@@ -101,7 +132,7 @@ const PLANS: { key: string; label: string; defaultTagline: string; defaultFeatur
   {
     key: "pymes_rescue",
     label: "PYMES — Rescue",
-    defaultTagline: "Intensive intervention plan to exit critical mode",
+    defaultTagline: "Intensive intervention plan to exit critical mode and move to growth",
     defaultFeatures: [
       "Complete business diagnosis & sales leak analysis",
       "Digital presence emergency recovery",
@@ -115,7 +146,7 @@ const PLANS: { key: string; label: string; defaultTagline: string; defaultFeatur
   {
     key: "pymes_growth",
     label: "PYMES — Growth",
-    defaultTagline: "Plan to overcome stagnation and start growing",
+    defaultTagline: "Plan to overcome stagnation, correct weaknesses and start growing",
     defaultFeatures: [
       "Complete business diagnosis & sales leak analysis",
       "Marketing strategy development & execution",
@@ -130,7 +161,7 @@ const PLANS: { key: string; label: string; defaultTagline: string; defaultFeatur
   {
     key: "pymes_scale",
     label: "PYMES — Scale",
-    defaultTagline: "Plan to scale and maximize revenue",
+    defaultTagline: "Plan to scale and maximize revenue with advanced strategies",
     defaultFeatures: [
       "Complete business diagnosis & sales leak analysis",
       "Advanced multi-channel optimization",
@@ -146,6 +177,7 @@ const PLANS: { key: string; label: string; defaultTagline: string; defaultFeatur
 interface PlanState {
   tagline: string;
   features: string;
+  timing: string;
 }
 
 export default function AdminPlansPage() {
@@ -161,16 +193,19 @@ export default function AdminPlansPage() {
     const { data } = await supabase
       .from("app_config")
       .select("category, key, value")
-      .like("category", "plan_features:%");
+      .or("category.like.plan_features:%,category.like.plan_timing:%");
 
     const next: Record<string, PlanState> = {};
     for (const plan of PLANS) {
-      const cat = `plan_features:${plan.key}`;
-      const tagline = data?.find((r) => r.category === cat && r.key === "tagline")?.value;
-      const features = data?.find((r) => r.category === cat && r.key === "features")?.value;
+      const featCat = `plan_features:${plan.key}`;
+      const timeCat = `plan_timing:${plan.key}`;
+      const tagline = data?.find((r) => r.category === featCat && r.key === "tagline")?.value;
+      const features = data?.find((r) => r.category === featCat && r.key === "features")?.value;
+      const timing = data?.find((r) => r.category === timeCat && r.key === "time_to_tenant")?.value;
       next[plan.key] = {
         tagline: tagline ?? plan.defaultTagline,
         features: features ?? plan.defaultFeatures.join("\n"),
+        timing: timing ?? plan.defaultTiming ?? "",
       };
     }
 
@@ -186,11 +221,20 @@ export default function AdminPlansPage() {
   async function savePlan(key: string) {
     setSavingKey(key);
     setMessage(null);
-    const cat = `plan_features:${key}`;
-    const rows = [
-      { category: cat, key: "tagline", value: state[key].tagline },
-      { category: cat, key: "features", value: state[key].features },
+    const featCat = `plan_features:${key}`;
+    const timeCat = `plan_timing:${key}`;
+    const plan = PLANS.find((p) => p.key === key);
+    const rows: { category: string; key: string; value: string }[] = [
+      { category: featCat, key: "tagline", value: state[key].tagline },
+      { category: featCat, key: "features", value: state[key].features },
     ];
+    if (plan?.supportsTiming) {
+      rows.push({
+        category: timeCat,
+        key: "time_to_tenant",
+        value: state[key].timing,
+      });
+    }
     const { error } = await supabase
       .from("app_config")
       .upsert(rows, { onConflict: "category,key" });
@@ -200,7 +244,7 @@ export default function AdminPlansPage() {
       return;
     }
     setOriginalState({ ...originalState, [key]: { ...state[key] } });
-    setMessage(`Saved ${PLANS.find((p) => p.key === key)?.label || key}`);
+    setMessage(`Saved ${plan?.label || key}`);
     setTimeout(() => setMessage(null), 3000);
   }
 
@@ -211,7 +255,8 @@ export default function AdminPlansPage() {
   function isDirty(key: string) {
     return (
       state[key]?.tagline !== originalState[key]?.tagline ||
-      state[key]?.features !== originalState[key]?.features
+      state[key]?.features !== originalState[key]?.features ||
+      state[key]?.timing !== originalState[key]?.timing
     );
   }
 
@@ -263,6 +308,23 @@ export default function AdminPlansPage() {
                   className="font-mono text-xs"
                 />
               </div>
+              {plan.supportsTiming && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Tiempo objetivo (e.g., &ldquo;~16 days avg.&rdquo;)
+                  </Label>
+                  <Input
+                    value={state[plan.key]?.timing || ""}
+                    onChange={(e) => update(plan.key, "timing", e.target.value)}
+                    placeholder="~15 days avg."
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Replaces the parenthesized timing in the &ldquo;Marketing
+                    campaign per property until tenant found&rdquo; bullet shown to
+                    clients.
+                  </p>
+                </div>
+              )}
               {isDirty(plan.key) && (
                 <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
                   Unsaved changes
