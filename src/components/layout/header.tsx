@@ -19,9 +19,11 @@ import type { UserRole } from "@/types/database";
 export function DashboardHeader({
   userName,
   role,
+  brandName = "WebMarketing",
 }: {
   userName: string;
   role: UserRole;
+  brandName?: string;
 }) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -53,7 +55,7 @@ export function DashboardHeader({
             <SheetContent side="left" className="w-72 p-0">
               <SheetHeader className="border-b px-4 py-3">
                 <SheetTitle className="text-left text-base">
-                  WebMarketing
+                  {brandName}
                 </SheetTitle>
               </SheetHeader>
               <div className="overflow-y-auto">
@@ -63,7 +65,7 @@ export function DashboardHeader({
           </Sheet>
 
           <Link href="/dashboard" className="text-base font-bold md:text-lg">
-            WebMarketing
+            {brandName}
           </Link>
         </div>
 

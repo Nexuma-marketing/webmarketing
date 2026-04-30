@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
+import { createClient } from "@/lib/supabase/server";
+import { buildBranding } from "@/lib/branding";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,10 +15,30 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "WebMarketing - Residential & Business Marketing",
-  description: "Residential and business marketing platform. We connect property owners, tenants, and businesses with the marketing services they need.",
-};
+// Steve 4/29 #13: site title is admin-editable from /admin/content (Site
+// Branding section). Falls back to defaults if site_content is empty or
+// the DB is unreachable during build.
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("site_content")
+      .select("key, value")
+      .eq("section", "branding");
+    const branding = buildBranding(data);
+    return {
+      title: `${branding.name} - ${branding.tagline}`,
+      description:
+        "Residential and business marketing platform. We connect property owners, tenants, and businesses with the marketing services they need.",
+    };
+  } catch {
+    return {
+      title: "WebMarketing - Residential & Business Marketing",
+      description:
+        "Residential and business marketing platform. We connect property owners, tenants, and businesses with the marketing services they need.",
+    };
+  }
+}
 
 export default function RootLayout({
   children,

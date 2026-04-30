@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { buildBranding } from "@/lib/branding";
 import {
   Building2,
   Users,
@@ -140,12 +141,14 @@ export default async function HomePage({
   const { data: contentRows } = await supabase
     .from("site_content")
     .select("section, key, value")
-    .in("section", ["testimonials", "faq"]);
+    .in("section", ["testimonials", "faq", "branding"]);
 
   const testimonialRows = (contentRows || []).filter((r) => r.section === "testimonials");
   const faqRows = (contentRows || []).filter((r) => r.section === "faq");
+  const brandRows = (contentRows || []).filter((r) => r.section === "branding");
   const testimonials = buildTestimonials(testimonialRows);
   const faqs = buildFaqs(faqRows);
+  const branding = buildBranding(brandRows);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -157,7 +160,7 @@ export default async function HomePage({
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
-              WebMarketing
+              {branding.name}
             </span>
           </div>
           <nav className="hidden items-center gap-6 md:flex">
