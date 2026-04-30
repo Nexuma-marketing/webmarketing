@@ -40,6 +40,16 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   {
+    value: "branding",
+    label: "Site Branding (name, tagline)",
+    hint: "Change the site name (header text & browser tab) and tagline. Saves apply on next page load.",
+    starter: [
+      { key: "site_brand_name", value: "WebMarketing", helper: "Shown in the header and browser tab." },
+      { key: "site_short_name", value: "WebMarketing", helper: "Used as a fallback when the full name is too long (mobile menu)." },
+      { key: "site_tagline", value: "Residential & Business Marketing", helper: "Shown next to the site name in <title> on the homepage." },
+    ],
+  },
+  {
     value: "landing_hero",
     label: "Landing Page - Hero",
     hint: "Headline and subtitle shown at the very top of the home page.",
