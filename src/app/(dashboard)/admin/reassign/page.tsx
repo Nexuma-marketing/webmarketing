@@ -163,6 +163,12 @@ export default function AdminReassignPage() {
     );
   });
 
+  // Steve 4/29 #9: split plans (Founder Package, Essentials, Signature, etc.)
+  // from individual services so admin can assign whole plans, not only single
+  // services. Plan rows use category="plan" by convention.
+  const planOptions = services.filter((s) => s.category === "plan");
+  const individualServices = services.filter((s) => s.category !== "plan");
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -282,7 +288,22 @@ export default function AdminReassignPage() {
                             <SelectValue placeholder="Swap to..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {services.map((s) => (
+                            {planOptions.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase">
+                                  Plans
+                                </div>
+                                {planOptions.map((s) => (
+                                  <SelectItem key={s.id} value={s.id}>
+                                    {s.name}
+                                  </SelectItem>
+                                ))}
+                                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-t mt-1">
+                                  Individual services
+                                </div>
+                              </>
+                            )}
+                            {individualServices.map((s) => (
                               <SelectItem key={s.id} value={s.id}>
                                 {s.name}
                               </SelectItem>
@@ -314,10 +335,25 @@ export default function AdminReassignPage() {
                         onValueChange={(v) => v && setNewServiceId(v)}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Pick a service..." />
+                          <SelectValue placeholder="Pick a plan or service..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {services.map((s) => (
+                          {planOptions.length > 0 && (
+                            <>
+                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase">
+                                Plans (Founder, Essentials, Signature, …)
+                              </div>
+                              {planOptions.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.name} · ${s.price.toLocaleString()} {s.currency}
+                                </SelectItem>
+                              ))}
+                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-t mt-1">
+                                Individual services
+                              </div>
+                            </>
+                          )}
+                          {individualServices.map((s) => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.name} · ${s.price.toLocaleString()} {s.currency}
                             </SelectItem>
