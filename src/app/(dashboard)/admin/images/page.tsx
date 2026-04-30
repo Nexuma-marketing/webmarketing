@@ -27,7 +27,7 @@ interface ImageRow {
   image_url: string;
   room_category: string;
   status: string;
-  created_at: string;
+  uploaded_at: string;
   properties?: {
     id: string;
     address: string;
@@ -60,10 +60,13 @@ export default function AdminImagesPage() {
   const supabase = createClient();
 
   const load = useCallback(async () => {
+    // Steve 4/29: column is `uploaded_at`, not `created_at`. The previous query
+    // errored out silently and the page rendered "no images" even when uploads
+    // existed.
     const { data: imageData } = await supabase
       .from("property_images")
-      .select("id, property_id, image_url, room_category, status, created_at, properties:property_id(id, address, city, owner_id)")
-      .order("created_at", { ascending: false })
+      .select("id, property_id, image_url, room_category, status, uploaded_at, properties:property_id(id, address, city, owner_id)")
+      .order("uploaded_at", { ascending: false })
       .limit(500);
 
     const list = (imageData as unknown as ImageRow[]) || [];
