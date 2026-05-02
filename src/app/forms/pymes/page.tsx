@@ -872,15 +872,24 @@ export default function PymesCalculatorPage() {
               </div>
             )}
 
-            {/* Steps 2-8: Diagnostic Questions */}
-            {currentQuestion && (
+            {/* Steps 2-8: Diagnostic Questions
+                Steve 4/30 #10: question text + helper come from
+                form_questions when admin has edited them in /admin/forms
+                (slug "pymes_diagnosis"). Falls back to the hardcoded
+                copy otherwise. */}
+            {currentQuestion && (() => {
+              const display = fieldDisplay(fieldMeta, currentQuestion.field, {
+                label: currentQuestion.question,
+                helper: currentQuestion.helpText,
+              });
+              return (
               <div className="space-y-4">
                 <div className="rounded-lg border bg-muted/30 p-4">
                   <p className="text-base font-medium">
-                    {currentQuestion.question}
+                    {display.label}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {currentQuestion.helpText}
+                    {display.helper}
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -909,7 +918,8 @@ export default function PymesCalculatorPage() {
                   })}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* Step 9: Review - PDF 5.1.1.1 format (#26) */}
             {step === 9 && (
