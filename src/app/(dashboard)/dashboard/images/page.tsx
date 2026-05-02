@@ -111,6 +111,22 @@ export default function ImagesPage() {
     setImages(data || []);
   }
 
+  // Steve 4/30 #9: room category check must accept the loose casing the
+  // legacy rows use ("bedroom" vs "Master Bedroom"). Compare lowercased
+  // tokens and treat any *bedroom* row as covering "Master Bedroom" too.
+  function hasPhotoForRoom(room: string): boolean {
+    const target = room.toLowerCase();
+    return images.some((i) => {
+      if (i.status === "rejected") return false;
+      const cat = (i.room_category || "").toLowerCase();
+      if (cat === target) return true;
+      // Tolerate "bedroom" / "master bedroom" / "bedroom 2" all matching
+      // Master Bedroom for the required-rooms checklist.
+      if (target === "master bedroom" && cat.includes("bedroom")) return true;
+      return false;
+    });
+  }
+
   function validateImageFile(file: File): Promise<{
     ok: boolean;
     quality: "high" | "acceptable" | "low";
@@ -369,15 +385,16 @@ export default function ImagesPage() {
           {selectedProperty && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Required Rooms ({REQUIRED_ROOMS.filter(r => images.some(i => i.room_category === r)).length}/{REQUIRED_ROOMS.length})</CardTitle>
+                <CardTitle className="text-base">Required Rooms ({REQUIRED_ROOMS.filter(hasPhotoForRoom).length}/{REQUIRED_ROOMS.length})</CardTitle>
                 <CardDescription>
-                  Upload at least 1 photo per required room to complete your listing
+                  Upload at least 1 photo per required room to complete your listing.
+                  Rejected photos do not count toward completion.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                   {REQUIRED_ROOMS.map((room) => {
-                    const hasPhoto = images.some(i => i.room_category === room);
+                    const hasPhoto = hasPhotoForRoom(room);
                     return (
                       <li key={room} className="flex items-center gap-2 text-sm">
                         {hasPhoto ? (
@@ -392,13 +409,13 @@ export default function ImagesPage() {
                     );
                   })}
                 </ul>
-                {REQUIRED_ROOMS.every(r => images.some(i => i.room_category === r)) ? (
+                {REQUIRED_ROOMS.every(hasPhotoForRoom) ? (
                   <p className="mt-3 text-sm font-medium text-green-600">
                     ✓ All required rooms have photos
                   </p>
                 ) : (
                   <p className="mt-3 text-sm text-red-500">
-                    Missing photos for: {REQUIRED_ROOMS.filter(r => !images.some(i => i.room_category === r)).join(", ")}
+                    Missing photos for: {REQUIRED_ROOMS.filter((r) => !hasPhotoForRoom(r)).join(", ")}
                   </p>
                 )}
               </CardContent>

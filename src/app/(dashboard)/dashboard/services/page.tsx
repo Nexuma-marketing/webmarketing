@@ -430,14 +430,17 @@ export default async function ServicesPage() {
     matchedProperties = (await matchPropertiesForTenant(user.id)) as MatchedProperty[];
   }
 
-  // Fetch ALL photos per matched property (Steve #2-3: show all photos per room)
+  // Fetch ALL photos per matched property (Steve #2-3: show all photos per room).
+  // Steve 4/30 #9: hide images that admin rejected — they should not be shown
+  // to tenants nor counted toward the property's listing.
   const matchedPropertyIds = matchedProperties.map((p) => p.id);
   const matchedImages: Record<string, { image_url: string; room_category: string }[]> = {};
   if (matchedPropertyIds.length > 0) {
     const { data: imgs } = await supabase
       .from("property_images")
-      .select("property_id, image_url, room_category, sort_order")
+      .select("property_id, image_url, room_category, sort_order, status")
       .in("property_id", matchedPropertyIds)
+      .neq("status", "rejected")
       .order("room_category")
       .order("sort_order", { ascending: true });
     if (imgs) {
@@ -583,13 +586,23 @@ export default async function ServicesPage() {
       })()
     : null;
 
-  // Determine the user's primary city for promotion targeting
-  const userCity =
-    profile.role === "pymes"
-      ? null
-      : profile.role.startsWith("inquilino")
-        ? null // tenants don't have a fixed city — could later infer from preferences
-        : null;
+  // Determine the user's primary city for promotion zone targeting.
+  // Steve 4/30 #12: zones in /admin/pricing → Promotions used to be ignored
+  // because we always passed null. Owners have a city via their property,
+  // tenants have one in their preferences, pymes leave it null.
+  let userCity: string | null = null;
+  if (isOwnerRole && ownerProperties.length > 0) {
+    userCity = ownerProperties[0].city || null;
+  } else if (isTenantRole) {
+    const { data: pref } = await supabase
+      .from("tenant_preferences")
+      .select("preferred_zones")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (pref?.preferred_zones && Array.isArray(pref.preferred_zones) && pref.preferred_zones.length > 0) {
+      userCity = pref.preferred_zones[0];
+    }
+  }
 
   return (
     <div className="space-y-6">
