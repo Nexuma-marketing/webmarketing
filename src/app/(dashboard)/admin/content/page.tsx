@@ -41,12 +41,15 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   {
     value: "branding",
-    label: "Site Branding (name, tagline)",
-    hint: "Change the site name (header text & browser tab) and tagline. Saves apply on next page load.",
+    label: "Site Branding (name, logo, cover)",
+    hint: "Change the site name, tagline, and homepage cover/logo image URLs. Saves apply on next page load. For new images, upload to your file host (Supabase Storage, S3, Imgur, etc.) and paste the public URL here.",
     starter: [
       { key: "site_brand_name", value: "WebMarketing", helper: "Shown in the header and browser tab." },
       { key: "site_short_name", value: "WebMarketing", helper: "Used as a fallback when the full name is too long (mobile menu)." },
       { key: "site_tagline", value: "Residential & Business Marketing", helper: "Shown next to the site name in <title> on the homepage." },
+      { key: "site_logo_url", value: "", helper: "Optional. Public URL of the company logo. Replaces the default Sparkles icon next to the brand name." },
+      { key: "site_cover_image_url", value: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80", helper: "Public URL of the homepage hero image (right side of the hero section)." },
+      { key: "site_favicon_url", value: "", helper: "Optional. Public URL of the favicon shown in browser tabs (32×32 PNG/SVG/ICO)." },
     ],
   },
   {

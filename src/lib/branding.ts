@@ -1,19 +1,25 @@
 // Steve 4/29 #13: brand name was hardcoded as "WebMarketing" in the header,
-// public homepage, and <title>. The user wanted to rename it to "Nexuma
-// Marketing" from the admin panel. We now read it from
-// `site_content` (section="branding"), with a hardcoded default fallback so
-// the app still renders if the table is empty or unreachable.
+// public homepage, and <title>. Steve 4/30: also expose logo + cover URLs
+// so the user can change the homepage hero image and add a real company
+// logo from /admin/content (Site Branding section).
 
 export interface SiteBranding {
   name: string;
   shortName: string;
   tagline: string;
+  logoUrl: string;
+  coverImageUrl: string;
+  faviconUrl: string;
 }
 
 const DEFAULT_BRANDING: SiteBranding = {
   name: "WebMarketing",
   shortName: "WebMarketing",
   tagline: "Residential & Business Marketing",
+  logoUrl: "",
+  coverImageUrl:
+    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80",
+  faviconUrl: "",
 };
 
 export function buildBranding(
@@ -28,6 +34,10 @@ export function buildBranding(
       map.site_brand_name?.trim() ||
       DEFAULT_BRANDING.shortName,
     tagline: map.site_tagline?.trim() || DEFAULT_BRANDING.tagline,
+    logoUrl: map.site_logo_url?.trim() || DEFAULT_BRANDING.logoUrl,
+    coverImageUrl:
+      map.site_cover_image_url?.trim() || DEFAULT_BRANDING.coverImageUrl,
+    faviconUrl: map.site_favicon_url?.trim() || DEFAULT_BRANDING.faviconUrl,
   };
 }
 

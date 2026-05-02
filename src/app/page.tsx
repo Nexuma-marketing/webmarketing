@@ -156,9 +156,18 @@ export default async function HomePage({
       <header className="fixed top-0 z-50 w-full border-b border-primary/10 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
+            {branding.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={branding.logoUrl}
+                alt={`${branding.name} logo`}
+                className="h-8 w-8 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+                <Sparkles className="h-4 w-4 text-primary-foreground" />
+              </div>
+            )}
             <span className="text-lg font-semibold tracking-tight">
               {branding.name}
             </span>
@@ -282,16 +291,17 @@ export default async function HomePage({
             </div>
           </div>
 
-          {/* Right: Hero image */}
+          {/* Right: Hero image — admin-editable from /admin/content (Site Branding → site_cover_image_url) */}
           <div className="relative mx-auto w-full max-w-md md:max-w-none">
             <div className="relative aspect-[4/5] overflow-hidden rounded-3xl shadow-2xl shadow-primary/10">
               <Image
-                src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=1000&fit=crop&crop=center"
-                alt="Modern luxury property in British Columbia"
+                src={branding.coverImageUrl}
+                alt="Homepage cover"
                 fill
                 className="object-cover"
                 priority
                 sizes="(max-width: 768px) 100vw, 50vw"
+                unoptimized
               />
               <div className="absolute inset-0 bg-gradient-to-t from-primary/20 via-transparent to-transparent" />
             </div>
@@ -963,6 +973,23 @@ export default async function HomePage({
                 placeholder="email@example.com"
                 className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="contact_role" className="text-sm font-medium">
+                I am a…
+              </label>
+              <select
+                id="contact_role"
+                name="role"
+                defaultValue=""
+                className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="propietario">Property owner</option>
+                <option value="inversionista">Investor (4+ properties)</option>
+                <option value="inquilino">Tenant looking for a property</option>
+                <option value="pymes">Business owner (SMB)</option>
+              </select>
             </div>
             <div className="space-y-2">
               <label htmlFor="contact_subject" className="text-sm font-medium">
