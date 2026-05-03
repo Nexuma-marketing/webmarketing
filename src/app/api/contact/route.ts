@@ -15,12 +15,15 @@ const ALLOWED_ROLES = new Set([
 // so the Pymes / Owner / Tenant role filter excluded them. The form now
 // passes a `role` field; this helper falls back to a keyword scan over the
 // subject so older flows still classify reasonably.
+// Steve 5/2: extended Spanish coverage. "inversionista" / "comercial"
+// were slipping through because the prior \binversion\b boundary
+// rejected the Spanish noun and "comercial" had no mapping at all.
 function inferRoleFromSubject(subject: string): string | null {
   const s = subject.toLowerCase();
-  if (/\btenant\b|\binquilino\b|rent a |apartment/.test(s)) return "inquilino";
-  if (/\blandlord\b|\bpropietario\b|my property|my unit/.test(s)) return "propietario";
-  if (/\bbusiness\b|\bempresa\b|\bpyme\b|small business|my company/.test(s)) return "pymes";
-  if (/\binvestor\b|\binversion\b|portfolio/.test(s)) return "inversionista";
+  if (/\btenant\b|\binquilino\b|rent a |apartment|arrend/.test(s)) return "inquilino";
+  if (/\blandlord\b|\bpropietario\b|my property|my unit|propiedad/.test(s)) return "propietario";
+  if (/\bbusiness\b|\bempresa\b|\bpyme\b|\bcomercial\b|small business|my company|negocio|comercio/.test(s)) return "pymes";
+  if (/\binvestor\b|\binversion|portfolio|\binversor\b|portafolio/.test(s)) return "inversionista";
   return null;
 }
 

@@ -357,21 +357,28 @@ WHERE role IS NULL;
 -- "Schedule" / contact button save no role), but the subject often
 -- mentions tenant / owner / business / property — useful enough to
 -- reduce the "no role" count without false positives.
+-- Steve 5/2: added Spanish "comercial" / "inversionista" / "negocio"
+-- which were leaking through the previous English-leaning patterns.
 UPDATE leads
 SET role = CASE
   WHEN role IS NOT NULL THEN role
   WHEN notes ILIKE '%inquilino%' OR notes ILIKE '%tenant%'
        OR notes ILIKE '%apartment%' OR notes ILIKE '%rent a%'
+       OR notes ILIKE '%arrend%'
     THEN 'inquilino'
   WHEN notes ILIKE '%propietario%' OR notes ILIKE '%landlord%'
        OR notes ILIKE '%my property%' OR notes ILIKE '%my unit%'
+       OR notes ILIKE '%propiedad%'
     THEN 'propietario'
   WHEN notes ILIKE '%empresa%' OR notes ILIKE '%business%'
        OR notes ILIKE '%pyme%' OR notes ILIKE '%my company%'
        OR notes ILIKE '%small business%'
+       OR notes ILIKE '%comercial%' OR notes ILIKE '%negocio%'
+       OR notes ILIKE '%comercio%'
     THEN 'pymes'
   WHEN notes ILIKE '%inversion%' OR notes ILIKE '%investor%'
-       OR notes ILIKE '%portfolio%'
+       OR notes ILIKE '%portfolio%' OR notes ILIKE '%inversor%'
+       OR notes ILIKE '%portafolio%'
     THEN 'inversionista'
   ELSE role
 END
