@@ -1,95 +1,183 @@
 -- ============================================================
--- Diagnostic — Run this in Supabase SQL Editor.
--- Tells us EXACTLY which v11/v12/v13 changes actually landed.
--- Read-only. Each query prints a count or sample.
+-- Diagnostic — Run in Supabase SQL Editor.
+-- Returns ONE result table (15 rows) so every check is visible.
+-- Read-only, safe to re-run.
+-- ============================================================
+-- Each row has:
+--   check    : human-readable name of what we're verifying
+--   status   : ✓ OK / ❌ MISSING / ⚠️ PARTIAL / ℹ️ INFO
+--   details  : counts, lists, or sample text
 -- ============================================================
 
--- 1. Founders counter rows (need 2: taken + limit)
-SELECT 'app_config founders_plan' AS check_name,
-       COUNT(*) AS row_count,
-       string_agg(key || '=' || value, ', ') AS values
-FROM app_config WHERE category = 'founders_plan';
-
--- 2. plan_features:* — should be 6 rows (3 owner tiers × tagline+features)
-SELECT 'app_config plan_features' AS check_name,
-       COUNT(*) AS row_count,
-       string_agg(DISTINCT category, ', ') AS categories
-FROM app_config WHERE category LIKE 'plan_features:%';
-
--- 3. plan_timing:* — should be 3 rows
-SELECT 'app_config plan_timing' AS check_name,
-       COUNT(*) AS row_count,
-       string_agg(category || '.' || key || '=' || value, ' | ') AS values
-FROM app_config WHERE category LIKE 'plan_timing:%';
-
--- 4. RLS policies on app_config — must include "Public read app_config"
-SELECT 'app_config RLS policies' AS check_name,
-       string_agg(policyname, ', ') AS policies
-FROM pg_policies WHERE tablename = 'app_config';
-
--- 5. Plan-level services rows — should be 9
-SELECT 'plan-level services' AS check_name,
-       COUNT(*) AS row_count,
-       string_agg(name, ' | ') AS names
-FROM services WHERE category = 'plan';
-
--- 6. Empresas forms — should include lead_sales_calculator + business_acquisition
-SELECT 'forms_dynamic' AS check_name,
-       string_agg(slug, ', ' ORDER BY slug) AS slugs
-FROM forms_dynamic;
-
--- 7. PYMES form questions count (should be 10 with v12: business_name, sector,
---    monthly_revenue + 7 Likert q1..q7)
-SELECT 'pymes_diagnosis questions' AS check_name,
-       COUNT(*) AS question_count,
-       string_agg(field_key, ', ' ORDER BY position) AS fields
-FROM form_questions
-WHERE form_id = (SELECT id FROM forms_dynamic WHERE slug = 'pymes_diagnosis');
-
--- 8. lead_sales_calculator + business_acquisition question counts
-SELECT slug, COUNT(fq.id) AS question_count
-FROM forms_dynamic fd
-LEFT JOIN form_questions fq ON fq.form_id = fd.id
-WHERE fd.slug IN ('lead_sales_calculator', 'business_acquisition')
-GROUP BY slug;
-
--- 9. Legal documents — content length per type
-SELECT 'legal_documents' AS check_name,
-       type,
-       length(content) AS content_length,
-       CASE WHEN content ILIKE '%goes here%' THEN 'STILL PLACEHOLDER ❌'
-            WHEN length(content) < 200 THEN 'TOO SHORT ⚠️'
-            ELSE 'OK ✓' END AS status
-FROM legal_documents ORDER BY type;
-
--- 10. consent_logs RLS policies — must include "Admins can view all consent_logs"
-SELECT 'consent_logs RLS policies' AS check_name,
-       string_agg(policyname, ', ') AS policies
-FROM pg_policies WHERE tablename = 'consent_logs';
-
--- 11. site_content branding rows — should include logo/cover/favicon URLs
-SELECT 'site_content branding' AS check_name,
-       string_agg(key || '=' || left(value, 30), ' | ') AS keys
-FROM site_content WHERE section = 'branding';
-
--- 12. Leads with NULL role (should be 0 after backfill)
-SELECT 'leads.role NULL count' AS check_name,
-       COUNT(*) FILTER (WHERE role IS NULL) AS null_count,
-       COUNT(*) AS total_count
-FROM leads;
-
--- 13. Sample of remaining NULL-role leads with notes (to see what's not caught)
-SELECT 'remaining NULL-role leads' AS check_name,
-       full_name, source, left(notes, 80) AS notes_preview
-FROM leads WHERE role IS NULL ORDER BY created_at DESC LIMIT 5;
-
--- 14. property_images: how many rows + which room_category values exist
-SELECT 'property_images' AS check_name,
-       COUNT(*) AS image_count,
-       string_agg(DISTINCT room_category, ', ' ORDER BY room_category) AS distinct_rooms
-FROM property_images;
-
--- 15. property_images RLS — Anyone can SELECT (for owner gallery to work)
-SELECT 'property_images RLS' AS check_name,
-       string_agg(policyname, ', ') AS policies
-FROM pg_policies WHERE tablename = 'property_images';
+WITH
+-- 1. Founders counter (need 2 rows: taken + limit)
+q1 AS (
+  SELECT 1 AS sort,
+         '01. app_config founders_plan' AS check,
+         CASE WHEN COUNT(*) >= 2 THEN '✓ OK' ELSE '❌ MISSING' END AS status,
+         COALESCE(string_agg(key || '=' || value, ', '), '(no rows)') AS details
+  FROM app_config WHERE category = 'founders_plan'
+),
+-- 2. plan_features:* (need 6 rows)
+q2 AS (
+  SELECT 2, '02. app_config plan_features (need >=6)',
+         CASE WHEN COUNT(*) >= 6 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' rows; categories: ' ||
+           COALESCE(string_agg(DISTINCT category, ', '), '(none)')
+  FROM app_config WHERE category LIKE 'plan_features:%'
+),
+-- 3. plan_timing:* (need 3 rows)
+q3 AS (
+  SELECT 3, '03. app_config plan_timing (need 3)',
+         CASE WHEN COUNT(*) >= 3 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' rows: ' ||
+           COALESCE(string_agg(category || '=' || value, ' | '), '(none)')
+  FROM app_config WHERE category LIKE 'plan_timing:%'
+),
+-- 4. RLS policy "Public read app_config"
+q4 AS (
+  SELECT 4, '04. app_config RLS public-read policy',
+         CASE WHEN bool_or(policyname = 'Public read app_config'
+                       OR policyname = 'Authenticated can read public app_config')
+              THEN '✓ OK' ELSE '❌ MISSING' END,
+         COALESCE(string_agg(policyname, ', '), '(no policies)')
+  FROM pg_policies WHERE tablename = 'app_config'
+),
+-- 5. plan-level services (need 9)
+q5 AS (
+  SELECT 5, '05. plan-level services rows (need 9)',
+         CASE WHEN COUNT(*) >= 9 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' rows; names: ' ||
+           COALESCE(string_agg(name, ' | '), '(none)')
+  FROM services WHERE category = 'plan'
+),
+-- 6. forms_dynamic (must include lead_sales_calculator + business_acquisition)
+q6 AS (
+  SELECT 6, '06. forms_dynamic includes empresas forms',
+         CASE WHEN bool_or(slug = 'lead_sales_calculator')
+                  AND bool_or(slug = 'business_acquisition') THEN '✓ OK'
+              WHEN bool_or(slug = 'lead_sales_calculator')
+                  OR bool_or(slug = 'business_acquisition') THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         'slugs: ' || COALESCE(string_agg(slug, ', ' ORDER BY slug), '(empty)')
+  FROM forms_dynamic
+),
+-- 7. pymes_diagnosis questions (need 10 with q1..q7)
+q7 AS (
+  SELECT 7, '07. pymes_diagnosis questions (need 10)',
+         CASE WHEN COUNT(*) = 10 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' questions; fields: ' ||
+           COALESCE(string_agg(field_key, ', ' ORDER BY position), '(none)')
+  FROM form_questions
+  WHERE form_id = (SELECT id FROM forms_dynamic WHERE slug = 'pymes_diagnosis')
+),
+-- 8. lead_sales_calculator question count
+q8 AS (
+  SELECT 8, '08. lead_sales_calculator questions',
+         CASE WHEN COUNT(*) >= 7 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' questions'
+  FROM form_questions
+  WHERE form_id = (SELECT id FROM forms_dynamic WHERE slug = 'lead_sales_calculator')
+),
+-- 9. business_acquisition question count
+q9 AS (
+  SELECT 9, '09. business_acquisition questions',
+         CASE WHEN COUNT(*) >= 5 THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' questions'
+  FROM form_questions
+  WHERE form_id = (SELECT id FROM forms_dynamic WHERE slug = 'business_acquisition')
+),
+-- 10. Legal docs status (privacy_policy)
+q10 AS (
+  SELECT 10, '10. legal_documents privacy_policy',
+         CASE WHEN content IS NULL THEN '❌ MISSING'
+              WHEN content ILIKE '%goes here%' THEN '❌ STILL PLACEHOLDER'
+              WHEN length(content) < 200 THEN '⚠️ TOO SHORT'
+              ELSE '✓ OK' END,
+         'length=' || length(COALESCE(content,'')) || '; preview: ' || left(content, 60)
+  FROM legal_documents WHERE type = 'privacy_policy'
+  UNION ALL
+  SELECT 10, '10. legal_documents privacy_policy', '❌ MISSING', '(no row)'
+  WHERE NOT EXISTS (SELECT 1 FROM legal_documents WHERE type = 'privacy_policy')
+),
+-- 11. Legal docs status (terms_of_service)
+q11 AS (
+  SELECT 11, '11. legal_documents terms_of_service',
+         CASE WHEN content IS NULL THEN '❌ MISSING'
+              WHEN content ILIKE '%goes here%' THEN '❌ STILL PLACEHOLDER'
+              WHEN length(content) < 200 THEN '⚠️ TOO SHORT'
+              ELSE '✓ OK' END,
+         'length=' || length(COALESCE(content,'')) || '; preview: ' || left(content, 60)
+  FROM legal_documents WHERE type = 'terms_of_service'
+  UNION ALL
+  SELECT 11, '11. legal_documents terms_of_service', '❌ MISSING', '(no row)'
+  WHERE NOT EXISTS (SELECT 1 FROM legal_documents WHERE type = 'terms_of_service')
+),
+-- 12. consent_logs RLS admin policy
+q12 AS (
+  SELECT 12, '12. consent_logs admin SELECT policy',
+         CASE WHEN bool_or(policyname = 'Admins can view all consent_logs')
+              THEN '✓ OK' ELSE '❌ MISSING' END,
+         COALESCE(string_agg(policyname, ', '), '(no policies)')
+  FROM pg_policies WHERE tablename = 'consent_logs'
+),
+-- 13. site_content branding rows
+q13 AS (
+  SELECT 13, '13. site_content branding (logo+cover+name)',
+         CASE WHEN bool_or(key = 'site_brand_name')
+                  AND bool_or(key = 'site_cover_image_url') THEN '✓ OK'
+              WHEN COUNT(*) > 0 THEN '⚠️ PARTIAL'
+              ELSE '❌ MISSING' END,
+         COUNT(*)::text || ' keys: ' ||
+           COALESCE(string_agg(key, ', '), '(none)')
+  FROM site_content WHERE section = 'branding'
+),
+-- 14. leads.role NULL count
+q14 AS (
+  SELECT 14, '14. leads.role NULL count (want 0)',
+         CASE WHEN COUNT(*) FILTER (WHERE role IS NULL) = 0 THEN '✓ OK'
+              ELSE '⚠️ ' || COUNT(*) FILTER (WHERE role IS NULL)::text || ' rows still NULL'
+         END,
+         'total leads=' || COUNT(*)::text ||
+           ', NULL=' || COUNT(*) FILTER (WHERE role IS NULL)::text
+  FROM leads
+),
+-- 15. property_images count and distinct rooms
+q15 AS (
+  SELECT 15, '15. property_images',
+         CASE WHEN COUNT(*) > 0 THEN 'ℹ️ INFO' ELSE '❌ EMPTY' END,
+         COUNT(*)::text || ' images; rooms: ' ||
+           COALESCE(string_agg(DISTINCT room_category, ', ' ORDER BY room_category), '(none)')
+  FROM property_images
+)
+SELECT check, status, details
+FROM (
+  SELECT * FROM q1 UNION ALL
+  SELECT * FROM q2 UNION ALL
+  SELECT * FROM q3 UNION ALL
+  SELECT * FROM q4 UNION ALL
+  SELECT * FROM q5 UNION ALL
+  SELECT * FROM q6 UNION ALL
+  SELECT * FROM q7 UNION ALL
+  SELECT * FROM q8 UNION ALL
+  SELECT * FROM q9 UNION ALL
+  SELECT * FROM q10 UNION ALL
+  SELECT * FROM q11 UNION ALL
+  SELECT * FROM q12 UNION ALL
+  SELECT * FROM q13 UNION ALL
+  SELECT * FROM q14 UNION ALL
+  SELECT * FROM q15
+) all_checks
+ORDER BY sort;
