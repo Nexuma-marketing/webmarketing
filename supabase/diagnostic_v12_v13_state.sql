@@ -13,7 +13,7 @@ WITH
 -- 1. Founders counter (need 2 rows: taken + limit)
 q1 AS (
   SELECT 1 AS sort,
-         '01. app_config founders_plan' AS check,
+         '01. app_config founders_plan' AS check_name,
          CASE WHEN COUNT(*) >= 2 THEN '✓ OK' ELSE '❌ MISSING' END AS status,
          COALESCE(string_agg(key || '=' || value, ', '), '(no rows)') AS details
   FROM app_config WHERE category = 'founders_plan'
@@ -162,7 +162,7 @@ q15 AS (
            COALESCE(string_agg(DISTINCT room_category, ', ' ORDER BY room_category), '(none)')
   FROM property_images
 )
-SELECT check, status, details
+SELECT check_name, status, details
 FROM (
   SELECT * FROM q1 UNION ALL
   SELECT * FROM q2 UNION ALL
