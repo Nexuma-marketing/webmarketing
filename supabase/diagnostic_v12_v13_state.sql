@@ -75,7 +75,8 @@ FROM site_content WHERE section = 'branding';
 -- 12. Leads with NULL role (should be 0 after backfill)
 SELECT 'leads.role NULL count' AS check_name,
        COUNT(*) FILTER (WHERE role IS NULL) AS null_count,
-       COUNT(*) AS total_count;
+       COUNT(*) AS total_count
+FROM leads;
 
 -- 13. Sample of remaining NULL-role leads with notes (to see what's not caught)
 SELECT 'remaining NULL-role leads' AS check_name,
