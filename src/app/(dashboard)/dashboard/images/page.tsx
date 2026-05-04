@@ -111,18 +111,22 @@ export default function ImagesPage() {
     setImages(data || []);
   }
 
-  // Steve 4/30 #9: room category check must accept the loose casing the
-  // legacy rows use ("bedroom" vs "Master Bedroom"). Compare lowercased
-  // tokens and treat any *bedroom* row as covering "Master Bedroom" too.
+  // Steve 5/4: the 4/30 fix wasn't enough — "Living Room" (space) and
+  // "living_room" (underscore) compared as different strings, so a real
+  // Living Room photo still showed up as Missing on the owner checklist.
+  // Normalize both sides to alphanumerics only ("livingroom") before
+  // comparing. Approved + pending count, rejected does not.
+  function normalizeRoom(s: string): string {
+    return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
   function hasPhotoForRoom(room: string): boolean {
-    const target = room.toLowerCase();
+    const target = normalizeRoom(room);
     return images.some((i) => {
       if (i.status === "rejected") return false;
-      const cat = (i.room_category || "").toLowerCase();
+      const cat = normalizeRoom(i.room_category);
       if (cat === target) return true;
-      // Tolerate "bedroom" / "master bedroom" / "bedroom 2" all matching
-      // Master Bedroom for the required-rooms checklist.
-      if (target === "master bedroom" && cat.includes("bedroom")) return true;
+      // Master Bedroom matches any "bedroom*" room (Bedroom 2, etc.)
+      if (target === "masterbedroom" && cat.startsWith("bedroom")) return true;
       return false;
     });
   }
