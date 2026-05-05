@@ -34,6 +34,8 @@ interface ConsentRow {
   consent_type: string;
   granted: boolean;
   granted_at: string;
+  ip_address: string | null;
+  user_agent: string | null;
 }
 
 interface LegalDoc {
@@ -65,9 +67,9 @@ export default function AdminLegalPage() {
     const [{ data: consentData }, { data: docData }] = await Promise.all([
       supabase
         .from("consent_logs")
-        .select("id, consent_type, granted, granted_at, profiles:user_id(full_name, email)")
+        .select("id, consent_type, granted, granted_at, ip_address, user_agent, profiles:user_id(full_name, email)")
         .order("granted_at", { ascending: false })
-        .limit(200),
+        .limit(500),
       supabase
         .from("legal_documents")
         .select("*")
@@ -81,6 +83,8 @@ export default function AdminLegalPage() {
       consent_type: c.consent_type,
       granted: c.granted,
       granted_at: c.granted_at,
+      ip_address: (c.ip_address as string | null) ?? null,
+      user_agent: (c.user_agent as string | null) ?? null,
     }));
 
     setConsents(mappedConsents);
@@ -103,6 +107,8 @@ export default function AdminLegalPage() {
         { key: "consent_type", label: "Consent Type" },
         { key: "granted", label: "Granted" },
         { key: "granted_at", label: "Date" },
+        { key: "ip_address", label: "IP Address" },
+        { key: "user_agent", label: "User Agent" },
       ]
     );
 
@@ -179,6 +185,15 @@ export default function AdminLegalPage() {
       accessorKey: "granted_at",
       header: "Date",
       cell: ({ row }) => formatDateTime(row.getValue("granted_at")),
+    },
+    {
+      accessorKey: "ip_address",
+      header: "IP",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">
+          {(row.getValue("ip_address") as string | null) || "—"}
+        </span>
+      ),
     },
   ];
 

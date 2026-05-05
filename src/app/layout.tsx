@@ -30,6 +30,13 @@ export async function generateMetadata(): Promise<Metadata> {
       title: `${branding.name} - ${branding.tagline}`,
       description:
         "Residential and business marketing platform. We connect property owners, tenants, and businesses with the marketing services they need.",
+      icons: branding.faviconUrl
+        ? {
+            icon: branding.faviconUrl,
+            shortcut: branding.faviconUrl,
+            apple: branding.faviconUrl,
+          }
+        : undefined,
     };
   } catch {
     return {

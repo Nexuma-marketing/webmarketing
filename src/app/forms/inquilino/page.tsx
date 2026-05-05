@@ -28,6 +28,7 @@ import {
 import { FileText } from "lucide-react";
 import { useFormFieldMeta, fieldDisplay } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
+import { logConsents } from "@/lib/consent-log";
 
 // ─── Legal document texts ────────────────────────────
 const LEGAL_DOCS: Record<string, { title: string; text: string }> = {
@@ -401,6 +402,16 @@ export default function TenantFormPage() {
           .insert(payload);
         if (insertError) throw insertError;
       }
+
+      // Steve 5/4 #7: log every consent the tenant ticked. Non-blocking.
+      logConsents(user.id, [
+        { type: "data_processing", granted: !!data.consent_data_processing },
+        { type: "screening", granted: !!data.consent_screening },
+        { type: "references", granted: !!data.consent_references },
+        { type: "communications", granted: !!data.consent_communications },
+        { type: "truthfulness", granted: !!data.consent_truthfulness },
+        { type: "marketing", granted: !!data.consent_marketing },
+      ]).catch((err) => console.error("Consent log failed:", err));
 
       // Run profiling (premium classification + sync to profiles)
       await fetch("/api/profiling", {

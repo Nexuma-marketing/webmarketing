@@ -141,7 +141,7 @@ export default async function HomePage({
   const { data: contentRows } = await supabase
     .from("site_content")
     .select("section, key, value")
-    .in("section", ["testimonials", "faq", "branding"]);
+    .in("section", ["testimonials", "faq", "branding", "landing_hero", "landing_cta"]);
 
   const testimonialRows = (contentRows || []).filter((r) => r.section === "testimonials");
   const faqRows = (contentRows || []).filter((r) => r.section === "faq");
@@ -149,6 +149,23 @@ export default async function HomePage({
   const testimonials = buildTestimonials(testimonialRows);
   const faqs = buildFaqs(faqRows);
   const branding = buildBranding(brandRows);
+
+  // Steve 5/4 #10/#11: hero + CTA texts are admin-editable from
+  // /admin/content (Landing Page sections). Build a flat key→value
+  // map and read it in the JSX with sane fallbacks so the page never
+  // breaks if a key is missing.
+  const heroMap = Object.fromEntries(
+    (contentRows || [])
+      .filter((r) => r.section === "landing_hero")
+      .map((r) => [r.key, r.value]),
+  );
+  const heroBadge = heroMap.hero_badge ?? "Complete Marketing Platform";
+  const heroTitle = heroMap.hero_title ?? "Grow Your Property & Business";
+  const heroSubtitle =
+    heroMap.hero_subtitle ??
+    "We connect property owners, investors, tenants, and businesses with tailored marketing strategies. Diagnose, recommend, and transform your results.";
+  const heroCtaPrimary = heroMap.hero_cta_primary ?? "Property Owners";
+  const heroCtaSecondary = heroMap.hero_cta_secondary ?? "Business Owners";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -229,24 +246,15 @@ export default async function HomePage({
           <div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              Complete Marketing Platform
+              {heroBadge}
             </div>
 
             <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-              Grow Your{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Property
-              </span>{" "}
-              &{" "}
-              <span className="bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
-                Business
-              </span>
+              {heroTitle}
             </h1>
 
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              We connect property owners, investors, tenants, and businesses
-              with tailored marketing strategies. Diagnose, recommend, and
-              transform your results.
+              {heroSubtitle}
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -258,7 +266,7 @@ export default async function HomePage({
                 })}
               >
                 <Building2 className="h-4 w-4" />
-                Property Owners
+                {heroCtaPrimary}
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
@@ -270,7 +278,7 @@ export default async function HomePage({
                 })}
               >
                 <BarChart3 className="h-4 w-4" />
-                Business Owners
+                {heroCtaSecondary}
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>

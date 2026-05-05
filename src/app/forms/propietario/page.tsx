@@ -28,6 +28,7 @@ import { Building2, ArrowLeft, ArrowRight, FileText } from "lucide-react";
 import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload";
 import { useFormFieldMeta } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
+import { logConsents } from "@/lib/consent-log";
 
 // ─── Objectives (PDF 5.2.1 - 8 options) ─────────────
 const OBJECTIVES = [
@@ -539,6 +540,16 @@ export default function OwnerFormPage() {
         });
 
       if (briefError) throw briefError;
+
+      // Steve 5/4 #7: every consent the user ticks must produce a
+      // consent_logs row with IP + user-agent so /admin/legal can audit.
+      // Fire-and-forget — do not block the submit flow on logging failure.
+      logConsents(user.id, [
+        { type: "data_processing", granted: !!data.consent_data_processing },
+        { type: "image_usage", granted: !!data.consent_image_usage },
+        { type: "marketing", granted: !!data.consent_marketing },
+        { type: "third_party", granted: !!data.consent_third_party },
+      ]).catch((err) => console.error("Consent log failed:", err));
 
       // Steve 4/23 #6: Send email EARLY (before long property/photo operations)
       // so that if photo upload fails, commercial team still gets the lead notification.
