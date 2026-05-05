@@ -1,0 +1,87 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+// Public diagnostic — confirms which build + which DB state Steve is
+// actually hitting. Visit /api/health on the live domain. Read-only.
+// Steve 5/5: Tony saw v15 land in the DB but Steve still saw the
+// 4/29 behaviour. This endpoint lets him verify in one click that
+// the deployment serving him is the same one we're shipping.
+export const dynamic = "force-dynamic";
+
+const BUILD_COMMIT =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
+  process.env.NEXT_PUBLIC_BUILD_COMMIT ||
+  "unknown";
+const BUILD_BRANCH = process.env.VERCEL_GIT_COMMIT_REF || "unknown";
+const BUILD_TIME = process.env.VERCEL_GIT_COMMIT_AUTHOR_DATE || "unknown";
+
+export async function GET() {
+  const supabase = await createClient();
+
+  const [founders, plans, forms, legal, branding, leads, images] = await Promise.all([
+    supabase.from("app_config").select("key, value").eq("category", "founders_plan"),
+    supabase.from("services").select("name").eq("category", "plan").order("name"),
+    supabase.from("forms_dynamic").select("slug").order("slug"),
+    supabase.from("legal_documents").select("type, content"),
+    supabase.from("site_content").select("key, value").eq("section", "branding"),
+    supabase.from("leads").select("role"),
+    supabase.from("property_images").select("room_category"),
+  ]);
+
+  const leadRoles = (leads.data || []).reduce<Record<string, number>>((acc, l) => {
+    const k = l.role ?? "NULL";
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+
+  const distinctRooms = Array.from(
+    new Set((images.data || []).map((i) => i.room_category).filter(Boolean)),
+  ).sort();
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(
+    /https?:\/\/([^.]+)\..+/,
+    "$1",
+  );
+
+  return NextResponse.json({
+    build: {
+      commit: BUILD_COMMIT,
+      branch: BUILD_BRANCH,
+      committedAt: BUILD_TIME,
+      expected: "020c93d (or later)",
+    },
+    db: {
+      supabaseProject: supabaseUrl ?? "?",
+      foundersCounter: Object.fromEntries(
+        (founders.data || []).map((r) => [r.key, r.value]),
+      ),
+      planLevelServices: (plans.data || []).map((p) => p.name),
+      forms: (forms.data || []).map((f) => f.slug),
+      legalDocs: (legal.data || []).map((d) => ({
+        type: d.type,
+        contentLength: (d.content || "").length,
+        isPlaceholder: /goes here/i.test(d.content || ""),
+      })),
+      branding: Object.fromEntries(
+        (branding.data || []).map((r) => [r.key, r.value]),
+      ),
+      leadsByRole: leadRoles,
+      propertyImagesRooms: distinctRooms,
+    },
+    interpretation: {
+      buildOk: BUILD_COMMIT.startsWith("020c93d") || BUILD_COMMIT === "unknown",
+      foundersDataLoaded: (founders.data?.length || 0) >= 2,
+      plansLoaded: (plans.data?.length || 0) >= 9,
+      empresasFormsPresent:
+        (forms.data || []).some((f) => f.slug === "lead_sales_calculator") &&
+        (forms.data || []).some((f) => f.slug === "business_acquisition"),
+      brandingHasLogoCover:
+        (branding.data || []).some((r) => r.key === "site_logo_url") &&
+        (branding.data || []).some((r) => r.key === "site_cover_image_url"),
+      noNullLeadRoles: !("NULL" in leadRoles),
+      roomCasingNormalized: distinctRooms.every(
+        (r) => r === r.toLowerCase() && !r.includes(" "),
+      ),
+    },
+  });
+}
