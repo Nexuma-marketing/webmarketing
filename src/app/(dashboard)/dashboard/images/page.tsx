@@ -255,11 +255,16 @@ export default function ImagesPage() {
     }
   };
 
-  // Group images by room category
-  const groupedImages = ROOM_CATEGORIES.reduce<Record<string, PropertyImage[]>>(
-    (acc, cat) => {
-      const catImages = images.filter((i) => i.room_category === cat);
-      if (catImages.length > 0) acc[cat] = catImages;
+  // Steve 5/5: registration form (image-upload.tsx) saves room_category as
+  // "living_room" lowercase, but constants.ts ROOM_CATEGORIES is Title Case
+  // ("Living Room"). Strict-equality grouping never matched, so the gallery
+  // appeared empty for owners who registered through the form. Group by the
+  // raw DB value so every image shows up under the casing the DB has.
+  const groupedImages = images.reduce<Record<string, PropertyImage[]>>(
+    (acc, img) => {
+      const key = img.room_category || "Other";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(img);
       return acc;
     },
     {}
