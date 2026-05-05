@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+
+// Steve 5/4: Founders counter and plan overrides must reflect admin
+// edits immediately. Force dynamic rendering so Next.js does not cache
+// any server-side fetch on this route.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import {
   Card,
   CardContent,
@@ -461,6 +467,19 @@ export default async function ServicesPage() {
     .eq("is_active", true)
     .order("category");
 
+  // ─── Admin-assigned service recommendations (Steve 5/4 #2) ─────
+  // /admin/reassign writes to service_recommendations, but the client
+  // page never read it back, so reassigned services stayed invisible.
+  const { data: assignedRecs } = await supabase
+    .from("service_recommendations")
+    .select("id, service_id, reason, is_purchased, services:service_id(*)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+  const adminAssignedServices = (assignedRecs || []).map((r) => {
+    const svc = r.services as unknown as Record<string, unknown> | null;
+    return svc ? { ...svc, _recommendation_reason: r.reason, _recommendation_id: r.id } : null;
+  }).filter(Boolean) as (Record<string, unknown> & { _recommendation_reason: string | null })[];
+
   // ─── Founders plan counter (admin-editable from /admin/pricing) ─────
   const { data: foundersConfig } = await supabase
     .from("app_config")
@@ -520,6 +539,23 @@ export default async function ServicesPage() {
   function applyTimingToFeatures(features: string[], timing: string | undefined): string[] {
     if (!timing) return features;
     return features.map((f) => f.replace(/\(~[^)]+\)/, `(${timing})`));
+  }
+
+  // Steve 5/4 #3: plan-level services (Founder, Owner Preferred tiers)
+  // are paid as a percentage of first month's rent, not a fixed amount.
+  // Their price column is 0 in the DB; the UI was rendering "$0 CAD"
+  // which confused everyone. Show the correct percentage label instead.
+  function formatServicePrice(svc: { price?: number | null; currency?: string | null; category?: string | null; name?: string | null }): string {
+    const price = Number(svc.price ?? 0);
+    const currency = svc.currency || "CAD";
+    if (svc.category === "plan" && price === 0) {
+      const name = (svc.name || "").toLowerCase();
+      if (name.includes("founder")) return "30% of first month's rent (one-time, lifetime rate)";
+      if (name.includes("preferred") && name.includes("support")) return "30% / 28% of first month's rent (one-time)";
+      if (name.includes("preferred") && name.includes("premier")) return "30% / 28% with flexible installments";
+      return "% of first month's rent (one-time)";
+    }
+    return `$${price.toLocaleString()} ${currency}`;
   }
 
   // Filter services relevant to user role
@@ -1081,6 +1117,51 @@ export default async function ServicesPage() {
         </Card>
       )}
 
+      {/* ═══ Admin-assigned recommendations (Steve 5/4 #2) ═══ */}
+      {adminAssignedServices.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Star className="h-5 w-5 text-amber-600" />
+            Specially Assigned for You
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Our team picked these services for your profile.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {adminAssignedServices.map((service) => {
+              const isPlanLevel = service.category === "plan";
+              const priceLabel = formatServicePrice(service as Parameters<typeof formatServicePrice>[0]);
+              return (
+                <Card
+                  key={service._recommendation_id as string}
+                  className="flex flex-col border-amber-300 bg-amber-50/30"
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <CardTitle className="text-lg">
+                        {service.name as string}
+                      </CardTitle>
+                      <Badge className="bg-amber-100 text-amber-800 border border-amber-300 capitalize">
+                        {isPlanLevel ? "Plan" : (service.category as string)}
+                      </Badge>
+                    </div>
+                    <CardDescription>{service.description as string}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 space-y-2">
+                    {service._recommendation_reason && (
+                      <p className="text-xs italic text-amber-900 bg-amber-100/60 rounded p-2">
+                        {service._recommendation_reason}
+                      </p>
+                    )}
+                    <span className="text-base font-semibold">{priceLabel}</span>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ═══ Recommended Services (filtered by role, hidden for owners per Steve #13) ═══ */}
       {!isOwnerRole && relevantServices && relevantServices.length > 0 && (
         <div className="space-y-4">
@@ -1115,8 +1196,7 @@ export default async function ServicesPage() {
                     ) : null;
                   })()}
                   <span className="text-lg font-bold">
-                    ${service.price?.toLocaleString()}{" "}
-                    {service.currency || "CAD"}
+                    {formatServicePrice(service)}
                   </span>
                 </CardContent>
                 {service.price > 0 && (
@@ -1171,8 +1251,7 @@ export default async function ServicesPage() {
                     ) : null;
                   })()}
                   <span className="text-lg font-bold">
-                    ${service.price?.toLocaleString()}{" "}
-                    {service.currency || "CAD"}
+                    {formatServicePrice(service)}
                   </span>
                 </CardContent>
               </Card>
