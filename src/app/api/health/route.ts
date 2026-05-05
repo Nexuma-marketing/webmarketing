@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createSbClient } from "@supabase/supabase-js";
 
 // Public diagnostic — confirms which build + which DB state Steve is
 // actually hitting. Visit /api/health on the live domain. Read-only.
@@ -18,14 +19,24 @@ const BUILD_TIME = process.env.VERCEL_GIT_COMMIT_AUTHOR_DATE || "unknown";
 export async function GET() {
   const supabase = await createClient();
 
+  // Use the service-role key (server-only) for the leads / property_images
+  // queries so they bypass RLS and reflect the actual table contents.
+  // The anon-context client would otherwise return [] for tables that gate
+  // SELECT behind admin policies (leads), even though the data exists.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const admin = serviceKey && url
+    ? createSbClient(url, serviceKey, { auth: { persistSession: false } })
+    : supabase;
+
   const [founders, plans, forms, legal, branding, leads, images] = await Promise.all([
     supabase.from("app_config").select("key, value").eq("category", "founders_plan"),
     supabase.from("services").select("name").eq("category", "plan").order("name"),
     supabase.from("forms_dynamic").select("slug").order("slug"),
     supabase.from("legal_documents").select("type, content"),
     supabase.from("site_content").select("key, value").eq("section", "branding"),
-    supabase.from("leads").select("role"),
-    supabase.from("property_images").select("room_category"),
+    admin.from("leads").select("role"),
+    admin.from("property_images").select("room_category"),
   ]);
 
   const leadRoles = (leads.data || []).reduce<Record<string, number>>((acc, l) => {
@@ -69,7 +80,9 @@ export async function GET() {
       propertyImagesRooms: distinctRooms,
     },
     interpretation: {
-      buildOk: BUILD_COMMIT.startsWith("020c93d") || BUILD_COMMIT === "unknown",
+      // Any non-"unknown" commit means Vercel is serving the build that was
+      // pushed; we don't need to compare against a specific hash.
+      buildOk: BUILD_COMMIT !== "unknown",
       foundersDataLoaded: (founders.data?.length || 0) >= 2,
       plansLoaded: (plans.data?.length || 0) >= 9,
       empresasFormsPresent:
@@ -78,7 +91,11 @@ export async function GET() {
       brandingHasLogoCover:
         (branding.data || []).some((r) => r.key === "site_logo_url") &&
         (branding.data || []).some((r) => r.key === "site_cover_image_url"),
-      noNullLeadRoles: !("NULL" in leadRoles),
+      brandingNameApplied:
+        (branding.data || []).find((r) => r.key === "site_brand_name")?.value !==
+        "WebMarketing",
+      noNullLeadRoles:
+        (leads.data?.length || 0) > 0 && !("NULL" in leadRoles),
       roomCasingNormalized: distinctRooms.every(
         (r) => r === r.toLowerCase() && !r.includes(" "),
       ),
