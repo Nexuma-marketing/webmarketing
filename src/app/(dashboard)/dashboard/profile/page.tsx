@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Shield } from "lucide-react";
 import type { Profile } from "@/types/database";
+import { logConsents } from "@/lib/consent-log";
 import { ROLE_LABELS } from "@/lib/constants";
 
 interface ConsentState {
@@ -133,11 +134,12 @@ export default function ProfilePage() {
     setSavingConsent(true);
     setConsents((prev) => ({ ...prev, [type]: granted }));
 
-    await supabase.from("consent_logs").insert({
-      user_id: profile.id,
-      consent_type: type,
-      granted,
-    });
+    // Steve 5/6: route through logConsents so the toggle write also
+    // captures ip_address + user_agent. /admin/legal renders the IP
+    // column so Steve can audit who granted what and from where.
+    await logConsents(profile.id, [{ type, granted }]).catch((err) =>
+      console.error("Consent toggle log failed:", err),
+    );
 
     setSavingConsent(false);
   }
