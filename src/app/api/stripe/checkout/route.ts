@@ -2,6 +2,85 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { stripe, APP_URL } from "@/lib/stripe";
 
+// Steve 5/4 / Milestone 4: validate an admin-defined promo code from the
+// promotions table and return either an error message or a discount
+// amount in cents to subtract from the line item.
+//
+// Rules (in order):
+//   - exists / is_active = true
+//   - valid_from <= today
+//   - valid_until null OR >= today
+//   - max_uses null OR used_count < max_uses
+//   - target_roles empty OR includes profile.role
+//
+// target_zones is intentionally NOT enforced here — zones gate which
+// promotions appear on the user's banner (active-promotions-banner.tsx),
+// but at checkout time the user has explicitly typed a code so we trust
+// their intent and let it through.
+async function validatePromoCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  code: string,
+  baseAmountCad: number,
+  userRole: string | null,
+): Promise<
+  | { ok: true; promotionId: string; discountCents: number; appliedLabel: string }
+  | { ok: false; error: string }
+> {
+  const trimmed = code.trim().toUpperCase();
+  if (!trimmed) return { ok: false, error: "Empty code" };
+
+  const { data: promo } = await supabase
+    .from("promotions")
+    .select(
+      "id, code, discount_type, discount_value, valid_from, valid_until, is_active, max_uses, used_count, target_roles",
+    )
+    .eq("code", trimmed)
+    .maybeSingle();
+
+  if (!promo) return { ok: false, error: "Promo code not found" };
+  if (!promo.is_active) return { ok: false, error: "Promo code inactive" };
+
+  const today = new Date().toISOString().split("T")[0];
+  if (promo.valid_from && promo.valid_from > today) {
+    return { ok: false, error: "Promo code not yet active" };
+  }
+  if (promo.valid_until && promo.valid_until < today) {
+    return { ok: false, error: "Promo code expired" };
+  }
+  if (
+    promo.max_uses !== null &&
+    promo.used_count >= promo.max_uses
+  ) {
+    return { ok: false, error: "Promo code usage limit reached" };
+  }
+  const roles = (promo.target_roles as string[] | null) || [];
+  if (roles.length > 0 && (!userRole || !roles.includes(userRole))) {
+    return {
+      ok: false,
+      error: "Promo code is not eligible for your account",
+    };
+  }
+
+  let discountCents = 0;
+  let appliedLabel = "";
+  const baseCents = Math.round(baseAmountCad * 100);
+  if (promo.discount_type === "percentage") {
+    discountCents = Math.round((baseCents * promo.discount_value) / 100);
+    appliedLabel = `${promo.discount_value}% off (${trimmed})`;
+  } else {
+    discountCents = Math.round(promo.discount_value * 100);
+    appliedLabel = `$${promo.discount_value} CAD off (${trimmed})`;
+  }
+  if (discountCents > baseCents) discountCents = baseCents;
+
+  return {
+    ok: true,
+    promotionId: promo.id,
+    discountCents,
+    appliedLabel,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -13,14 +92,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { type, serviceId, pymesPlanId } = await request.json();
+    const { type, serviceId, pymesPlanId, promoCode } = await request.json();
 
     // Get or create Stripe customer
     const { data: profile } = await supabase
       .from("profiles")
-      .select("stripe_customer_id, email, full_name")
+      .select("stripe_customer_id, email, full_name, role")
       .eq("id", user.id)
       .single();
+    const userRole = (profile?.role as string | null) ?? null;
 
     let customerId = profile?.stripe_customer_id;
 
@@ -61,6 +141,25 @@ export async function POST(request: Request) {
           );
         }
 
+        const baseCents = Math.round(service.price * 100);
+        let unitAmount = baseCents;
+        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
+        let descriptionSuffix = "";
+        if (promoCode) {
+          const v = await validatePromoCode(
+            supabase,
+            String(promoCode),
+            service.price,
+            userRole,
+          );
+          if (!v.ok) {
+            return NextResponse.json({ error: v.error }, { status: 400 });
+          }
+          unitAmount = Math.max(0, baseCents - v.discountCents);
+          promoMeta = { promotionId: v.promotionId, appliedLabel: v.appliedLabel };
+          descriptionSuffix = `\nPromo applied: ${v.appliedLabel}`;
+        }
+
         const session = await stripe.checkout.sessions.create({
           customer: customerId,
           payment_method_types: ["card"],
@@ -71,9 +170,10 @@ export async function POST(request: Request) {
                 currency: (service.currency || "cad").toLowerCase(),
                 product_data: {
                   name: service.name,
-                  description: service.description || undefined,
+                  description:
+                    (service.description || "") + descriptionSuffix || undefined,
                 },
-                unit_amount: Math.round(service.price * 100),
+                unit_amount: unitAmount,
               },
               quantity: 1,
             },
@@ -84,8 +184,32 @@ export async function POST(request: Request) {
             user_id: user.id,
             service_id: serviceId,
             payment_type: "one_time",
+            ...(promoMeta
+              ? {
+                  promotion_id: promoMeta.promotionId,
+                  promo_label: promoMeta.appliedLabel,
+                }
+              : {}),
           },
         });
+
+        // Increment used_count immediately. Stripe webhook could roll it
+        // back on payment failure; for our demo + testing flow we accept
+        // the slight over-counting risk. Plain select+update because we
+        // do not maintain an increment RPC for this table.
+        if (promoMeta) {
+          const { data: p } = await supabase
+            .from("promotions")
+            .select("used_count")
+            .eq("id", promoMeta.promotionId)
+            .single();
+          if (p) {
+            await supabase
+              .from("promotions")
+              .update({ used_count: (p.used_count ?? 0) + 1 })
+              .eq("id", promoMeta.promotionId);
+          }
+        }
 
         return NextResponse.json({ url: session.url });
       }
@@ -112,6 +236,26 @@ export async function POST(request: Request) {
           );
         }
 
+        const upfrontAmount = plan.upfront_amount || plan.price * 0.5;
+        const baseCents = Math.round(upfrontAmount * 100);
+        let unitAmount = baseCents;
+        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
+        let descriptionSuffix = "";
+        if (promoCode) {
+          const v = await validatePromoCode(
+            supabase,
+            String(promoCode),
+            upfrontAmount,
+            userRole,
+          );
+          if (!v.ok) {
+            return NextResponse.json({ error: v.error }, { status: 400 });
+          }
+          unitAmount = Math.max(0, baseCents - v.discountCents);
+          promoMeta = { promotionId: v.promotionId, appliedLabel: v.appliedLabel };
+          descriptionSuffix = `\nPromo applied: ${v.appliedLabel}`;
+        }
+
         const session = await stripe.checkout.sessions.create({
           customer: customerId,
           payment_method_types: ["card"],
@@ -122,11 +266,9 @@ export async function POST(request: Request) {
                 currency: "cad",
                 product_data: {
                   name: `${plan.name} — Initial Payment`,
-                  description: `Upfront payment for ${plan.name} plan`,
+                  description: `Upfront payment for ${plan.name} plan${descriptionSuffix}`,
                 },
-                unit_amount: Math.round(
-                  (plan.upfront_amount || plan.price * 0.5) * 100
-                ),
+                unit_amount: unitAmount,
               },
               quantity: 1,
             },
@@ -140,8 +282,28 @@ export async function POST(request: Request) {
             plan_type: plan.plan_type,
             installment_amount: String(plan.installment_amount || 0),
             installment_months: String(plan.installment_months || 0),
+            ...(promoMeta
+              ? {
+                  promotion_id: promoMeta.promotionId,
+                  promo_label: promoMeta.appliedLabel,
+                }
+              : {}),
           },
         });
+
+        if (promoMeta) {
+          const { data: p } = await supabase
+            .from("promotions")
+            .select("used_count")
+            .eq("id", promoMeta.promotionId)
+            .single();
+          if (p) {
+            await supabase
+              .from("promotions")
+              .update({ used_count: (p.used_count ?? 0) + 1 })
+              .eq("id", promoMeta.promotionId);
+          }
+        }
 
         return NextResponse.json({ url: session.url });
       }
