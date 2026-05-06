@@ -26,7 +26,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FileText } from "lucide-react";
-import { useFormFieldMeta, fieldDisplay } from "@/lib/form-meta";
+import { useFormFieldMeta, fieldDisplay, fieldOptions } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 import { logConsents } from "@/lib/consent-log";
 
@@ -504,7 +504,7 @@ export default function TenantFormPage() {
                       <SelectValue placeholder="Select your situation" />
                     </SelectTrigger>
                     <SelectContent>
-                      {EMPLOYMENT_TYPES.map((e) => (
+                      {fieldOptions(fieldMeta, "employment_type", EMPLOYMENT_TYPES).map((e) => (
                         <SelectItem key={e.value} value={e.value}>
                           {e.label}
                         </SelectItem>
@@ -526,7 +526,7 @@ export default function TenantFormPage() {
                           <SelectValue placeholder="Select institution type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {INSTITUTION_TYPES.map((t) => (
+                          {fieldOptions(fieldMeta, "institution_type", INSTITUTION_TYPES).map((t) => (
                             <SelectItem key={t.value} value={t.value}>
                               {t.label}
                             </SelectItem>
@@ -558,9 +558,9 @@ export default function TenantFormPage() {
                       <SelectValue placeholder="Select number of people" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PEOPLE_OPTIONS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
+                      {fieldOptions(fieldMeta, "number_of_people", PEOPLE_OPTIONS).map((p) => (
+                        <SelectItem key={p.value} value={p.value}>
+                          {p.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -654,9 +654,9 @@ export default function TenantFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BEDROOM_OPTIONS.map((b) => (
-                          <SelectItem key={b} value={b.replace(" BR", "")}>
-                            {b}
+                        {fieldOptions(fieldMeta, "bedrooms_needed", BEDROOM_OPTIONS.map((b) => ({ value: b.replace(" BR", ""), label: b }))).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>
+                            {b.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -671,9 +671,9 @@ export default function TenantFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BATHROOM_OPTIONS.map((b) => (
-                          <SelectItem key={b} value={b}>
-                            {b}
+                        {fieldOptions(fieldMeta, "bathrooms_needed", BATHROOM_OPTIONS).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>
+                            {b.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -735,7 +735,7 @@ export default function TenantFormPage() {
                       <SelectValue placeholder="Select style" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STYLE_PREFS.map((s) => (
+                      {fieldOptions(fieldMeta, "style_preference", STYLE_PREFS).map((s) => (
                         <SelectItem key={s.value} value={s.value}>
                           {s.label}
                         </SelectItem>
@@ -859,7 +859,7 @@ export default function TenantFormPage() {
                       <SelectValue placeholder="Select duration" />
                     </SelectTrigger>
                     <SelectContent>
-                      {CONTRACT_DURATIONS.map((d) => (
+                      {fieldOptions(fieldMeta, "contract_duration", CONTRACT_DURATIONS).map((d) => (
                         <SelectItem key={d.value} value={d.value}>
                           {d.label}
                         </SelectItem>

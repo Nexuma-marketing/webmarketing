@@ -122,3 +122,26 @@ export function fieldDisplay(meta: FieldMetaMap, fieldKey: string, fallback: { l
     hidden: m.is_active === false,
   };
 }
+
+/**
+ * Steve 5/5 deep-fix: when admin edits the dropdown options of a
+ * select field in /admin/forms, those edits must show in the public
+ * form. This helper returns the admin-defined options when present,
+ * otherwise the hardcoded fallback the form file ships with.
+ *
+ * Accepts either a plain string array (legacy "Bedroom 2" style) or
+ * a {value,label}[] array. Always returns {value,label}[] so callers
+ * can render a single shape.
+ */
+export function fieldOptions(
+  meta: FieldMetaMap,
+  fieldKey: string,
+  fallback: ReadonlyArray<string | { value: string; label: string } | { value: number; label: string }>,
+): FieldOption[] {
+  const m = meta[fieldKey];
+  if (m?.options && m.options.length > 0) return m.options;
+  return fallback.map((o) => {
+    if (typeof o === "string") return { value: o, label: o };
+    return { value: String(o.value), label: o.label };
+  });
+}

@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Building2, ArrowLeft, ArrowRight, FileText } from "lucide-react";
 import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload";
-import { useFormFieldMeta } from "@/lib/form-meta";
+import { useFormFieldMeta, fieldOptions } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 import { logConsents } from "@/lib/consent-log";
 
@@ -926,8 +926,8 @@ export default function OwnerFormPage() {
                             <SelectValue placeholder="Select city" />
                           </SelectTrigger>
                           <SelectContent>
-                            {BC_CITIES.map((c) => (
-                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            {fieldOptions(fieldMeta, "city", BC_CITIES).map((c) => (
+                              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -980,7 +980,7 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {PROPERTY_TYPES.map((t) => (
+                        {fieldOptions(fieldMeta, "property_type", PROPERTY_TYPES).map((t) => (
                           <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -999,7 +999,7 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {OCCUPANCY_OPTIONS.map((o) => (
+                        {fieldOptions(fieldMeta, "occupancy_status", OCCUPANCY_OPTIONS).map((o) => (
                           <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1030,8 +1030,8 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BEDROOMS.map((b) => (
-                          <SelectItem key={b} value={b.replace(" BR", "")}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bedrooms", BEDROOMS.map((b) => ({ value: b.replace(" BR", ""), label: b }))).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1045,8 +1045,8 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BATHROOMS.map((b) => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bathrooms", BATHROOMS).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1078,7 +1078,7 @@ export default function OwnerFormPage() {
                       <SelectValue placeholder="Select style" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STYLES.map((s) => (
+                      {fieldOptions(fieldMeta, "style", STYLES).map((s) => (
                         <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1243,7 +1243,7 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {PROPERTY_TYPES.map((t) => (
+                        {fieldOptions(fieldMeta, "property_type", PROPERTY_TYPES).map((t) => (
                           <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1256,7 +1256,7 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {OCCUPANCY_OPTIONS.map((o) => (
+                        {fieldOptions(fieldMeta, "occupancy_status", OCCUPANCY_OPTIONS).map((o) => (
                           <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1284,8 +1284,8 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BEDROOMS.map((b) => (
-                          <SelectItem key={b} value={b.replace(" BR", "")}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bedrooms", BEDROOMS.map((b) => ({ value: b.replace(" BR", ""), label: b }))).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1297,8 +1297,8 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BATHROOMS.map((b) => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bathrooms", BATHROOMS).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1333,7 +1333,7 @@ export default function OwnerFormPage() {
                       <SelectValue placeholder="Select style" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STYLES.map((s) => (
+                      {fieldOptions(fieldMeta, "style", STYLES).map((s) => (
                         <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1441,8 +1441,8 @@ export default function OwnerFormPage() {
                         <SelectValue placeholder="Select city" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BC_CITIES.map((c) => (
-                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        {fieldOptions(fieldMeta, "city", BC_CITIES).map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
