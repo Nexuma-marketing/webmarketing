@@ -210,16 +210,28 @@ export default function ImagesPage() {
         .from("property-images")
         .getPublicUrl(path);
 
+      // Steve 5/6: registration form (image-upload.tsx) saves lowercase
+      // snake_case ("living_room"), but this dashboard upload UI used to
+      // save Title Case ("Living Room"), so the admin Image Library Room
+      // filter ended up with duplicate entries. Normalize to the same
+      // shape (lowercase + underscore) at write time.
+      const canonicalRoom = (selectedRoom || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+
       await supabase.from("property_images").insert({
         property_id: selectedProperty,
-        room_category: selectedRoom,
+        room_category: canonicalRoom,
         image_url: publicUrl,
         original_filename: file.name,
         file_size_bytes: file.size,
         resolution_ok: validation.width >= 1280,
         orientation: validation.orientation,
         status: "pending",
-        sort_order: images.filter((i) => i.room_category === selectedRoom).length,
+        sort_order: images.filter((i) =>
+          (i.room_category || "").toLowerCase().replace(/\s+/g, "_") === canonicalRoom,
+        ).length,
       });
 
       setUploadMessage({

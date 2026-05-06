@@ -101,11 +101,20 @@ export default function AdminImagesPage() {
     setSavingId(null);
   }
 
-  const roomOptions = Array.from(new Set(images.map((i) => i.room_category).filter(Boolean)));
+  // Steve 5/6: dedup the room filter dropdown by canonicalising every
+  // value (lowercase + underscore). Without this, "Living Room" and
+  // "living_room" both showed up because the dashboard upload UI used
+  // to write Title Case while the registration form used snake_case.
+  function canonicalRoom(s: string | null | undefined): string {
+    return (s || "").trim().toLowerCase().replace(/\s+/g, "_");
+  }
+  const roomOptions = Array.from(
+    new Set(images.map((i) => canonicalRoom(i.room_category)).filter(Boolean)),
+  ).sort();
 
   const filtered = images.filter((img) => {
     if (statusFilter !== "all" && img.status !== statusFilter) return false;
-    if (roomFilter !== "all" && img.room_category !== roomFilter) return false;
+    if (roomFilter !== "all" && canonicalRoom(img.room_category) !== roomFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       const owner = img.properties ? owners[img.properties.owner_id] : null;
