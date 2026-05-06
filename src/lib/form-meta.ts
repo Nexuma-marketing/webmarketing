@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+export interface FieldOption {
+  value: string;
+  label: string;
+}
+
 export interface FieldMeta {
   field_key: string;
   position: number;
@@ -10,6 +15,9 @@ export interface FieldMeta {
   helper_text: string | null;
   required: boolean;
   is_active: boolean;
+  // Steve 5/5: also surface options so admin edits to dropdown
+  // choices propagate to the public forms.
+  options: FieldOption[] | null;
 }
 
 export type FieldMetaMap = Record<string, FieldMeta>;
@@ -38,13 +46,36 @@ async function fetchFormMeta(formSlug: string): Promise<FieldMetaMap> {
 
     const { data: questions } = await supabase
       .from("form_questions")
-      .select("field_key, position, label, helper_text, required, is_active")
+      .select("field_key, position, label, helper_text, required, is_active, options")
       .eq("form_id", forms.id)
       .order("position");
 
     const map: FieldMetaMap = {};
     for (const q of questions || []) {
-      map[q.field_key] = q as FieldMeta;
+      const raw = (q as { options?: unknown }).options;
+      let parsedOptions: FieldOption[] | null = null;
+      if (Array.isArray(raw)) {
+        parsedOptions = (raw as unknown[])
+          .map((o) => {
+            if (typeof o === "string") return { value: o, label: o };
+            const oo = o as { value?: unknown; label?: unknown };
+            if (typeof oo.value === "string" && typeof oo.label === "string") {
+              return { value: oo.value, label: oo.label };
+            }
+            return null;
+          })
+          .filter((x): x is FieldOption => x !== null);
+        if (parsedOptions.length === 0) parsedOptions = null;
+      }
+      map[q.field_key] = {
+        field_key: q.field_key,
+        position: q.position,
+        label: q.label,
+        helper_text: q.helper_text,
+        required: q.required,
+        is_active: q.is_active,
+        options: parsedOptions,
+      };
     }
     cache[formSlug] = map;
     return map;

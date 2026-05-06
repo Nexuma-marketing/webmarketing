@@ -169,6 +169,23 @@ export default function AdminReassignPage() {
   const planOptions = services.filter((s) => s.category === "plan");
   const individualServices = services.filter((s) => s.category !== "plan");
 
+  // Steve 5/5: plan rows have price=0 in the DB because their fee is a
+  // percentage of first month's rent. Show the percentage label in the
+  // dropdown instead of "$0 CAD".
+  function priceLabel(svc: { price?: number | null; currency?: string | null; category?: string | null; name?: string | null }): string {
+    const price = Number(svc.price ?? 0);
+    const currency = svc.currency || "CAD";
+    if (svc.category === "plan" && price === 0) {
+      const name = (svc.name || "").toLowerCase();
+      if (name.includes("low price")) return "35% of first month's rent (one-time)";
+      if (name.includes("founder")) return "30% one-time (lifetime rate)";
+      if (name.includes("preferred") && name.includes("support")) return "30%/28% one-time";
+      if (name.includes("preferred") && name.includes("premier")) return "30%/28% installments";
+      return "% of first month's rent (one-time)";
+    }
+    return `$${price.toLocaleString()} ${currency}`;
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -269,7 +286,7 @@ export default function AdminReassignPage() {
                             {r.services?.name || "(deleted service)"}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {r.services?.category} · ${r.services?.price?.toLocaleString()} {r.services?.currency}
+                            {r.services?.category} · {priceLabel(r.services || {})}
                           </p>
                           {r.reason && (
                             <p className="text-xs text-muted-foreground italic mt-1">
@@ -345,7 +362,7 @@ export default function AdminReassignPage() {
                               </div>
                               {planOptions.map((s) => (
                                 <SelectItem key={s.id} value={s.id}>
-                                  {s.name} · ${s.price.toLocaleString()} {s.currency}
+                                  {s.name} · {priceLabel(s)}
                                 </SelectItem>
                               ))}
                               <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-t mt-1">
@@ -355,7 +372,7 @@ export default function AdminReassignPage() {
                           )}
                           {individualServices.map((s) => (
                             <SelectItem key={s.id} value={s.id}>
-                              {s.name} · ${s.price.toLocaleString()} {s.currency}
+                              {s.name} · {priceLabel(s)}
                             </SelectItem>
                           ))}
                         </SelectContent>

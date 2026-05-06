@@ -1131,6 +1131,7 @@ export default async function ServicesPage() {
             {adminAssignedServices.map((service) => {
               const isPlanLevel = service.category === "plan";
               const priceLabel = formatServicePrice(service as Parameters<typeof formatServicePrice>[0]);
+              const numericPrice = Number(service.price ?? 0);
               return (
                 <Card
                   key={service._recommendation_id as string}
@@ -1155,6 +1156,32 @@ export default async function ServicesPage() {
                     )}
                     <span className="text-base font-semibold">{priceLabel}</span>
                   </CardContent>
+                  {/* Steve 5/5 sub-issue: assigned service had no purchase
+                      button. Plan-level services (price=0, % of rent) route
+                      to the contact section because they need commercial
+                      finalization; fixed-price services use the existing
+                      Stripe checkout. */}
+                  <div className="p-6 pt-0">
+                    {isPlanLevel || numericPrice === 0 ? (
+                      <Link
+                        href="/dashboard/services#contact"
+                        className={cn(
+                          buttonVariants({ size: "sm" }),
+                          "w-full gap-2 bg-amber-600 hover:bg-amber-700",
+                        )}
+                      >
+                        Acquire this plan
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    ) : (
+                      <CheckoutButton
+                        type="service"
+                        serviceId={service.id as string}
+                        label={`Purchase — ${priceLabel}`}
+                        className="w-full"
+                      />
+                    )}
+                  </div>
                 </Card>
               );
             })}

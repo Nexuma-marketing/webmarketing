@@ -222,6 +222,10 @@ const CAPTACION_STEPS = [
 
 function CaptacionForm({ onBack }: { onBack: () => void }) {
   const router = useRouter();
+  // Steve 5/5: admin edits in /admin/forms (slug: business_acquisition)
+  // must propagate to the client. We overlay each hardcoded field with
+  // the admin-edited label / helper / options when present.
+  const captMeta = useFormFieldMeta("business_acquisition");
   const [captStep, setCaptStep] = useState(0);
   const [captLoading, setCaptLoading] = useState(false);
   const [captError, setCaptError] = useState<string | null>(null);
@@ -431,15 +435,27 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{captError}</div>
           )}
 
-          {currentStepDef.fields.map((field) => (
+          {currentStepDef.fields.map((field) => {
+            // Steve 5/5: overlay hardcoded label / options with admin
+            // edits. Helper/required also flow through fieldDisplay.
+            const meta = captMeta[field.name];
+            const display = fieldDisplay(captMeta, field.name, {
+              label: field.label,
+              required: field.required,
+            });
+            if (display.hidden) return null;
+            const adminOptions = meta?.options;
+            const useAdminOptions =
+              adminOptions && adminOptions.length > 0;
+            return (
             <div key={field.name} className="space-y-2">
-              <Label>{field.label}{field.required && " *"}</Label>
+              <Label>{display.label}{display.required && " *"}</Label>
 
               {field.type === "text" && (
                 <Input
                   value={(captData[field.name] as string) || ""}
                   onChange={(e) => updateField(field.name, e.target.value)}
-                  placeholder={`Enter ${field.label.toLowerCase()}`}
+                  placeholder={`Enter ${display.label.toLowerCase()}`}
                 />
               )}
 
@@ -462,7 +478,7 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
                 />
               )}
 
-              {field.type === "select" && field.options && (
+              {field.type === "select" && (useAdminOptions || field.options) && (
                 <Select
                   value={(captData[field.name] as string) || undefined}
                   onValueChange={(val: string | null) => val && updateField(field.name, val)}
@@ -471,32 +487,51 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {field.options.map((opt) => {
-                      const v = typeof opt === "string" ? opt : opt.value;
-                      const l = typeof opt === "string" ? opt : opt.label;
-                      return <SelectItem key={v} value={v}>{l}</SelectItem>;
-                    })}
+                    {useAdminOptions
+                      ? adminOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))
+                      : field.options!.map((opt) => {
+                          const v = typeof opt === "string" ? opt : opt.value;
+                          const l = typeof opt === "string" ? opt : opt.label;
+                          return <SelectItem key={v} value={v}>{l}</SelectItem>;
+                        })}
                   </SelectContent>
                 </Select>
               )}
 
-              {field.type === "multi" && field.options && (
+              {field.type === "multi" && (useAdminOptions || field.options) && (
                 <div className="grid grid-cols-2 gap-2">
-                  {(field.options as string[]).map((opt) => (
-                    <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={((captData[field.name] as string[]) || []).includes(opt)}
-                        onChange={() => toggleMulti(field.name, opt)}
-                        className="rounded border-input"
-                      />
-                      {opt}
-                    </label>
-                  ))}
+                  {useAdminOptions
+                    ? adminOptions.map((opt) => (
+                        <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={((captData[field.name] as string[]) || []).includes(opt.value)}
+                            onChange={() => toggleMulti(field.name, opt.value)}
+                            className="rounded border-input"
+                          />
+                          {opt.label}
+                        </label>
+                      ))
+                    : (field.options as string[]).map((opt) => (
+                        <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={((captData[field.name] as string[]) || []).includes(opt)}
+                            onChange={() => toggleMulti(field.name, opt)}
+                            className="rounded border-input"
+                          />
+                          {opt}
+                        </label>
+                      ))}
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </CardContent>
 
         <div className="flex justify-between px-6 pb-6">
@@ -882,6 +917,14 @@ export default function PymesCalculatorPage() {
                 label: currentQuestion.question,
                 helper: currentQuestion.helpText,
               });
+              // Steve 5/5: Sales Leak options must also reflect admin edits.
+              // Use the admin-defined options when present (from form_questions),
+              // otherwise fall back to the hardcoded LIKERT_OPTIONS.
+              const adminOptions = fieldMeta[currentQuestion.field]?.options;
+              const renderOptions =
+                adminOptions && adminOptions.length > 0
+                  ? adminOptions.map((o) => ({ value: Number(o.value) || 0, label: o.label }))
+                  : LIKERT_OPTIONS;
               return (
               <div className="space-y-4">
                 <div className="rounded-lg border bg-muted/30 p-4">
@@ -893,7 +936,7 @@ export default function PymesCalculatorPage() {
                   </p>
                 </div>
                 <div className="grid gap-2">
-                  {LIKERT_OPTIONS.map((opt) => {
+                  {renderOptions.map((opt) => {
                     const fieldValue = watch(currentQuestion.field as keyof PymesCalculatorData);
                     return (
                       <button
