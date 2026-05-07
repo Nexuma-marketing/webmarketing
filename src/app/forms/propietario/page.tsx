@@ -29,6 +29,19 @@ import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload
 import { useFormFieldMeta, fieldOptions } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 import { logConsents } from "@/lib/consent-log";
+import { useLegalDocsOverlay } from "@/lib/legal-docs";
+
+// Steve 5/6: types fetched from legal_documents to override the
+// hardcoded LEGAL_DOCS texts on this public form.
+const PROPIETARIO_LEGAL_TYPES = [
+  "consent_image_usage",
+  "consent_data_processing",
+  "consent_marketing",
+  "consent_third_party",
+  "consent_legal_representation",
+  "consent_liability_limitation",
+  "consent_electronic_signature",
+] as const;
 
 // ─── Objectives (PDF 5.2.1 - 8 options) ─────────────
 const OBJECTIVES = [
@@ -248,6 +261,11 @@ export default function OwnerFormPage() {
 
   // Steve 4/28 round 2: admin-editable form metadata overlay.
   const fieldMeta = useFormFieldMeta("owner_property");
+  // Steve 5/6: pull current consent text from legal_documents so admin
+  // edits propagate to this form. Falls back to LEGAL_DOCS constant.
+  const legalOverlay = useLegalDocsOverlay(PROPIETARIO_LEGAL_TYPES);
+  const legalText = (key: keyof typeof LEGAL_DOCS) =>
+    legalOverlay[key]?.text ?? LEGAL_DOCS[key].text;
 
   const {
     register,
@@ -1797,7 +1815,7 @@ export default function OwnerFormPage() {
                         {expandedLegal === field && LEGAL_DOCS[field] && (
                           <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
                             <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
-                            {LEGAL_DOCS[field].text}
+                            {legalText(field as keyof typeof LEGAL_DOCS)}
                           </div>
                         )}
                       </div>

@@ -29,6 +29,18 @@ import { FileText } from "lucide-react";
 import { useFormFieldMeta, fieldDisplay, fieldOptions } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 import { logConsents } from "@/lib/consent-log";
+import { useLegalDocsOverlay } from "@/lib/legal-docs";
+
+// Steve 5/6: list mirrors the LEGAL_DOCS keys so the overlay hook
+// can pull the matching legal_documents rows from the DB.
+const INQUILINO_LEGAL_TYPES = [
+  "consent_data_processing",
+  "consent_screening",
+  "consent_references",
+  "consent_communications",
+  "consent_truthfulness",
+  "consent_marketing",
+] as const;
 
 // ─── Legal document texts ────────────────────────────
 const LEGAL_DOCS: Record<string, { title: string; text: string }> = {
@@ -209,6 +221,12 @@ export default function TenantFormPage() {
   const [showConsentDetails, setShowConsentDetails] = useState(false);
   const [expandedLegal, setExpandedLegal] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  // Steve 5/6: pull the latest consent text from legal_documents so
+  // edits in /admin/legal show up on this public form. Falls back to
+  // the hardcoded LEGAL_DOCS table when a row is missing.
+  const legalOverlay = useLegalDocsOverlay(INQUILINO_LEGAL_TYPES);
+  const legalText = (key: keyof typeof LEGAL_DOCS) =>
+    legalOverlay[key]?.text ?? LEGAL_DOCS[key].text;
 
   // Steve 4/28 round 2: load admin-editable form metadata so changes
   // in /admin/forms (label, helper text, required, visibility) are
@@ -1011,7 +1029,7 @@ export default function TenantFormPage() {
                       {expandedLegal === "consent_data_processing" && (
                         <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
                           <p className="font-medium text-foreground mb-1">{LEGAL_DOCS.consent_data_processing.title}</p>
-                          {LEGAL_DOCS.consent_data_processing.text}
+                          {legalText("consent_data_processing")}
                         </div>
                       )}
                     </div>
@@ -1087,7 +1105,7 @@ export default function TenantFormPage() {
                                   {expandedLegal === field && (
                                     <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
                                       <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
-                                      {LEGAL_DOCS[field].text}
+                                      {legalText(field as keyof typeof LEGAL_DOCS)}
                                     </div>
                                   )}
                                 </>
