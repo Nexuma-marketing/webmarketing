@@ -48,18 +48,17 @@ const SECTIONS: SectionDef[] = [
       { key: "site_short_name", value: "WebMarketing", helper: "Used in the mobile menu when the full name is too long." },
       { key: "site_tagline", value: "Residential & Business Marketing", helper: "Shown next to the site name in <title> on the homepage." },
       { key: "site_logo_url", value: "", helper: "Logo URL. Recommended: 256×256 or 512×512 px, PNG or SVG with transparent background, < 200 KB. Replaces the default Sparkles icon. URL must end in .png/.jpg/.svg and be publicly accessible (no Google Drive sharing links)." },
-      { key: "site_cover_image_url", value: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80", helper: "Homepage hero image URL. Recommended: 1200×800 px (4:5 ratio), JPG or PNG, < 500 KB. Try Unsplash, Imgur, or your own CDN." },
+      { key: "site_cover_image_url", value: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=1000&fit=crop&crop=center", helper: "Stage 1 approved homepage hero image. Recommended: 1200×800 px (4:5 ratio), JPG or PNG, < 500 KB. Note: the public homepage hero now uses the Stage 1 photo directly; this URL is kept for future reuse but does not currently appear on /." },
       { key: "site_favicon_url", value: "", helper: "Browser tab icon URL. Recommended: 32×32 ICO/PNG or 64×64 PNG. Tools: realfavicongenerator.net. URL must serve the file directly with image/* content-type." },
     ],
   },
   {
     value: "landing_hero",
-    label: "Landing Page - Hero",
-    hint: "Headline and subtitle shown at the very top of the home page.",
+    label: "Landing Page - Hero (locked, Stage 1 approved)",
+    hint: "The public homepage hero text and image are locked to the Stage 1 approved design (\"Grow Your Property & Business\" + the BC luxury property photo). Edits saved here are NOT applied — this section is kept for reference only. Contact development to re-open editing of the hero.",
     starter: [
-      { key: "hero_title", value: "We turn marketing into rentals.", helper: "Big headline at the top of /" },
-      { key: "hero_subtitle", value: "Marketing for property owners and tailored services for tenants and investors.", helper: "Subtitle under the headline" },
-      { key: "hero_cta", value: "Get Started", helper: "Main CTA button label" },
+      { key: "hero_title", value: "Grow Your Property & Business", helper: "LOCKED — currently rendered from page.tsx, not from this row." },
+      { key: "hero_subtitle", value: "We connect property owners, investors, tenants, and businesses with tailored marketing strategies. Diagnose, recommend, and transform your results.", helper: "LOCKED — currently rendered from page.tsx, not from this row." },
     ],
   },
   {

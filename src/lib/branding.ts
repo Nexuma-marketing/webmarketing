@@ -17,8 +17,10 @@ const DEFAULT_BRANDING: SiteBranding = {
   shortName: "WebMarketing",
   tagline: "Residential & Business Marketing",
   logoUrl: "",
+  // Steve 5/6: revert to the Stage 1 approved cover image so any future
+  // surface that consumes branding.coverImageUrl shows the original photo.
   coverImageUrl:
-    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80",
+    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=1000&fit=crop&crop=center",
   faviconUrl: "",
 };
 

@@ -149,7 +149,7 @@ export default async function HomePage({
   const { data: contentRows } = await supabase
     .from("site_content")
     .select("section, key, value")
-    .in("section", ["testimonials", "faq", "branding", "landing_hero", "landing_cta"]);
+    .in("section", ["testimonials", "faq", "branding"]);
 
   const testimonialRows = (contentRows || []).filter((r) => r.section === "testimonials");
   const faqRows = (contentRows || []).filter((r) => r.section === "faq");
@@ -158,22 +158,14 @@ export default async function HomePage({
   const faqs = buildFaqs(faqRows);
   const branding = buildBranding(brandRows);
 
-  // Steve 5/4 #10/#11: hero + CTA texts are admin-editable from
-  // /admin/content (Landing Page sections). Build a flat key→value
-  // map and read it in the JSX with sane fallbacks so the page never
-  // breaks if a key is missing.
-  const heroMap = Object.fromEntries(
-    (contentRows || [])
-      .filter((r) => r.section === "landing_hero")
-      .map((r) => [r.key, r.value]),
-  );
-  const heroBadge = heroMap.hero_badge ?? "Complete Marketing Platform";
-  const heroTitle = heroMap.hero_title ?? "Grow Your Property & Business";
-  const heroSubtitle =
-    heroMap.hero_subtitle ??
-    "We connect property owners, investors, tenants, and businesses with tailored marketing strategies. Diagnose, recommend, and transform your results.";
-  const heroCtaPrimary = heroMap.hero_cta_primary ?? "Property Owners";
-  const heroCtaSecondary = heroMap.hero_cta_secondary ?? "Business Owners";
+  // Steve 5/6: hero text + image were changed away from the Stage 1
+  // approved design ("Grow Your Property & Business" + the modern
+  // luxury BC property photo). Restore the exact approved JSX —
+  // including the gradient on "Property" and "Business" — so this
+  // section cannot drift again. Other sections (testimonials, FAQ,
+  // branding name/logo/favicon) remain admin-editable.
+  const HERO_COVER_IMAGE =
+    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=1000&fit=crop&crop=center";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -254,15 +246,24 @@ export default async function HomePage({
           <div>
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm text-primary">
               <Sparkles className="h-3.5 w-3.5" />
-              {heroBadge}
+              Complete Marketing Platform
             </div>
 
             <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-              {heroTitle}
+              Grow Your{" "}
+              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Property
+              </span>{" "}
+              &{" "}
+              <span className="bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
+                Business
+              </span>
             </h1>
 
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              {heroSubtitle}
+              We connect property owners, investors, tenants, and businesses
+              with tailored marketing strategies. Diagnose, recommend, and
+              transform your results.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -274,7 +275,7 @@ export default async function HomePage({
                 })}
               >
                 <Building2 className="h-4 w-4" />
-                {heroCtaPrimary}
+                Property Owners
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
@@ -286,7 +287,7 @@ export default async function HomePage({
                 })}
               >
                 <BarChart3 className="h-4 w-4" />
-                {heroCtaSecondary}
+                Business Owners
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -307,17 +308,16 @@ export default async function HomePage({
             </div>
           </div>
 
-          {/* Right: Hero image — admin-editable from /admin/content (Site Branding → site_cover_image_url) */}
+          {/* Right: Hero image — Stage 1 approved (Steve 5/6 restore) */}
           <div className="relative mx-auto w-full max-w-md md:max-w-none">
             <div className="relative aspect-[4/5] overflow-hidden rounded-3xl shadow-2xl shadow-primary/10">
               <Image
-                src={branding.coverImageUrl}
-                alt="Homepage cover"
+                src={HERO_COVER_IMAGE}
+                alt="Modern luxury property in British Columbia"
                 fill
                 className="object-cover"
                 priority
                 sizes="(max-width: 768px) 100vw, 50vw"
-                unoptimized
               />
               <div className="absolute inset-0 bg-gradient-to-t from-primary/20 via-transparent to-transparent" />
             </div>
