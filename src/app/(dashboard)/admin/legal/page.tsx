@@ -46,12 +46,36 @@ interface LegalDoc {
   updated_at: string;
 }
 
+// Steve 5/6: filter options used to be a hardcoded short list
+// (data_processing / image_usage / marketing / third_party) so the
+// dropdown surfaced choices that did not exist in the data — selecting
+// "image_usage" returned 0 results when no propietario had toggled it,
+// and the inquilino-flow types (screening, references, communications,
+// truthfulness) were missing from the dropdown entirely. We now keep
+// the labels for pretty-printing only and derive the dropdown from the
+// actual consent_logs rows present in the table.
 const CONSENT_TYPE_LABELS: Record<string, string> = {
   data_processing: "Data Processing",
   image_usage: "Image Usage",
   marketing: "Marketing",
   third_party: "Third-Party",
+  screening: "Screening",
+  references: "References",
+  communications: "Communications (CASL)",
+  truthfulness: "Truthfulness",
+  legal_representation: "Legal Representation",
+  liability_limitation: "Liability Limitation",
+  electronic_signature: "Electronic Signature",
 };
+
+function prettyConsentLabel(value: string): string {
+  if (CONSENT_TYPE_LABELS[value]) return CONSENT_TYPE_LABELS[value];
+  return value
+    .replace(/^consent_/, "")
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export default function AdminLegalPage() {
   const [consents, setConsents] = useState<ConsentRow[]>([]);
@@ -166,7 +190,7 @@ export default function AdminLegalPage() {
       header: "Type",
       cell: ({ row }) => (
         <Badge variant="outline">
-          {CONSENT_TYPE_LABELS[row.getValue("consent_type") as string] || row.getValue("consent_type")}
+          {prettyConsentLabel(row.getValue("consent_type") as string)}
         </Badge>
       ),
       filterFn: "equals",
@@ -197,9 +221,14 @@ export default function AdminLegalPage() {
     },
   ];
 
-  const consentTypeOptions = Object.entries(CONSENT_TYPE_LABELS).map(
-    ([value, label]) => ({ value, label })
-  );
+  // Steve 5/6: derive filter options from the actual consent_logs in
+  // the DB so the dropdown never offers a value that returns 0 rows.
+  const consentTypeOptions = Array.from(
+    new Set(consents.map((c) => c.consent_type)),
+  )
+    .filter(Boolean)
+    .sort()
+    .map((value) => ({ value, label: prettyConsentLabel(value) }));
 
   return (
     <div className="space-y-6">
