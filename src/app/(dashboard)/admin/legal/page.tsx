@@ -170,7 +170,7 @@ export default function AdminLegalPage() {
     }
     setEditDoc(null);
     setSaveMessage("Document saved successfully.");
-    setTimeout(() => setSaveMessage(null), 4000);
+    setTimeout(() => setSaveMessage(null), 6000);
     load();
   }
 
@@ -322,8 +322,23 @@ export default function AdminLegalPage() {
         </CardContent>
       </Card>
 
+      {/* Steve 5/7: prior toast was 4s at bottom-right and easy to miss
+          while the eye was still on the modal. Move to top-center, bump
+          font size, and add a checkmark so the save confirmation is
+          unmistakable. Auto-dismiss bumped to 6s in saveLegalDoc(). */}
       {saveMessage && (
-        <div className="fixed bottom-4 right-4 z-50 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 shadow-lg">
+        <div
+          className={`fixed left-1/2 top-6 z-50 -translate-x-1/2 rounded-lg border px-6 py-4 text-base font-medium shadow-2xl ${
+            saveMessage.startsWith("Error")
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-green-50 border-green-300 text-green-800"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="mr-2">
+            {saveMessage.startsWith("Error") ? "⚠" : "✓"}
+          </span>
           {saveMessage}
         </div>
       )}
