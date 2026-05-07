@@ -3,6 +3,14 @@ import Image from "next/image";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { buildBranding } from "@/lib/branding";
+
+// Steve 5/6: admin edits to /admin/content (hero_title, testimonials,
+// FAQ, branding) were not appearing on the public homepage. Without
+// this directive Next.js may statically render this page at build
+// time, so site_content writes never reach the visitor until the next
+// deploy. Force dynamic so every request reads fresh DB state.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import {
   Building2,
   Users,
