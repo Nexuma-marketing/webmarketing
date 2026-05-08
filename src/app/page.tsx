@@ -933,7 +933,18 @@ export default async function HomePage({
               <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-600" />
               <p className="font-medium text-green-800">Message sent successfully!</p>
               <p className="mt-1 text-sm text-green-600">
-                Our team will get back to you within 24 hours.
+                Our team will get back to you within 24 hours. A confirmation
+                email has been sent to your inbox.
+              </p>
+            </div>
+          )}
+          {contactStatus === "email_pending" && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
+              <p className="font-medium text-amber-800">Message recorded</p>
+              <p className="mt-1 text-sm text-amber-700">
+                We received your message and saved it. Our email confirmation
+                is delayed — our team will still get back to you within 24
+                hours.
               </p>
             </div>
           )}

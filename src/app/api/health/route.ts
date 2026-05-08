@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSbClient } from "@supabase/supabase-js";
+import { getEmailMetrics } from "@/lib/email";
 
 // Public diagnostic — confirms which build + which DB state Steve is
 // actually hitting. Visit /api/health on the live domain. Read-only.
@@ -79,6 +80,16 @@ export async function GET() {
       leadsByRole: leadRoles,
       propertyImagesRooms: distinctRooms,
     },
+    email: {
+      // Steve 5/7: surface contact-form email metrics so we can detect
+      // delivery failures without waiting for the next customer round.
+      ...getEmailMetrics(),
+      resendApiKeyConfigured: !!process.env.RESEND_API_KEY,
+      notificationRecipient:
+        process.env.CONTACT_NOTIFICATION_EMAIL || "alexsanabria33@hotmail.com",
+      fromAddress:
+        process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>",
+    },
     interpretation: {
       // Any non-"unknown" commit means Vercel is serving the build that was
       // pushed; we don't need to compare against a specific hash.
@@ -99,6 +110,7 @@ export async function GET() {
       roomCasingNormalized: distinctRooms.every(
         (r) => r === r.toLowerCase() && !r.includes(" "),
       ),
+      emailReady: !!process.env.RESEND_API_KEY,
     },
   });
 }

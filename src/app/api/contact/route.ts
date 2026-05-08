@@ -61,14 +61,23 @@ export async function POST(request: Request) {
       notes: subject,
     });
 
-    // Send email notification (non-blocking)
-    sendContactNotification({ name, email, phone: phone || null, subject }).catch(
-      (err) => console.error("Email notification failed:", err)
-    );
+    // Steve 5/7: previously this fired-and-forgot the email and
+    // ALWAYS redirected to ?contact=success even when Resend silently
+    // swallowed the message. Now we await the result so the user only
+    // sees "success" when the email actually went out. If delivery is
+    // misconfigured we redirect to ?contact=email_pending so the
+    // customer knows the lead is recorded but the email is delayed.
+    const emailResult = await sendContactNotification({
+      name,
+      email,
+      phone: phone || null,
+      subject,
+    });
 
-    // Redirect back to homepage with success message
-    return NextResponse.redirect(new URL("/?contact=success", request.url), 303);
-  } catch {
+    const status = emailResult.ok ? "success" : "email_pending";
+    return NextResponse.redirect(new URL(`/?contact=${status}`, request.url), 303);
+  } catch (err) {
+    console.error("/api/contact failed:", err);
     return NextResponse.redirect(new URL("/?contact=error", request.url), 303);
   }
 }
