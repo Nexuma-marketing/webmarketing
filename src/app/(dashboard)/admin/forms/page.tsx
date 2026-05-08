@@ -191,6 +191,13 @@ export default function AdminFormsPage() {
   async function saveQuestion() {
     if (!editQuestion?.field_key || !editQuestion?.label || !selectedFormId) return;
     setSaving(true);
+    // Steve 5/7: trim empty option rows before persisting so a half-typed
+    // "Add option" click does not leak a {value:"", label:""} entry into
+    // form_questions.options. The public form rendered an empty checkbox
+    // for every such row.
+    const trimmedOptions = (editQuestion.options ?? [])
+      .map((o) => ({ value: o.value.trim(), label: o.label.trim() }))
+      .filter((o) => o.value !== "" || o.label !== "");
     const payload = {
       form_id: selectedFormId,
       position: editQuestion.position ?? questions.length,
@@ -198,7 +205,7 @@ export default function AdminFormsPage() {
       label: editQuestion.label,
       question_type: editQuestion.question_type || "text",
       options: NEEDS_OPTIONS.includes(editQuestion.question_type || "")
-        ? editQuestion.options
+        ? trimmedOptions
         : null,
       required: editQuestion.required ?? false,
       is_active: editQuestion.is_active ?? true,

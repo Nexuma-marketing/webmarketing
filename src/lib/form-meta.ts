@@ -55,12 +55,23 @@ async function fetchFormMeta(formSlug: string): Promise<FieldMetaMap> {
       const raw = (q as { options?: unknown }).options;
       let parsedOptions: FieldOption[] | null = null;
       if (Array.isArray(raw)) {
+        // Steve 5/7: defensively skip blank rows that may have leaked
+        // into form_questions.options before saveQuestion() was hardened
+        // (admin "Add option" + Save without typing anything used to
+        // persist a {value:"", label:""} row, which then rendered as an
+        // unlabelled checkbox on the public form).
         parsedOptions = (raw as unknown[])
           .map((o) => {
-            if (typeof o === "string") return { value: o, label: o };
+            if (typeof o === "string") {
+              const trimmed = o.trim();
+              return trimmed ? { value: trimmed, label: trimmed } : null;
+            }
             const oo = o as { value?: unknown; label?: unknown };
             if (typeof oo.value === "string" && typeof oo.label === "string") {
-              return { value: oo.value, label: oo.label };
+              const v = oo.value.trim();
+              const l = oo.label.trim();
+              if (!v && !l) return null;
+              return { value: v || l, label: l || v };
             }
             return null;
           })
