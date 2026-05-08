@@ -52,15 +52,12 @@ const SECTIONS: SectionDef[] = [
       { key: "site_favicon_url", value: "", helper: "Browser tab icon URL. Recommended: 32×32 ICO/PNG or 64×64 PNG. Tools: realfavicongenerator.net. URL must serve the file directly with image/* content-type." },
     ],
   },
-  {
-    value: "landing_hero",
-    label: "Landing Page - Hero (locked, Stage 1 approved)",
-    hint: "The public homepage hero text and image are locked to the Stage 1 approved design (\"Grow Your Property & Business\" + the BC luxury property photo). Edits saved here are NOT applied — this section is kept for reference only. Contact development to re-open editing of the hero.",
-    starter: [
-      { key: "hero_title", value: "Grow Your Property & Business", helper: "LOCKED — currently rendered from page.tsx, not from this row." },
-      { key: "hero_subtitle", value: "We connect property owners, investors, tenants, and businesses with tailored marketing strategies. Diagnose, recommend, and transform your results.", helper: "LOCKED — currently rendered from page.tsx, not from this row." },
-    ],
-  },
+  // Steve 5/7: Landing Hero section is intentionally NOT exposed in
+  // the admin UI any more. Stage 1 approved hardcoded JSX renders the
+  // hero in src/app/page.tsx — exposing editable rows here was
+  // misleading customers into thinking they could change the headline
+  // through the panel. Re-add this entry only if Steve explicitly
+  // re-opens hero editing (see homepage:revert-hero-to-stage1 commit).
   {
     value: "landing_features",
     label: "Landing Page - Features",
