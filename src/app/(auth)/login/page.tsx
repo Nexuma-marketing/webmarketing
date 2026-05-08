@@ -125,11 +125,11 @@ export default function LoginPage() {
                   required
                 />
               </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full mt-2" disabled={loading}>
                 {loading ? "Sending..." : "Send Reset Link"}
               </Button>
+            </CardContent>
+            <CardFooter className="justify-center pt-3 pb-4">
               <button
                 type="button"
                 className="text-sm text-primary underline"
@@ -188,11 +188,16 @@ export default function LoginPage() {
               required
             />
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={loading}>
+
+          {/* Steve 5/7: button kept inside CardContent so it sits flush
+              under the password field. CardFooter's default border-t +
+              muted background + p-4 created a visible gap that
+              disconnected the button from the form. */}
+          <Button type="submit" className="w-full mt-2" disabled={loading}>
             {loading ? "Signing in..." : "Sign In"}
           </Button>
+        </CardContent>
+        <CardFooter className="justify-center pt-3 pb-4">
           <p className="text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
             <Link href="/register" className="text-primary underline">

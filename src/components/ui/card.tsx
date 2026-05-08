@@ -83,8 +83,12 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-footer"
+      // Steve 5/7: removed heavy default `border-t bg-muted/50` so the
+      // footer no longer renders as a visually separate "second area"
+      // disconnected from the form above. Auth pages now flow naturally
+      // from the content into the footer link.
       className={cn(
-        "flex items-center rounded-b-xl border-t bg-muted/50 p-4 group-data-[size=sm]/card:p-3",
+        "flex items-center rounded-b-xl p-4 group-data-[size=sm]/card:p-3",
         className
       )}
       {...props}
