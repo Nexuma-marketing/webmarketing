@@ -246,11 +246,17 @@ export default function RegisterPage() {
               <span className="text-destructive">*</span> Required to create your account.
             </p>
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={loading}>
+
+          {/* Steve 5/7: Button kept inside CardContent so it sits flush
+              under the consent box. The default CardFooter has its own
+              border-t + muted background + 16px padding which created a
+              visible "second area" gap that disconnected the button
+              from the action it's confirming. */}
+          <Button type="submit" className="w-full mt-2" disabled={loading}>
             {loading ? "Creating account..." : "Create Account"}
           </Button>
+        </CardContent>
+        <CardFooter className="justify-center pt-3 pb-4">
           <p className="text-sm text-muted-foreground">
             Already have an account?{" "}
             <Link href="/login" className="text-primary underline">
