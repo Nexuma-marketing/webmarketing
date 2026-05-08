@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { UserRole } from "@/types/database";
+import { logConsents } from "@/lib/consent-log";
 
 const ROLE_LABELS: Record<string, string> = {
   propietario: "Property Owner / Investor",
@@ -34,6 +36,13 @@ export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Steve 5/7: PIPA/PIPEDA + Terms acceptance was never logged to
+  // consent_logs at signup, so /admin/legal Logs only ever showed
+  // people who later submitted a profile form. Add explicit checkboxes
+  // here and route them through logConsents (with IP + UA) so admin
+  // sees a record for every account ever created.
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -60,8 +69,14 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!acceptTerms || !acceptPrivacy) {
+      setError("You must accept the Terms of Service and Privacy Policy to continue.");
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -77,6 +92,17 @@ export default function RegisterPage() {
       setError(signUpError.message);
       setLoading(false);
       return;
+    }
+
+    // Log Terms + Privacy acceptance with IP + UA. Non-blocking — if
+    // the user already exists or the insert fails, we still proceed to
+    // the form so onboarding is not stuck behind logging.
+    const userId = signUpData.user?.id;
+    if (userId) {
+      logConsents(userId, [
+        { type: "terms_of_service", granted: true },
+        { type: "privacy_policy", granted: true },
+      ]).catch((err) => console.error("Signup consent log failed:", err));
     }
 
     // Redirect to the corresponding form based on role
@@ -167,6 +193,39 @@ export default function RegisterPage() {
               minLength={6}
               required
             />
+          </div>
+
+          {/* Steve 5/7: explicit Terms / Privacy acceptance, logged with
+              IP + UA into consent_logs so /admin/legal can audit. */}
+          <div className="space-y-3 rounded-md border p-3 bg-muted/30">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="accept_terms"
+                checked={acceptTerms}
+                onCheckedChange={(c) => setAcceptTerms(c === true)}
+              />
+              <Label htmlFor="accept_terms" className="text-sm font-normal leading-relaxed">
+                I accept the{" "}
+                <Link href="/legal/terms" target="_blank" className="text-primary underline">
+                  Terms of Service
+                </Link>
+                . (Required)
+              </Label>
+            </div>
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="accept_privacy"
+                checked={acceptPrivacy}
+                onCheckedChange={(c) => setAcceptPrivacy(c === true)}
+              />
+              <Label htmlFor="accept_privacy" className="text-sm font-normal leading-relaxed">
+                I have read and accept the{" "}
+                <Link href="/legal/privacy" target="_blank" className="text-primary underline">
+                  Privacy Policy (PIPA / PIPEDA)
+                </Link>
+                . (Required)
+              </Label>
+            </div>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
