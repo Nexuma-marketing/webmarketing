@@ -195,37 +195,56 @@ export default function RegisterPage() {
             />
           </div>
 
-          {/* Steve 5/7: explicit Terms / Privacy acceptance, logged with
-              IP + UA into consent_logs so /admin/legal can audit. */}
+          {/* Steve 5/7: Terms / Privacy acceptance, logged with IP + UA
+              into consent_logs. Layout split into checkbox row + small
+              Read link below so the inline <Link> can no longer wrap
+              awkwardly between text fragments. */}
           <div className="space-y-3 rounded-md border p-3 bg-muted/30">
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="accept_terms"
-                checked={acceptTerms}
-                onCheckedChange={(c) => setAcceptTerms(c === true)}
-              />
-              <Label htmlFor="accept_terms" className="text-sm font-normal leading-relaxed">
-                I accept the{" "}
-                <Link href="/legal/terms" target="_blank" className="text-primary underline">
-                  Terms of Service
-                </Link>
-                . (Required)
-              </Label>
+            <div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="accept_terms"
+                  checked={acceptTerms}
+                  onCheckedChange={(c) => setAcceptTerms(c === true)}
+                />
+                <Label htmlFor="accept_terms" className="text-sm font-normal">
+                  I accept the Terms of Service
+                  <span className="ml-1 text-xs text-destructive">*</span>
+                </Label>
+              </div>
+              <Link
+                href="/legal/terms"
+                target="_blank"
+                className="ml-6 mt-0.5 inline-block text-xs text-primary hover:underline"
+              >
+                Read full document →
+              </Link>
             </div>
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="accept_privacy"
-                checked={acceptPrivacy}
-                onCheckedChange={(c) => setAcceptPrivacy(c === true)}
-              />
-              <Label htmlFor="accept_privacy" className="text-sm font-normal leading-relaxed">
-                I have read and accept the{" "}
-                <Link href="/legal/privacy" target="_blank" className="text-primary underline">
-                  Privacy Policy (PIPA / PIPEDA)
-                </Link>
-                . (Required)
-              </Label>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="accept_privacy"
+                  checked={acceptPrivacy}
+                  onCheckedChange={(c) => setAcceptPrivacy(c === true)}
+                />
+                <Label htmlFor="accept_privacy" className="text-sm font-normal">
+                  I accept the Privacy Policy (PIPA / PIPEDA)
+                  <span className="ml-1 text-xs text-destructive">*</span>
+                </Label>
+              </div>
+              <Link
+                href="/legal/privacy"
+                target="_blank"
+                className="ml-6 mt-0.5 inline-block text-xs text-primary hover:underline"
+              >
+                Read full document →
+              </Link>
             </div>
+
+            <p className="text-xs text-muted-foreground border-t pt-2">
+              <span className="text-destructive">*</span> Required to create your account.
+            </p>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
