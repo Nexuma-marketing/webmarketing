@@ -898,15 +898,15 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>What are your objectives? (select all that apply)</Label>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {OBJECTIVES.map((obj) => (
-                      <div key={obj} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "objectives", OBJECTIVES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`obj-${obj}`}
-                          checked={objectives.includes(obj)}
-                          onCheckedChange={() => toggleArray("objectives", obj, objectives)}
+                          id={`obj-${opt.value}`}
+                          checked={objectives.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("objectives", opt.value, objectives)}
                         />
-                        <Label htmlFor={`obj-${obj}`} className="text-sm font-normal">
-                          {obj}
+                        <Label htmlFor={`obj-${opt.value}`} className="text-sm font-normal">
+                          {opt.label}
                         </Label>
                       </div>
                     ))}
@@ -1154,14 +1154,14 @@ export default function OwnerFormPage() {
                 </div>
                 {smartHome && (
                   <div className="ml-6 space-y-2">
-                    {SMART_HOME_FEATURES.map((f) => (
-                      <div key={f} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "smart_home_features", SMART_HOME_FEATURES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`sh-${f}`}
-                          checked={smartHomeFeatures.includes(f)}
-                          onCheckedChange={() => toggleArray("smart_home_features", f, smartHomeFeatures)}
+                          id={`sh-${opt.value}`}
+                          checked={smartHomeFeatures.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("smart_home_features", opt.value, smartHomeFeatures)}
                         />
-                        <Label htmlFor={`sh-${f}`} className="text-sm font-normal">{f}</Label>
+                        <Label htmlFor={`sh-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                     {/* #8: Other text field for smart home */}
@@ -1174,14 +1174,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Amenities</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    {AMENITIES.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "amenities", AMENITIES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`am-${a}`}
-                          checked={amenities.includes(a)}
-                          onCheckedChange={() => toggleArray("amenities", a, amenities)}
+                          id={`am-${opt.value}`}
+                          checked={amenities.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("amenities", opt.value, amenities)}
                         />
-                        <Label htmlFor={`am-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`am-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1194,14 +1194,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Building common areas</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    {COMMON_AREAS.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "common_areas", COMMON_AREAS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ca-${a}`}
-                          checked={commonAreas.includes(a)}
-                          onCheckedChange={() => toggleArray("common_areas", a, commonAreas)}
+                          id={`ca-${opt.value}`}
+                          checked={commonAreas.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("common_areas", opt.value, commonAreas)}
                         />
-                        <Label htmlFor={`ca-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`ca-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1211,14 +1211,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Where is your property currently listed?</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    {LISTING_PLATFORMS.map((p) => (
-                      <div key={p} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "listing_platforms", LISTING_PLATFORMS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`lp-${p}`}
-                          checked={listingPlatforms.includes(p)}
-                          onCheckedChange={() => toggleArray("listing_platforms", p, listingPlatforms)}
+                          id={`lp-${opt.value}`}
+                          checked={listingPlatforms.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("listing_platforms", opt.value, listingPlatforms)}
                         />
-                        <Label htmlFor={`lp-${p}`} className="text-sm font-normal">{p}</Label>
+                        <Label htmlFor={`lp-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1380,14 +1380,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Amenities</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    {AMENITIES.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "amenities", AMENITIES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`inv-am-${propIdx}-${a}`}
-                          checked={invProp.amenities.includes(a)}
-                          onCheckedChange={() => toggleInvArray("amenities", a)}
+                          id={`inv-am-${propIdx}-${opt.value}`}
+                          checked={invProp.amenities.includes(opt.value)}
+                          onCheckedChange={() => toggleInvArray("amenities", opt.value)}
                         />
-                        <Label htmlFor={`inv-am-${propIdx}-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`inv-am-${propIdx}-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1396,14 +1396,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Where is this property currently listed?</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    {LISTING_PLATFORMS.map((p) => (
-                      <div key={p} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "listing_platforms", LISTING_PLATFORMS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`inv-lp-${propIdx}-${p}`}
-                          checked={invProp.listing_platforms.includes(p)}
-                          onCheckedChange={() => toggleInvArray("listing_platforms", p)}
+                          id={`inv-lp-${propIdx}-${opt.value}`}
+                          checked={invProp.listing_platforms.includes(opt.value)}
+                          onCheckedChange={() => toggleInvArray("listing_platforms", opt.value)}
                         />
-                        <Label htmlFor={`inv-lp-${propIdx}-${p}`} className="text-sm font-normal">{p}</Label>
+                        <Label htmlFor={`inv-lp-${propIdx}-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1510,14 +1510,14 @@ export default function OwnerFormPage() {
                   {nearSkytrain && (
                     <div className="ml-6 space-y-2">
                       <Label className="text-sm">Which line?</Label>
-                      {SKYTRAIN_LINES.map((line) => (
-                        <div key={line} className="flex items-center gap-2">
+                      {fieldOptions(fieldMeta, "skytrain_lines", SKYTRAIN_LINES).map((opt) => (
+                        <div key={opt.value} className="flex items-center gap-2">
                           <Checkbox
-                            id={`sky-${line}`}
-                            checked={skytrainLines.includes(line)}
-                            onCheckedChange={() => toggleArray("skytrain_lines", line, skytrainLines)}
+                            id={`sky-${opt.value}`}
+                            checked={skytrainLines.includes(opt.value)}
+                            onCheckedChange={() => toggleArray("skytrain_lines", opt.value, skytrainLines)}
                           />
-                          <Label htmlFor={`sky-${line}`} className="text-sm font-normal">{line}</Label>
+                          <Label htmlFor={`sky-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                         </div>
                       ))}
                     </div>
@@ -1536,14 +1536,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Nearby supermarkets</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    {SUPERMARKETS.map((s) => (
-                      <div key={s} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "nearby_supermarkets", SUPERMARKETS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`sm-${s}`}
-                          checked={supermarkets.includes(s)}
-                          onCheckedChange={() => toggleArray("nearby_supermarkets", s, supermarkets)}
+                          id={`sm-${opt.value}`}
+                          checked={supermarkets.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("nearby_supermarkets", opt.value, supermarkets)}
                         />
-                        <Label htmlFor={`sm-${s}`} className="text-sm font-normal">{s}</Label>
+                        <Label htmlFor={`sm-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -1627,14 +1627,14 @@ export default function OwnerFormPage() {
                   {invProp.near_skytrain && (
                     <div className="ml-6 space-y-2">
                       <Label className="text-sm">Which line?</Label>
-                      {SKYTRAIN_LINES.map((line) => (
-                        <div key={line} className="flex items-center gap-2">
+                      {fieldOptions(fieldMeta, "skytrain_lines", SKYTRAIN_LINES).map((opt) => (
+                        <div key={opt.value} className="flex items-center gap-2">
                           <Checkbox
-                            id={`inv-sky-${propIdx}-${line}`}
-                            checked={invProp.skytrain_lines.includes(line)}
-                            onCheckedChange={() => toggleInvArray("skytrain_lines", line)}
+                            id={`inv-sky-${propIdx}-${opt.value}`}
+                            checked={invProp.skytrain_lines.includes(opt.value)}
+                            onCheckedChange={() => toggleInvArray("skytrain_lines", opt.value)}
                           />
-                          <Label htmlFor={`inv-sky-${propIdx}-${line}`} className="text-sm font-normal">{line}</Label>
+                          <Label htmlFor={`inv-sky-${propIdx}-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                         </div>
                       ))}
                     </div>
@@ -1653,14 +1653,14 @@ export default function OwnerFormPage() {
                 <div className="space-y-3">
                   <Label>Nearby supermarkets</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    {SUPERMARKETS.map((s) => (
-                      <div key={s} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "nearby_supermarkets", SUPERMARKETS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`inv-sm-${propIdx}-${s}`}
-                          checked={invProp.nearby_supermarkets.includes(s)}
-                          onCheckedChange={() => toggleInvArray("nearby_supermarkets", s)}
+                          id={`inv-sm-${propIdx}-${opt.value}`}
+                          checked={invProp.nearby_supermarkets.includes(opt.value)}
+                          onCheckedChange={() => toggleInvArray("nearby_supermarkets", opt.value)}
                         />
-                        <Label htmlFor={`inv-sm-${propIdx}-${s}`} className="text-sm font-normal">{s}</Label>
+                        <Label htmlFor={`inv-sm-${propIdx}-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>

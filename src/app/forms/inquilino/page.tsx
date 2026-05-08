@@ -592,15 +592,15 @@ export default function TenantFormPage() {
                 <div className="space-y-3">
                   <Label>{f.label}</Label>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {PROPERTY_TYPES.map((type) => (
-                      <div key={type} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "property_type_desired", PROPERTY_TYPES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ptype-${type}`}
-                          checked={propertyTypes.includes(type)}
-                          onCheckedChange={() => toggleArrayField("property_type_desired", type, propertyTypes)}
+                          id={`ptype-${opt.value}`}
+                          checked={propertyTypes.includes(opt.value)}
+                          onCheckedChange={() => toggleArrayField("property_type_desired", opt.value, propertyTypes)}
                         />
-                        <Label htmlFor={`ptype-${type}`} className="text-sm font-normal">
-                          {type}
+                        <Label htmlFor={`ptype-${opt.value}`} className="text-sm font-normal">
+                          {opt.label}
                         </Label>
                       </div>
                     ))}
@@ -620,45 +620,53 @@ export default function TenantFormPage() {
                 <div className="space-y-3">
                   <Label>Preferred zone (British Columbia)</Label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {BC_ZONES.map((zone) => (
-                      <div key={zone} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`zone-${zone}`}
-                          checked={zones.includes(zone)}
-                          onCheckedChange={() => toggleArrayField("preferred_zones", zone, zones)}
-                        />
-                        <Label htmlFor={`zone-${zone}`} className="text-sm font-normal">
-                          {zone}
-                        </Label>
-                      </div>
-                    ))}
-                    <div className="col-span-2 flex items-center gap-2 sm:col-span-3">
-                      <Checkbox
-                        id="zone-other"
-                        checked={zones.some((z) => !BC_ZONES.includes(z))}
-                        onCheckedChange={(checked) => {
-                          if (checked && otherZone) {
-                            setValue("preferred_zones", [...zones.filter((z) => BC_ZONES.includes(z)), otherZone]);
-                          } else {
-                            setValue("preferred_zones", zones.filter((z) => BC_ZONES.includes(z)));
-                          }
-                        }}
-                      />
-                      <Input
-                        placeholder="Other city..."
-                        className="max-w-48"
-                        value={otherZone}
-                        onChange={(e) => {
-                          setOtherZone(e.target.value);
-                          if (e.target.value) {
-                            setValue("preferred_zones", [
-                              ...zones.filter((z) => BC_ZONES.includes(z)),
-                              e.target.value,
-                            ]);
-                          }
-                        }}
-                      />
-                    </div>
+                    {(() => {
+                      const zoneOpts = fieldOptions(fieldMeta, "preferred_zones", BC_ZONES);
+                      const zoneValues = zoneOpts.map((o) => o.value);
+                      return (
+                        <>
+                          {zoneOpts.map((opt) => (
+                            <div key={opt.value} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`zone-${opt.value}`}
+                                checked={zones.includes(opt.value)}
+                                onCheckedChange={() => toggleArrayField("preferred_zones", opt.value, zones)}
+                              />
+                              <Label htmlFor={`zone-${opt.value}`} className="text-sm font-normal">
+                                {opt.label}
+                              </Label>
+                            </div>
+                          ))}
+                          <div className="col-span-2 flex items-center gap-2 sm:col-span-3">
+                            <Checkbox
+                              id="zone-other"
+                              checked={zones.some((z) => !zoneValues.includes(z))}
+                              onCheckedChange={(checked) => {
+                                if (checked && otherZone) {
+                                  setValue("preferred_zones", [...zones.filter((z) => zoneValues.includes(z)), otherZone]);
+                                } else {
+                                  setValue("preferred_zones", zones.filter((z) => zoneValues.includes(z)));
+                                }
+                              }}
+                            />
+                            <Input
+                              placeholder="Other city..."
+                              className="max-w-48"
+                              value={otherZone}
+                              onChange={(e) => {
+                                setOtherZone(e.target.value);
+                                if (e.target.value) {
+                                  setValue("preferred_zones", [
+                                    ...zones.filter((z) => zoneValues.includes(z)),
+                                    e.target.value,
+                                  ]);
+                                }
+                              }}
+                            />
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                   {errors.preferred_zones && (
                     <p className="text-sm text-destructive">{errors.preferred_zones.message}</p>
@@ -793,14 +801,14 @@ export default function TenantFormPage() {
                 </div>
                 {smartHomeInterest && (
                   <div className="ml-6 space-y-2">
-                    {SMART_HOME_FEATURES.map((f) => (
-                      <div key={f} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "smart_home_features", SMART_HOME_FEATURES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`sh-${f}`}
-                          checked={smartHomeFeatures.includes(f)}
-                          onCheckedChange={() => toggleArrayField("smart_home_features", f, smartHomeFeatures)}
+                          id={`sh-${opt.value}`}
+                          checked={smartHomeFeatures.includes(opt.value)}
+                          onCheckedChange={() => toggleArrayField("smart_home_features", opt.value, smartHomeFeatures)}
                         />
-                        <Label htmlFor={`sh-${f}`} className="text-sm font-normal">{f}</Label>
+                        <Label htmlFor={`sh-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                     {/* #8: Other text field for smart home */}
@@ -892,14 +900,14 @@ export default function TenantFormPage() {
                 <div className="space-y-3">
                   <Label>Preferred amenities</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    {AMENITIES.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "preferred_amenities", AMENITIES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`amenity-${a}`}
-                          checked={amenities.includes(a)}
-                          onCheckedChange={() => toggleArrayField("preferred_amenities", a, amenities)}
+                          id={`amenity-${opt.value}`}
+                          checked={amenities.includes(opt.value)}
+                          onCheckedChange={() => toggleArrayField("preferred_amenities", opt.value, amenities)}
                         />
-                        <Label htmlFor={`amenity-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`amenity-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -912,14 +920,14 @@ export default function TenantFormPage() {
                 <div className="space-y-3">
                   <Label>Building common areas</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    {COMMON_AREAS.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "common_areas", COMMON_AREAS).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ca-${a}`}
-                          checked={commonAreas.includes(a)}
-                          onCheckedChange={() => toggleArrayField("common_areas", a, commonAreas)}
+                          id={`ca-${opt.value}`}
+                          checked={commonAreas.includes(opt.value)}
+                          onCheckedChange={() => toggleArrayField("common_areas", opt.value, commonAreas)}
                         />
-                        <Label htmlFor={`ca-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`ca-${opt.value}`} className="text-sm font-normal">{opt.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -966,15 +974,15 @@ export default function TenantFormPage() {
                   {nearSkytrain && (
                     <div className="ml-6 space-y-2">
                       <Label className="text-sm">Which SkyTrain line would you prefer?</Label>
-                      {SKYTRAIN_LINES.map((line) => (
-                        <div key={line} className="flex items-center gap-2">
+                      {fieldOptions(fieldMeta, "skytrain_lines", SKYTRAIN_LINES).map((opt) => (
+                        <div key={opt.value} className="flex items-center gap-2">
                           <Checkbox
-                            id={`sky-${line}`}
-                            checked={skytrainLines.includes(line)}
-                            onCheckedChange={() => toggleArrayField("skytrain_lines", line, skytrainLines)}
+                            id={`sky-${opt.value}`}
+                            checked={skytrainLines.includes(opt.value)}
+                            onCheckedChange={() => toggleArrayField("skytrain_lines", opt.value, skytrainLines)}
                           />
-                          <Label htmlFor={`sky-${line}`} className="text-sm font-normal">
-                            {line}
+                          <Label htmlFor={`sky-${opt.value}`} className="text-sm font-normal">
+                            {opt.label}
                           </Label>
                         </div>
                       ))}
