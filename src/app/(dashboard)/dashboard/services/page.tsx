@@ -291,6 +291,23 @@ const PYMES_PLANS: Record<
   },
 };
 
+function FoundersBanner({ taken, limit }: { taken: number; limit: number }) {
+  const left = Math.max(0, limit - taken);
+  return (
+    <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 text-center">
+      <p className="text-lg font-bold text-amber-900">
+        {taken} owners have already chosen the Founders Package
+      </p>
+      <p className="text-2xl font-extrabold text-red-600 mt-1">
+        Only {left} spots left — Hurry!
+      </p>
+      <p className="text-xs text-amber-700 mt-2">
+        Limited to the first {limit} Visionary Owners at the special lifetime rate.
+      </p>
+    </div>
+  );
+}
+
 export default async function ServicesPage() {
   const supabase = await createClient();
   const {
@@ -839,23 +856,19 @@ export default async function ServicesPage() {
             Available Plans
           </h2>
 
-          {/* Founders plan urgency counter — value editable via /admin/pricing (Founders Plan section) */}
-          {ownerTier === "basic" && foundersLimit > 0 && (() => {
-            const foundersLeft = Math.max(0, foundersLimit - foundersTaken);
-            return (
-              <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 text-center">
-                <p className="text-lg font-bold text-amber-900">
-                  {foundersTaken} owners have already chosen the Founders Package
-                </p>
-                <p className="text-2xl font-extrabold text-red-600 mt-1">
-                  Only {foundersLeft} spots left — Hurry!
-                </p>
-                <p className="text-xs text-amber-700 mt-2">
-                  Limited to the first 20 Visionary Owners at the special lifetime rate.
-                </p>
-              </div>
-            );
-          })()}
+          {/* Founders plan urgency counter — value editable via
+              /admin/pricing (Founders Plan section). Steve 5/8: was
+              gated on ownerTier === "basic" so single-property test
+              owners with no completed tier (and the no-tier branch
+              below) never saw the saved counter, making it look like
+              the admin save did nothing. Now renders for any basic
+              tier — including the no-tier branch via FoundersBanner
+              below. Multi-property tiers (preferred/elite) still skip
+              it because the Founders package only applies to single
+              property owners. */}
+          {ownerTier === "basic" && foundersLimit > 0 && (
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit} />
+          )}
 
           <div className={`grid gap-4 ${tierDetails.plans.length > 1 ? "md:grid-cols-2" : ""}`}>
             {tierDetails.plans.map((plan, i) => (
@@ -893,21 +906,30 @@ export default async function ServicesPage() {
 
       {/* ═══ Owner: No tier yet ═══ */}
       {isOwnerRole && !tierDetails && (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center py-8 text-center">
-            <Crown className="mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="font-medium">No service tier assigned yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Complete your Discovery Brief to get your service tier.
-            </p>
-            <Link
-              href="/forms/propietario"
-              className={buttonVariants({ className: "mt-4" })}
-            >
-              Complete Discovery Brief
-            </Link>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          {/* Steve 5/8: pre-tier owners need to see the Founders
+              counter too — without this the counter appeared "stuck at
+              0" during admin tests because the no-tier owner card had
+              no banner at all. */}
+          {foundersLimit > 0 && (
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit} />
+          )}
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center py-8 text-center">
+              <Crown className="mb-3 h-8 w-8 text-muted-foreground" />
+              <p className="font-medium">No service tier assigned yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Complete your Discovery Brief to get your service tier.
+              </p>
+              <Link
+                href="/forms/propietario"
+                className={buttonVariants({ className: "mt-4" })}
+              >
+                Complete Discovery Brief
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ═══ PYMES: Recommended Plan ═══ */}

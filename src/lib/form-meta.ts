@@ -22,12 +22,18 @@ export interface FieldMeta {
 
 export type FieldMetaMap = Record<string, FieldMeta>;
 
+// Steve 5/8: prior implementation cached the fetched map for the
+// lifetime of the JS module. That was fine for a single page load,
+// but admin edits in /admin/forms only became visible on the public
+// form after a hard reload — soft Next.js navigation kept the stale
+// cache, so the May 8 docx complained that owner-form option changes
+// "no se reflejan". The cache is now used as a hint (so the form
+// renders instantly with the last-known data) while a background
+// refetch always runs on mount to catch admin edits.
 const cache: Record<string, FieldMetaMap> = {};
 const inflight: Record<string, Promise<FieldMetaMap>> = {};
 
 async function fetchFormMeta(formSlug: string): Promise<FieldMetaMap> {
-  const cached = cache[formSlug];
-  if (cached) return cached;
   const pending = inflight[formSlug];
   if (pending) return pending;
 
@@ -106,8 +112,10 @@ async function fetchFormMeta(formSlug: string): Promise<FieldMetaMap> {
  * (label, helper text, required, visibility) loaded from the
  * forms_dynamic + form_questions tables.
  *
- * Returns an empty map until loaded — components should fall back
- * to their hardcoded defaults when a field_key is not found.
+ * Steve 5/8: always refetch on mount so admin saves become visible
+ * without a hard browser reload. The cached map (if present) renders
+ * first to keep the form responsive; the network response then
+ * replaces it.
  */
 export function useFormFieldMeta(formSlug: string): FieldMetaMap {
   const [meta, setMeta] = useState<FieldMetaMap>(cache[formSlug] || {});

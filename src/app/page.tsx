@@ -137,6 +137,20 @@ function buildFaqs(rows: { key: string; value: string }[]): FaqItem[] {
   return list.length > 0 ? list : DEFAULT_FAQS;
 }
 
+// Steve 5/8: section headline overrides, paired with the matching
+// section in /admin/content (landing_headlines). A blank or missing
+// row keeps the Stage 1 default by returning the hardcoded fallback
+// passed in. Trim so a stray-space save behaves like an empty value.
+function pickHeadline(
+  rows: { key: string; value: string }[],
+  key: string,
+  fallback: string,
+): string {
+  const hit = rows.find((r) => r.key === key);
+  const v = hit?.value?.trim();
+  return v && v.length > 0 ? v : fallback;
+}
+
 export default async function HomePage({
   searchParams,
 }: {
@@ -149,14 +163,51 @@ export default async function HomePage({
   const { data: contentRows } = await supabase
     .from("site_content")
     .select("section, key, value")
-    .in("section", ["testimonials", "faq", "branding"]);
+    .in("section", ["testimonials", "faq", "branding", "landing_headlines"]);
 
   const testimonialRows = (contentRows || []).filter((r) => r.section === "testimonials");
   const faqRows = (contentRows || []).filter((r) => r.section === "faq");
   const brandRows = (contentRows || []).filter((r) => r.section === "branding");
+  const headlineRows = (contentRows || []).filter((r) => r.section === "landing_headlines");
   const testimonials = buildTestimonials(testimonialRows);
   const faqs = buildFaqs(faqRows);
   const branding = buildBranding(brandRows);
+
+  // Resolve every editable headline up-front so the JSX below stays
+  // readable. Each call returns the saved value, or the Stage 1
+  // fallback if the row is empty / missing.
+  const hl = {
+    howitworksEyebrow: pickHeadline(headlineRows, "howitworks_eyebrow", "How it Works"),
+    howitworksTitle: pickHeadline(headlineRows, "howitworks_title", "Simple Steps to Get Started"),
+    servicesEyebrow: pickHeadline(headlineRows, "services_eyebrow", "Our Services"),
+    servicesTitle: pickHeadline(headlineRows, "services_title", "Solutions for Every Need"),
+    servicesSubtitle: pickHeadline(
+      headlineRows,
+      "services_subtitle",
+      "Whether you are a property owner, tenant, or business, we have the right tools and services for you.",
+    ),
+    missionEyebrow: pickHeadline(headlineRows, "mission_eyebrow", "Why These Partners"),
+    missionTitle: pickHeadline(headlineRows, "mission_title", "Our Mission"),
+    missionQuote: pickHeadline(
+      headlineRows,
+      "mission_quote",
+      "Building our dreams together, being passionate about our clients’ projects through a human and close service.",
+    ),
+    missionDescription: pickHeadline(
+      headlineRows,
+      "mission_description",
+      "Every client is unique. That is why our system analyses your current situation and creates a personalized marketing plan that delivers real results.",
+    ),
+    benefitsEyebrow: pickHeadline(headlineRows, "benefits_eyebrow", "Why Choose Us"),
+    benefitsTitle: pickHeadline(headlineRows, "benefits_title", "Everything You Need in One Place"),
+    contactEyebrow: pickHeadline(headlineRows, "contact_eyebrow", "Get in Touch"),
+    contactTitle: pickHeadline(headlineRows, "contact_title", "Contact Us"),
+    contactSubtitle: pickHeadline(
+      headlineRows,
+      "contact_subtitle",
+      "Have a question? Send us a message and our team will get back to you shortly.",
+    ),
+  };
 
   // Steve 5/6: hero text + image were changed away from the Stage 1
   // approved design ("Grow Your Property & Business" + the modern
@@ -376,10 +427,10 @@ export default async function HomePage({
         <div className="mx-auto max-w-6xl">
           <div className="mb-16 text-center">
             <span className="mb-3 inline-block text-sm font-medium uppercase tracking-widest text-primary">
-              How it Works
+              {hl.howitworksEyebrow}
             </span>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Simple Steps to Get Started
+              {hl.howitworksTitle}
             </h2>
           </div>
 
@@ -488,14 +539,13 @@ export default async function HomePage({
         <div className="relative mx-auto max-w-6xl">
           <div className="mb-16 text-center">
             <span className="mb-3 inline-block text-sm font-medium uppercase tracking-widest text-primary">
-              Our Services
+              {hl.servicesEyebrow}
             </span>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Solutions for Every Need
+              {hl.servicesTitle}
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">
-              Whether you are a property owner, tenant, or business, we have the
-              right tools and services for you.
+              {hl.servicesSubtitle}
             </p>
           </div>
 
@@ -685,19 +735,16 @@ export default async function HomePage({
           </div>
           <div>
             <span className="mb-3 inline-block text-sm font-medium uppercase tracking-widest text-primary">
-              Why These Partners
+              {hl.missionEyebrow}
             </span>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Our Mission
+              {hl.missionTitle}
             </h2>
             <p className="mt-4 text-lg leading-relaxed text-muted-foreground italic">
-              &ldquo;Building our dreams together, being passionate about our
-              clients&rsquo; projects through a human and close service.&rdquo;
+              &ldquo;{hl.missionQuote}&rdquo;
             </p>
             <p className="mt-4 leading-relaxed text-muted-foreground">
-              Every client is unique. That is why our system analyses your
-              current situation and creates a personalized marketing plan that
-              delivers real results.
+              {hl.missionDescription}
             </p>
             <div className="mt-8 space-y-4">
               {[
@@ -737,10 +784,10 @@ export default async function HomePage({
         <div className="mx-auto max-w-6xl">
           <div className="mb-16 text-center">
             <span className="mb-3 inline-block text-sm font-medium uppercase tracking-widest text-primary">
-              Why Choose Us
+              {hl.benefitsEyebrow}
             </span>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Everything You Need in One Place
+              {hl.benefitsTitle}
             </h2>
           </div>
 
@@ -917,14 +964,13 @@ export default async function HomePage({
         <div className="mx-auto max-w-xl">
           <div className="mb-10 text-center">
             <span className="mb-3 inline-block text-sm font-medium uppercase tracking-widest text-primary">
-              Get in Touch
+              {hl.contactEyebrow}
             </span>
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Contact Us
+              {hl.contactTitle}
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Have a question? Send us a message and our team will get back to
-              you shortly.
+              {hl.contactSubtitle}
             </p>
           </div>
 

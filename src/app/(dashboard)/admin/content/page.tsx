@@ -58,6 +58,32 @@ const SECTIONS: SectionDef[] = [
   // misleading customers into thinking they could change the headline
   // through the panel. Re-add this entry only if Steve explicitly
   // re-opens hero editing (see homepage:revert-hero-to-stage1 commit).
+  //
+  // Steve 5/8: re-opens headline editing for the lower sections only
+  // (How it Works, Services, Mission, Benefits, Contact). Hero stays
+  // locked. Each row falls back to the Stage 1 wording in page.tsx if
+  // left blank, so deleting a row reverts to the approved default.
+  {
+    value: "landing_headlines",
+    label: "Landing Page - Section Headlines",
+    hint: "Headlines for the home page sections (How it Works, Services, Mission, Benefits, Contact). Leave a row blank or delete it to fall back to the Stage 1 default. Hero is locked separately and not edited from here.",
+    starter: [
+      { key: "howitworks_eyebrow", value: "How it Works", helper: "Small uppercase label above the heading." },
+      { key: "howitworks_title", value: "Simple Steps to Get Started", helper: "Main heading for the How it Works section." },
+      { key: "services_eyebrow", value: "Our Services" },
+      { key: "services_title", value: "Solutions for Every Need" },
+      { key: "services_subtitle", value: "Whether you are a property owner, tenant, or business, we have the right tools and services for you." },
+      { key: "mission_eyebrow", value: "Why These Partners" },
+      { key: "mission_title", value: "Our Mission" },
+      { key: "mission_quote", value: "Building our dreams together, being passionate about our clients' projects through a human and close service.", helper: "Italic quote shown directly under the heading." },
+      { key: "mission_description", value: "Every client is unique. That is why our system analyses your current situation and creates a personalized marketing plan that delivers real results." },
+      { key: "benefits_eyebrow", value: "Why Choose Us" },
+      { key: "benefits_title", value: "Everything You Need in One Place" },
+      { key: "contact_eyebrow", value: "Get in Touch" },
+      { key: "contact_title", value: "Contact Us" },
+      { key: "contact_subtitle", value: "Have a question? Send us a message and our team will get back to you shortly." },
+    ],
+  },
   {
     value: "landing_features",
     label: "Landing Page - Features",

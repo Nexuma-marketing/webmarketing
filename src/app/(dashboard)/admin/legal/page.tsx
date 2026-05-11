@@ -66,12 +66,19 @@ const CONSENT_TYPE_LABELS: Record<string, string> = {
   legal_representation: "Legal Representation",
   liability_limitation: "Liability Limitation",
   electronic_signature: "Electronic Signature",
+  privacy_policy: "Privacy Policy",
+  terms_of_service: "Terms of Service",
+  cookie_policy: "Cookie Policy",
 };
 
 function prettyConsentLabel(value: string): string {
+  // Try the raw key first, then the prefix-stripped key (handles
+  // legal_documents rows like "consent_legal_representation" by
+  // resolving to the "legal_representation" entry above).
   if (CONSENT_TYPE_LABELS[value]) return CONSENT_TYPE_LABELS[value];
-  return value
-    .replace(/^consent_/, "")
+  const stripped = value.replace(/^consent_/, "");
+  if (CONSENT_TYPE_LABELS[stripped]) return CONSENT_TYPE_LABELS[stripped];
+  return stripped
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
@@ -296,7 +303,7 @@ export default function AdminLegalPage() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base capitalize">
-                        {doc.type.replace(/_/g, " ")}
+                        {prettyConsentLabel(doc.type)}
                       </CardTitle>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">v{doc.version}</Badge>
@@ -347,7 +354,7 @@ export default function AdminLegalPage() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="capitalize">
-              Editing: {editDoc?.type.replace(/_/g, " ")}
+              Editing: {editDoc ? prettyConsentLabel(editDoc.type) : ""}
             </DialogTitle>
             <DialogDescription>
               Update the document content and bump the version when meaningful changes are made.

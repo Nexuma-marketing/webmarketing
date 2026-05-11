@@ -41,6 +41,8 @@ import { Plus, DollarSign, Tag, Users } from "lucide-react";
 interface ServicePrice {
   id: string;
   name: string;
+  description: string | null;
+  category: string | null;
   price: number;
   currency: string;
   is_active: boolean;
@@ -90,7 +92,7 @@ export default function AdminPricingPage() {
     const [{ data: svcData }, { data: promoData }, { data: cfgData }] = await Promise.all([
       supabase
         .from("services")
-        .select("id, name, price, currency, is_active")
+        .select("id, name, description, category, price, currency, is_active")
         .order("name"),
       supabase
         .from("promotions")
@@ -288,7 +290,21 @@ export default function AdminPricingPage() {
                           </Button>
                         </div>
                       ) : (
-                        <span>${svc.price.toLocaleString()} {svc.currency}</span>
+                        <div className="flex flex-col">
+                          <span>${svc.price.toLocaleString()} {svc.currency}</span>
+                          {/* Steve 5/8: a $0 price for plan-category
+                              rows used to look like missing data. The
+                              admin asked why several services read $0.
+                              Show the description as a tooltip-like
+                              hint so it is clear the value is by
+                              design (CFP-based plans collect monthly,
+                              not upfront). */}
+                          {svc.price === 0 && svc.description && (
+                            <span className="text-[11px] text-muted-foreground mt-0.5 max-w-[260px] line-clamp-2">
+                              {svc.description}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell>

@@ -439,6 +439,34 @@ export default function ImagesPage() {
                     Missing photos for: {REQUIRED_ROOMS.filter((r) => !hasPhotoForRoom(r)).join(", ")}
                   </p>
                 )}
+                {/* Steve 5/8: when client reported "Living Room missing
+                    even though the photo is loaded", inspecting the
+                    issue showed photos tagged with non-required
+                    categories (e.g. "Other"). Surface the actual
+                    category labels stored in the DB so the owner can
+                    see at a glance which categories were used and
+                    re-tag if needed via Manage Images. */}
+                {(() => {
+                  const counted = images.filter((i) => i.status !== "rejected");
+                  if (counted.length === 0) return null;
+                  const categoryCounts = counted.reduce<Record<string, number>>(
+                    (acc, i) => {
+                      const k = i.room_category || "(no category)";
+                      acc[k] = (acc[k] || 0) + 1;
+                      return acc;
+                    },
+                    {},
+                  );
+                  const list = Object.entries(categoryCounts)
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([k, n]) => `${k} (${n})`)
+                    .join(", ");
+                  return (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Photos on file by category: {list}
+                    </p>
+                  );
+                })()}
               </CardContent>
             </Card>
           )}
