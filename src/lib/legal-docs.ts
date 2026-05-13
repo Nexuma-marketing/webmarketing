@@ -19,6 +19,12 @@ import { createClient } from "@/lib/supabase/client";
 export interface LegalDocOverlay {
   title?: string;
   text: string;
+  // Steve 5/11: surface the DB timestamp on the public form so the
+  // client can confirm at a glance whether their admin edit has
+  // propagated — the May 11 docx complaint "admin edits not reflected"
+  // was impossible to diagnose without seeing when the row was last
+  // touched.
+  updatedAt?: string;
 }
 
 export function useLegalDocsOverlay(types: readonly string[]) {
@@ -30,13 +36,16 @@ export function useLegalDocsOverlay(types: readonly string[]) {
     (async () => {
       const { data } = await supabase
         .from("legal_documents")
-        .select("type, content")
+        .select("type, content, updated_at")
         .in("type", types as string[]);
       if (cancelled || !data) return;
       const next: Record<string, LegalDocOverlay> = {};
       for (const row of data) {
         if (row.type && row.content) {
-          next[row.type] = { text: row.content };
+          next[row.type] = {
+            text: row.content,
+            updatedAt: row.updated_at as string | undefined,
+          };
         }
       }
       setOverlay(next);

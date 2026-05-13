@@ -227,6 +227,10 @@ export default function TenantFormPage() {
   const legalOverlay = useLegalDocsOverlay(INQUILINO_LEGAL_TYPES);
   const legalText = (key: keyof typeof LEGAL_DOCS) =>
     legalOverlay[key]?.text ?? LEGAL_DOCS[key].text;
+  // Steve 5/11: surface DB updated_at on the public form so a client
+  // testing "admin edit → does the form change?" can verify directly.
+  const legalUpdatedAt = (key: keyof typeof LEGAL_DOCS) =>
+    legalOverlay[key]?.updatedAt;
 
   // Steve 4/28 round 2: load admin-editable form metadata so changes
   // in /admin/forms (label, helper text, required, visibility) are
@@ -1034,12 +1038,20 @@ export default function TenantFormPage() {
                         <FileText className="h-3 w-3" />
                         {expandedLegal === "consent_data_processing" ? "Hide full document" : "Read full document"}
                       </button>
-                      {expandedLegal === "consent_data_processing" && (
-                        <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
-                          <p className="font-medium text-foreground mb-1">{LEGAL_DOCS.consent_data_processing.title}</p>
-                          {legalText("consent_data_processing")}
-                        </div>
-                      )}
+                      {expandedLegal === "consent_data_processing" && (() => {
+                        const ts = legalUpdatedAt("consent_data_processing");
+                        return (
+                          <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+                            <p className="font-medium text-foreground mb-1">{LEGAL_DOCS.consent_data_processing.title}</p>
+                            {legalText("consent_data_processing")}
+                            <p className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground/70">
+                              {ts
+                                ? `Source: legal_documents · last updated ${new Date(ts).toLocaleString()}`
+                                : "Source: hardcoded fallback (no DB row for this consent — ask admin to seed it)"}
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   {errors.consent_data_processing && (
@@ -1110,12 +1122,20 @@ export default function TenantFormPage() {
                                     <FileText className="h-3 w-3" />
                                     {expandedLegal === field ? "Hide full document" : "Read full document"}
                                   </button>
-                                  {expandedLegal === field && (
-                                    <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
-                                      <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
-                                      {legalText(field as keyof typeof LEGAL_DOCS)}
-                                    </div>
-                                  )}
+                                  {expandedLegal === field && (() => {
+                                    const ts = legalUpdatedAt(field as keyof typeof LEGAL_DOCS);
+                                    return (
+                                      <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+                                        <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
+                                        {legalText(field as keyof typeof LEGAL_DOCS)}
+                                        <p className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground/70">
+                                          {ts
+                                            ? `Source: legal_documents · last updated ${new Date(ts).toLocaleString()}`
+                                            : "Source: hardcoded fallback (no DB row for this consent — ask admin to seed it)"}
+                                        </p>
+                                      </div>
+                                    );
+                                  })()}
                                 </>
                               )}
                             </div>

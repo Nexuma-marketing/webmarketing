@@ -84,6 +84,10 @@ export default function AdminFormsPage() {
 
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
   const [editQuestion, setEditQuestion] = useState<Partial<Question> | null>(null);
+  // Steve 5/11: explicit save-error state so RLS-blocked writes
+  // surface as a red banner inside the question dialog instead of a
+  // misleading silent close.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -167,6 +171,7 @@ export default function AdminFormsPage() {
 
   // ── Question CRUD ──────────────────────────────
   function openNewQuestion() {
+    setSaveError(null);
     setEditQuestion({
       form_id: selectedFormId || "",
       position: questions.length,
@@ -184,6 +189,7 @@ export default function AdminFormsPage() {
   }
 
   function openEditQuestion(q: Question) {
+    setSaveError(null);
     setEditQuestion({ ...q, options: q.options || [] });
     setQuestionDialogOpen(true);
   }
@@ -191,6 +197,7 @@ export default function AdminFormsPage() {
   async function saveQuestion() {
     if (!editQuestion?.field_key || !editQuestion?.label || !selectedFormId) return;
     setSaving(true);
+    setSaveError(null);
     // Steve 5/7: trim empty option rows before persisting so a half-typed
     // "Add option" click does not leak a {value:"", label:""} entry into
     // form_questions.options. The public form rendered an empty checkbox
@@ -213,12 +220,40 @@ export default function AdminFormsPage() {
       conditional_value: editQuestion.conditional_value || null,
       helper_text: editQuestion.helper_text || null,
     };
+    // Steve 5/11: ask the DB to return the row it wrote so RLS-blocked
+    // writes (0 rows + no error) surface as a loud error instead of a
+    // misleading silent success.
+    let returned: { id: string }[] | null = null;
+    let err: { message: string } | null = null;
     if (editQuestion.id) {
-      await supabase.from("form_questions").update(payload).eq("id", editQuestion.id);
+      const res = await supabase
+        .from("form_questions")
+        .update(payload)
+        .eq("id", editQuestion.id)
+        .select("id");
+      returned = res.data as { id: string }[] | null;
+      err = res.error;
     } else {
-      await supabase.from("form_questions").insert(payload);
+      const res = await supabase
+        .from("form_questions")
+        .insert(payload)
+        .select("id");
+      returned = res.data as { id: string }[] | null;
+      err = res.error;
     }
     setSaving(false);
+    if (err) {
+      setSaveError(`Error: ${err.message}`);
+      return;
+    }
+    if (!returned || returned.length === 0) {
+      setSaveError(
+        "Save reported success but no row was written. " +
+        "Likely cause: your account is missing the admin role. " +
+        "Verify with: SELECT role FROM profiles WHERE id = auth.uid();",
+      );
+      return;
+    }
     setQuestionDialogOpen(false);
     setEditQuestion(null);
     loadQuestions();
@@ -675,6 +710,11 @@ export default function AdminFormsPage() {
                   <Label>Active</Label>
                 </div>
               </div>
+            </div>
+          )}
+          {saveError && (
+            <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 font-medium">
+              ⚠ {saveError}
             </div>
           )}
           <DialogFooter>

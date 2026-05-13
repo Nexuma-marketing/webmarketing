@@ -157,26 +157,59 @@ export default function AdminLegalPage() {
     setSaving(true);
     setSaveMessage(null);
 
-    const { error } = await supabase
+    // Steve 5/11: previous flow trusted Supabase to surface RLS denials
+    // as an `error`. Postgres RLS-blocked UPDATEs return no error and
+    // affect 0 rows, so admin saw "Saved successfully" while the DB
+    // never changed — explaining "admin edits aren't reflected on the
+    // website". We now (1) request the row back from the upsert,
+    // (2) compare what the DB returned to what we sent, and (3) raise a
+    // loud red error if they don't match.
+    const expectedContent = editDoc.content;
+    const expectedVersion = editDoc.version;
+    const { data: returned, error } = await supabase
       .from("legal_documents")
       .upsert(
         {
           id: editDoc.id,
           type: editDoc.type,
-          content: editDoc.content,
-          version: editDoc.version,
+          content: expectedContent,
+          version: expectedVersion,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
-      );
+      )
+      .select("id, content, version, updated_at");
 
     setSaving(false);
     if (error) {
       setSaveMessage(`Error: ${error.message}`);
       return;
     }
+
+    // Empty `returned` array = RLS silently blocked the write.
+    if (!returned || returned.length === 0) {
+      setSaveMessage(
+        "Error: Save reported success but the database did not change. " +
+        "Most likely cause: your account is missing the admin role. " +
+        "Run in Supabase: SELECT role FROM profiles WHERE id = auth.uid(); " +
+        "— this must return 'admin'.",
+      );
+      return;
+    }
+
+    // Defensive: the row came back but the content does not match what
+    // we sent. Should never happen unless a trigger rewrote the row.
+    const row = returned[0] as { content: string; version: string };
+    if (row.content !== expectedContent || row.version !== expectedVersion) {
+      setSaveMessage(
+        "Error: Save returned a row but its content does not match what you submitted. " +
+        "A database trigger may be overwriting your changes. Contact the developer.",
+      );
+      return;
+    }
+
     setEditDoc(null);
-    setSaveMessage("Document saved successfully.");
+    setSaveMessage(`Saved & verified — DB updated at ${new Date().toLocaleTimeString()}.`);
     setTimeout(() => setSaveMessage(null), 6000);
     load();
   }

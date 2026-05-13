@@ -266,6 +266,12 @@ export default function OwnerFormPage() {
   const legalOverlay = useLegalDocsOverlay(PROPIETARIO_LEGAL_TYPES);
   const legalText = (key: keyof typeof LEGAL_DOCS) =>
     legalOverlay[key]?.text ?? LEGAL_DOCS[key].text;
+  // Steve 5/11: also expose the DB `updated_at` so the expanded
+  // consent block can show "Last updated at <time>" — letting the
+  // client see at a glance whether admin edits have reached the form.
+  // When undefined the row came from the LEGAL_DOCS code fallback.
+  const legalUpdatedAt = (key: keyof typeof LEGAL_DOCS) =>
+    legalOverlay[key]?.updatedAt;
 
   const {
     register,
@@ -1812,12 +1818,25 @@ export default function OwnerFormPage() {
                           <FileText className="h-3 w-3" />
                           {expandedLegal === field ? "Hide full document" : "Read full document"}
                         </button>
-                        {expandedLegal === field && LEGAL_DOCS[field] && (
-                          <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
-                            <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
-                            {legalText(field as keyof typeof LEGAL_DOCS)}
-                          </div>
-                        )}
+                        {expandedLegal === field && LEGAL_DOCS[field] && (() => {
+                          const ts = legalUpdatedAt(field as keyof typeof LEGAL_DOCS);
+                          return (
+                            <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+                              <p className="font-medium text-foreground mb-1">{LEGAL_DOCS[field].title}</p>
+                              {legalText(field as keyof typeof LEGAL_DOCS)}
+                              {/* Steve 5/11: timestamp + source so the
+                                  client can verify whether admin edits
+                                  reached this form. "DB" = pulled from
+                                  legal_documents; "fallback" = hardcoded
+                                  text because the DB row is missing. */}
+                              <p className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground/70">
+                                {ts
+                                  ? `Source: legal_documents · last updated ${new Date(ts).toLocaleString()}`
+                                  : "Source: hardcoded fallback (no DB row for this consent — ask admin to seed it)"}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     {errors[field] && (

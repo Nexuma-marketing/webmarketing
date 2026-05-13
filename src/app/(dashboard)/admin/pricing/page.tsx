@@ -121,15 +121,30 @@ export default function AdminPricingPage() {
       { category: "founders_plan", key: "taken", value: String(foundersTaken) },
       { category: "founders_plan", key: "limit", value: String(foundersLimit) },
     ];
-    const { error } = await supabase
+    // Steve 5/11: re-fetch the affected rows so RLS-blocked writes
+    // (0 rows + no error) surface as a loud error instead of a silent
+    // success that confuses the admin into thinking the counter saved.
+    const { data: returned, error } = await supabase
       .from("app_config")
-      .upsert(rows, { onConflict: "category,key" });
+      .upsert(rows, { onConflict: "category,key" })
+      .select("category, key, value");
+    setFoundersSaving(false);
     if (error) {
       setFoundersMessage(`Save failed: ${error.message}`);
-    } else {
-      setFoundersMessage("Updated. Visible on the public dashboard within seconds.");
+      return;
     }
-    setFoundersSaving(false);
+    if (!returned || returned.length < 2) {
+      setFoundersMessage(
+        "Save reported success but the database did not change. " +
+        "Likely cause: your account is missing the admin role. " +
+        "Verify with: SELECT role FROM profiles WHERE id = auth.uid();",
+      );
+      return;
+    }
+    setFoundersMessage(
+      `Updated & verified at ${new Date().toLocaleTimeString()}. ` +
+      `Visible on the public dashboard within seconds.`,
+    );
   }
 
   useEffect(() => {
@@ -138,12 +153,28 @@ export default function AdminPricingPage() {
 
   async function updatePrice(id: string) {
     if (!newPrice) return;
-    await supabase
+    // Steve 5/11: verify the write actually changed a row. An empty
+    // `data` array means RLS blocked the UPDATE silently.
+    const { data: returned, error } = await supabase
       .from("services")
       .update({ price: Number(newPrice) })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id, price");
+    if (error) {
+      setFoundersMessage(`Price save failed: ${error.message}`);
+      return;
+    }
+    if (!returned || returned.length === 0) {
+      setFoundersMessage(
+        "Price save reported success but the database did not change. " +
+        "Likely cause: your account is missing the admin role.",
+      );
+      return;
+    }
     setEditingPrice(null);
     setNewPrice("");
+    setFoundersMessage(`Price updated & verified at ${new Date().toLocaleTimeString()}.`);
+    setTimeout(() => setFoundersMessage(null), 4000);
     load();
   }
 
@@ -239,7 +270,17 @@ export default function AdminPricingPage() {
             </div>
           </div>
           {foundersMessage && (
-            <p className="mt-3 text-sm text-muted-foreground">{foundersMessage}</p>
+            <p
+              className={`mt-3 text-sm rounded-md border p-2 ${
+                foundersMessage.toLowerCase().includes("fail") ||
+                foundersMessage.toLowerCase().includes("did not change") ||
+                foundersMessage.toLowerCase().includes("missing the admin")
+                  ? "border-red-300 bg-red-50 text-red-800 font-medium"
+                  : "border-green-200 bg-green-50 text-green-800"
+              }`}
+            >
+              {foundersMessage}
+            </p>
           )}
         </CardContent>
       </Card>

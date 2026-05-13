@@ -181,35 +181,71 @@ export default function AdminContentPage() {
   const filteredItems = items.filter((i) => i.section === selectedSection);
   const currentSection = SECTIONS.find((s) => s.value === selectedSection);
 
+  // Steve 5/11: every admin save now asks the DB to return the row it
+  // wrote so RLS-blocked writes (which return 0 rows + no error) are
+  // caught and surfaced as a red error instead of a misleading "Saved"
+  // toast. See admin/legal/page.tsx for the same pattern.
   async function handleUpdate(id: string, value: string) {
     setSaving(id);
     setMessage(null);
 
-    await supabase.from("site_content").update({ value }).eq("id", id);
+    const { data: returned, error } = await supabase
+      .from("site_content")
+      .update({ value })
+      .eq("id", id)
+      .select("id, value");
+
+    setSaving(null);
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+      return;
+    }
+    if (!returned || returned.length === 0) {
+      setMessage(
+        "Error: Save reported success but the database did not change. " +
+        "Likely cause: your account is missing the admin role. " +
+        "Verify with: SELECT role FROM profiles WHERE id = auth.uid();",
+      );
+      return;
+    }
 
     setItems((prev) =>
       prev.map((i) => (i.id === id ? { ...i, value } : i))
     );
-    setSaving(null);
-    setMessage("Saved");
-    setTimeout(() => setMessage(null), 2000);
+    setMessage(`Saved & verified at ${new Date().toLocaleTimeString()}.`);
+    setTimeout(() => setMessage(null), 4000);
   }
 
   async function handleAdd() {
     if (!newKey.trim()) return;
     setSaving("new");
 
-    await supabase.from("site_content").insert({
-      section: selectedSection,
-      key: newKey.trim(),
-      value: newValue,
-    });
+    const { data: returned, error } = await supabase
+      .from("site_content")
+      .insert({
+        section: selectedSection,
+        key: newKey.trim(),
+        value: newValue,
+      })
+      .select("id");
+
+    setSaving(null);
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+      return;
+    }
+    if (!returned || returned.length === 0) {
+      setMessage(
+        "Error: Insert reported success but no row was created. " +
+        "Likely cause: your account is missing the admin role.",
+      );
+      return;
+    }
 
     setNewKey("");
     setNewValue("");
-    setSaving(null);
-    setMessage("Item added");
-    setTimeout(() => setMessage(null), 2000);
+    setMessage("Item added & verified");
+    setTimeout(() => setMessage(null), 3000);
     load();
   }
 
@@ -222,17 +258,25 @@ export default function AdminContentPage() {
       key: s.key,
       value: s.value,
     }));
-    const { error } = await supabase
+    const { data: returned, error } = await supabase
       .from("site_content")
-      .upsert(rows, { onConflict: "section,key" });
+      .upsert(rows, { onConflict: "section,key" })
+      .select("id");
     setSaving(null);
     if (error) {
       setMessage(`Error: ${error.message}`);
-    } else {
-      setMessage(`Seeded ${rows.length} starter items.`);
-      setTimeout(() => setMessage(null), 3000);
-      load();
+      return;
     }
+    if (!returned || returned.length === 0) {
+      setMessage(
+        "Error: Seed reported success but no rows were written. " +
+        "Likely cause: your account is missing the admin role.",
+      );
+      return;
+    }
+    setMessage(`Seeded ${returned.length} starter items & verified.`);
+    setTimeout(() => setMessage(null), 3000);
+    load();
   }
 
   async function handleDelete(id: string) {
@@ -259,7 +303,13 @@ export default function AdminContentPage() {
       </div>
 
       {message && (
-        <div className="rounded-md bg-green-100 p-3 text-sm text-green-800">
+        <div
+          className={`rounded-md p-3 text-sm ${
+            message.startsWith("Error")
+              ? "bg-red-100 text-red-800 border border-red-300 font-medium"
+              : "bg-green-100 text-green-800"
+          }`}
+        >
           {message}
         </div>
       )}
