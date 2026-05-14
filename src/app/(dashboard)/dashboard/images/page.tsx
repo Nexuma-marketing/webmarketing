@@ -119,16 +119,34 @@ export default function ImagesPage() {
   function normalizeRoom(s: string): string {
     return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   }
-  function hasPhotoForRoom(room: string): boolean {
+  function matchesRoom(imgCategory: string, target: string): boolean {
+    const cat = normalizeRoom(imgCategory);
+    if (cat === target) return true;
+    // Master Bedroom matches any "bedroom*" room (Bedroom 2, etc.)
+    if (target === "masterbedroom" && cat.startsWith("bedroom")) return true;
+    return false;
+  }
+  // Steve 5/13: the docx from May 8-13 keeps re-reporting "Image Gallery
+  // says Living Room missing but the photo is loaded and shows in My
+  // Properties". Root cause: the photo IS loaded but is in REJECTED
+  // status — the property detail page renders every image (rejected
+  // ones just get a red badge), while hasPhotoForRoom() correctly
+  // excludes rejected. The user reads "missing" as "no file" and
+  // assumes a bug. Distinguish the three real states so the warning
+  // becomes self-explanatory.
+  type RoomStatus = "covered" | "rejected-only" | "missing";
+  function roomStatusFor(room: string): RoomStatus {
     const target = normalizeRoom(room);
-    return images.some((i) => {
-      if (i.status === "rejected") return false;
-      const cat = normalizeRoom(i.room_category);
-      if (cat === target) return true;
-      // Master Bedroom matches any "bedroom*" room (Bedroom 2, etc.)
-      if (target === "masterbedroom" && cat.startsWith("bedroom")) return true;
-      return false;
-    });
+    let anyMatch = false;
+    let anyNonRejected = false;
+    for (const i of images) {
+      if (!matchesRoom(i.room_category, target)) continue;
+      anyMatch = true;
+      if (i.status !== "rejected") anyNonRejected = true;
+    }
+    if (anyNonRejected) return "covered";
+    if (anyMatch) return "rejected-only";
+    return "missing";
   }
 
   function validateImageFile(file: File): Promise<{
@@ -406,39 +424,72 @@ export default function ImagesPage() {
           {selectedProperty && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Required Rooms ({REQUIRED_ROOMS.filter(hasPhotoForRoom).length}/{REQUIRED_ROOMS.length})</CardTitle>
+                <CardTitle className="text-base">
+                  Required Rooms ({REQUIRED_ROOMS.filter((r) => roomStatusFor(r) === "covered").length}/{REQUIRED_ROOMS.length})
+                </CardTitle>
                 <CardDescription>
                   Upload at least 1 photo per required room to complete your listing.
-                  Rejected photos do not count toward completion.
+                  Rejected photos do not count — re-upload a replacement.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                   {REQUIRED_ROOMS.map((room) => {
-                    const hasPhoto = hasPhotoForRoom(room);
+                    const st = roomStatusFor(room);
                     return (
                       <li key={room} className="flex items-center gap-2 text-sm">
-                        {hasPhoto ? (
+                        {st === "covered" ? (
                           <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        ) : st === "rejected-only" ? (
+                          <AlertCircle className="h-4 w-4 text-amber-500" />
                         ) : (
                           <AlertCircle className="h-4 w-4 text-red-500" />
                         )}
-                        <span className={hasPhoto ? "text-green-700" : "text-muted-foreground"}>
+                        <span
+                          className={
+                            st === "covered"
+                              ? "text-green-700"
+                              : st === "rejected-only"
+                                ? "text-amber-700"
+                                : "text-muted-foreground"
+                          }
+                        >
                           {room}
+                          {st === "rejected-only" && (
+                            <span className="ml-1 text-xs font-medium">(rejected — re-upload)</span>
+                          )}
                         </span>
                       </li>
                     );
                   })}
                 </ul>
-                {REQUIRED_ROOMS.every(hasPhotoForRoom) ? (
-                  <p className="mt-3 text-sm font-medium text-green-600">
-                    ✓ All required rooms have photos
-                  </p>
-                ) : (
-                  <p className="mt-3 text-sm text-red-500">
-                    Missing photos for: {REQUIRED_ROOMS.filter((r) => !hasPhotoForRoom(r)).join(", ")}
-                  </p>
-                )}
+                {(() => {
+                  const covered = REQUIRED_ROOMS.filter((r) => roomStatusFor(r) === "covered");
+                  const rejectedOnly = REQUIRED_ROOMS.filter((r) => roomStatusFor(r) === "rejected-only");
+                  const missing = REQUIRED_ROOMS.filter((r) => roomStatusFor(r) === "missing");
+                  if (covered.length === REQUIRED_ROOMS.length) {
+                    return (
+                      <p className="mt-3 text-sm font-medium text-green-600">
+                        ✓ All required rooms have photos
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="mt-3 space-y-1 text-sm">
+                      {missing.length > 0 && (
+                        <p className="text-red-500">
+                          Missing photos for: {missing.join(", ")}
+                        </p>
+                      )}
+                      {rejectedOnly.length > 0 && (
+                        <p className="text-amber-600">
+                          Rejected photos only (please upload a replacement) for:{" "}
+                          {rejectedOnly.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Steve 5/8: when client reported "Living Room missing
                     even though the photo is loaded", inspecting the
                     issue showed photos tagged with non-required
