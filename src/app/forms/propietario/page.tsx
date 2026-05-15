@@ -878,14 +878,32 @@ export default function OwnerFormPage() {
                     owner: "I own 1-3 properties for rental income",
                     investor: "I own 4+ properties as investment assets",
                   };
-                  // Drop any admin-added options whose value isn't one
-                  // of the two canonical literals — the schema would
-                  // reject them on submit anyway.
-                  const userTypeOptions = fieldOptions(
+                  // Steve 5/15: prior version filtered the admin options
+                  // to value === "owner" | "investor" so any admin who
+                  // renamed the *value* (not just the label) of either
+                  // option ended up with zero cards rendered — the form
+                  // became unfillable. Instead, always render the two
+                  // canonical cards (the schema z.enum and the
+                  // role-assignment logic both require these values)
+                  // and pick a label by lookup: prefer admin's option
+                  // matching by value, then by position, then default.
+                  const allAdminOptions = fieldOptions(
                     fieldMeta,
                     "user_type",
                     USER_TYPE_FALLBACK,
-                  ).filter((opt) => opt.value === "owner" || opt.value === "investor");
+                  );
+                  const ownerLabel =
+                    allAdminOptions.find((o) => o.value === "owner")?.label ||
+                    allAdminOptions[0]?.label ||
+                    "Property Owner";
+                  const investorLabel =
+                    allAdminOptions.find((o) => o.value === "investor")?.label ||
+                    allAdminOptions[1]?.label ||
+                    "Investor";
+                  const userTypeOptions = [
+                    { value: "owner", label: ownerLabel },
+                    { value: "investor", label: investorLabel },
+                  ];
                   return (
                     <div className="space-y-2">
                       <Label>
