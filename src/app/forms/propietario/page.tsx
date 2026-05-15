@@ -1312,8 +1312,7 @@ export default function OwnerFormPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Property type</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="property_type" fallbackLabel="Property type">
                     <Select value={invProp.property_type || undefined} onValueChange={(val: string | null) => val && setInvProp("property_type", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select type" />
@@ -1324,9 +1323,8 @@ export default function OwnerFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Occupancy status</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="occupancy_status" fallbackLabel="Occupancy status">
                     <Select value={invProp.occupancy_status} onValueChange={(val: string | null) => val && setInvProp("occupancy_status", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select status" />
@@ -1337,24 +1335,23 @@ export default function OwnerFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
+                  </DynamicField>
                 </div>
 
                 {invProp.occupancy_status === "occupied" && (
-                  <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
-                    <Label>When does the property become available?</Label>
-                    <Input type="date" value={invProp.vacancy_date} onChange={(e) => setInvProp("vacancy_date", e.target.value)} />
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                    <DynamicField meta={fieldMeta} fieldKey="vacancy_date" fallbackLabel="When does the property become available?">
+                      <Input type="date" value={invProp.vacancy_date} onChange={(e) => setInvProp("vacancy_date", e.target.value)} />
+                    </DynamicField>
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Availability date</Label>
+                <DynamicField meta={fieldMeta} fieldKey="availability_date" fallbackLabel="Availability date">
                   <Input type="date" value={invProp.availability_date} onChange={(e) => setInvProp("availability_date", e.target.value)} />
-                </div>
+                </DynamicField>
 
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Bedrooms</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="bedrooms" fallbackLabel="Bedrooms">
                     <Select value={invProp.bedrooms || undefined} onValueChange={(val: string | null) => val && setInvProp("bedrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -1365,9 +1362,8 @@ export default function OwnerFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bathrooms</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="bathrooms" fallbackLabel="Bathrooms">
                     <Select value={invProp.bathrooms || undefined} onValueChange={(val: string | null) => val && setInvProp("bathrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
@@ -1378,9 +1374,8 @@ export default function OwnerFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Size</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="area_sqft" fallbackLabel="Size">
                     <div className="flex gap-1">
                       <Input
                         type="number"
@@ -1399,11 +1394,10 @@ export default function OwnerFormPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  </DynamicField>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Style</Label>
+                <DynamicField meta={fieldMeta} fieldKey="style" fallbackLabel="Style">
                   <Select value={invProp.style || undefined} onValueChange={(val: string | null) => val && setInvProp("style", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select style" />
@@ -1414,7 +1408,7 @@ export default function OwnerFormPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </DynamicField>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                   {[
@@ -1435,8 +1429,7 @@ export default function OwnerFormPage() {
                   ))}
                 </div>
 
-                <div className="space-y-3">
-                  <Label>Amenities</Label>
+                <DynamicField meta={fieldMeta} fieldKey="amenities" fallbackLabel="Amenities" className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     {fieldOptions(fieldMeta, "amenities", AMENITIES).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1449,10 +1442,9 @@ export default function OwnerFormPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
 
-                <div className="space-y-3">
-                  <Label>Where is this property currently listed?</Label>
+                <DynamicField meta={fieldMeta} fieldKey="listing_platforms" fallbackLabel="Where is this property currently listed?" className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     {fieldOptions(fieldMeta, "listing_platforms", LISTING_PLATFORMS).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1465,7 +1457,7 @@ export default function OwnerFormPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
 
                 {/* CFP Preview for this property */}
                 {rents[propIdx] > 0 && (() => {
@@ -1582,17 +1574,15 @@ export default function OwnerFormPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="social_life">Social life nearby (optional)</Label>
+                <DynamicField meta={fieldMeta} fieldKey="social_life" fallbackLabel="Social life nearby (optional)" htmlFor="social_life">
                   <Input
                     id="social_life"
                     placeholder="e.g. bars, cinemas, entertainment..."
                     {...register("social_life")}
                   />
-                </div>
+                </DynamicField>
 
-                <div className="space-y-3">
-                  <Label>Nearby supermarkets</Label>
+                <DynamicField meta={fieldMeta} fieldKey="nearby_supermarkets" fallbackLabel="Nearby supermarkets" className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     {fieldOptions(fieldMeta, "nearby_supermarkets", SUPERMARKETS).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1605,7 +1595,7 @@ export default function OwnerFormPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
               </>
             )}
 
@@ -1632,29 +1622,26 @@ export default function OwnerFormPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>City</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="city" fallbackLabel="City">
                     <p className="text-sm font-medium px-3 py-2 rounded-md bg-muted">{cities[propIdx] || "Not set"}</p>
                     <p className="text-xs text-muted-foreground">Set in Step 2</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Postal code</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="postal_code" fallbackLabel="Postal code">
                     <Input
                       placeholder="V6B 1A1"
                       value={invProp.postal_code}
                       onChange={(e) => setInvProp("postal_code", e.target.value)}
                     />
-                  </div>
+                  </DynamicField>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Address</Label>
+                <DynamicField meta={fieldMeta} fieldKey="address" fallbackLabel="Address">
                   <Input
                     placeholder="123 Main St"
                     value={invProp.address}
                     onChange={(e) => setInvProp("address", e.target.value)}
                   />
-                </div>
+                </DynamicField>
 
                 <div className="space-y-3">
                   <Label>Nearby features</Label>
@@ -1699,17 +1686,15 @@ export default function OwnerFormPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Social life nearby (optional)</Label>
+                <DynamicField meta={fieldMeta} fieldKey="social_life" fallbackLabel="Social life nearby (optional)">
                   <Input
                     placeholder="e.g. bars, cinemas, entertainment..."
                     value={invProp.social_life}
                     onChange={(e) => setInvProp("social_life", e.target.value)}
                   />
-                </div>
+                </DynamicField>
 
-                <div className="space-y-3">
-                  <Label>Nearby supermarkets</Label>
+                <DynamicField meta={fieldMeta} fieldKey="nearby_supermarkets" fallbackLabel="Nearby supermarkets" className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     {fieldOptions(fieldMeta, "nearby_supermarkets", SUPERMARKETS).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1722,7 +1707,7 @@ export default function OwnerFormPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
               </div>
             )}
 

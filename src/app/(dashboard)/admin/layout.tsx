@@ -44,7 +44,29 @@ export default async function AdminSectionLayout({
 
   return (
     <div className="space-y-4">
-      {!isAdmin && (
+      {isAdmin ? (
+        // Steve 5/15: positive confirmation banner. The May 15 client
+        // message said: "nunca me dijiste o confirmaste con que correo
+        // probar o cual email quedo de administrador" — they had been
+        // testing without knowing whether their account was admin. The
+        // negative warning below only fires for non-admins, so admins
+        // saw nothing and remained uncertain. A small green chip + the
+        // account email leaves no doubt.
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800"
+        >
+          <span className="font-semibold">✓ Signed in as admin</span>
+          {email && (
+            <code className="rounded bg-green-100 px-1.5 py-0.5 font-mono text-[11px]">
+              {email}
+            </code>
+          )}
+          <span className="text-green-700/70">
+            — saves to this section will write to the database.
+          </span>
+        </div>
+      ) : (
         <div
           role="alert"
           className="rounded-lg border-2 border-red-500 bg-red-50 p-4 text-sm text-red-900"
