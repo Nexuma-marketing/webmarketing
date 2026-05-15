@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { AdminConfirmBanner } from "@/components/admin/admin-confirm-banner";
 
 // Steve 5/13: defensive guard for the admin section. The May 8-13 docx
 // thread repeatedly reported "admin edits aren't reflected on the
@@ -50,22 +51,11 @@ export default async function AdminSectionLayout({
         // probar o cual email quedo de administrador" — they had been
         // testing without knowing whether their account was admin. The
         // negative warning below only fires for non-admins, so admins
-        // saw nothing and remained uncertain. A small green chip + the
-        // account email leaves no doubt.
-        <div
-          role="status"
-          className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800"
-        >
-          <span className="font-semibold">✓ Signed in as admin</span>
-          {email && (
-            <code className="rounded bg-green-100 px-1.5 py-0.5 font-mono text-[11px]">
-              {email}
-            </code>
-          )}
-          <span className="text-green-700/70">
-            — saves to this section will write to the database.
-          </span>
-        </div>
+        // saw nothing and remained uncertain. The banner now auto-
+        // hides after 12s and remembers via sessionStorage that the
+        // user has been confirmed this session, so it does not push
+        // the section header down on every admin page navigation.
+        <AdminConfirmBanner email={email} />
       ) : (
         <div
           role="alert"
