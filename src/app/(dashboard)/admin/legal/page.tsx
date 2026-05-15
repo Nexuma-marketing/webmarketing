@@ -95,69 +95,44 @@ export default function AdminLegalPage() {
   const supabase = createClient();
 
   const load = useCallback(async () => {
-    // Steve 5/15: the embedded join syntax
-    //   profiles:user_id(full_name, email)
-    // returned null for every row in the Consent Logs table — the User
-    // column showed "Unknown" for all entries. The PostgREST alias
-    // disambiguation hint clashed with the auto-detected FK + RLS
-    // recursion on the profiles "Admins can view all" policy. Switch
-    // to a deterministic two-query manual join: fetch consent_logs
-    // with user_id, then look up all unique user_ids against profiles
-    // in a second query, and merge in JS. Reliable regardless of
-    // PostgREST version, FK constraint naming, or policy quirks.
-    const [{ data: consentData }, { data: docData }] = await Promise.all([
-      supabase
-        .from("consent_logs")
-        .select("id, user_id, consent_type, granted, granted_at, ip_address, user_agent")
-        .order("granted_at", { ascending: false })
-        .limit(500),
-      supabase
-        .from("legal_documents")
-        .select("*")
-        .order("type"),
+    // Steve 5/15: the client-side embed + manual-join attempts both
+    // failed (every row rendered "Unknown" in the User column even
+    // after the network panel confirmed the consent_logs response had
+    // 49 rows). The remaining suspect was either a column-visibility
+    // quirk in PostgREST or an RLS interaction we couldn't observe
+    // without server logs. Bypass the whole question by fetching from
+    // /api/admin/consent-logs — that route uses the service role key
+    // server-side, so RLS doesn't apply, and we get a guaranteed
+    // already-joined payload back.
+    const [consentResp, { data: docData }] = await Promise.all([
+      fetch("/api/admin/consent-logs", { cache: "no-store" }),
+      supabase.from("legal_documents").select("*").order("type"),
     ]);
 
-    const rows =
-      (consentData as Array<{
-        id: string;
-        user_id: string | null;
-        consent_type: string;
-        granted: boolean;
-        granted_at: string;
-        ip_address: string | null;
-        user_agent: string | null;
-      }> | null) ?? [];
-
-    const userIds = Array.from(
-      new Set(rows.map((r) => r.user_id).filter((v): v is string => !!v)),
-    );
-
-    let profileMap: Record<string, { full_name: string | null; email: string | null }> = {};
-    if (userIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .in("id", userIds);
-      profileMap = Object.fromEntries(
-        ((profilesData as Array<{ id: string; full_name: string | null; email: string | null }> | null) ?? []).map(
-          (p) => [p.id, { full_name: p.full_name, email: p.email }],
-        ),
+    let mappedConsents: ConsentRow[] = [];
+    if (consentResp.ok) {
+      const json = (await consentResp.json()) as {
+        consents: Array<{
+          id: string;
+          user_name: string;
+          user_email: string;
+          consent_type: string;
+          granted: boolean;
+          granted_at: string;
+          ip_address: string | null;
+          user_agent: string | null;
+        }>;
+      };
+      mappedConsents = json.consents;
+    } else {
+      // Surface the error to the operator instead of silently
+      // showing "Unknown" — that was exactly the confusing failure
+      // mode the May 15 docx reported.
+      const errText = await consentResp.text().catch(() => "(no body)");
+      setSaveMessage(
+        `Error loading consent logs (${consentResp.status}): ${errText.slice(0, 200)}`,
       );
     }
-
-    const mappedConsents: ConsentRow[] = rows.map((c) => {
-      const prof = c.user_id ? profileMap[c.user_id] : undefined;
-      return {
-        id: c.id,
-        user_name: prof?.full_name || "Unknown",
-        user_email: prof?.email || "",
-        consent_type: c.consent_type,
-        granted: c.granted,
-        granted_at: c.granted_at,
-        ip_address: c.ip_address,
-        user_agent: c.user_agent,
-      };
-    });
 
     setConsents(mappedConsents);
     setLegalDocs((docData as LegalDoc[]) || []);
