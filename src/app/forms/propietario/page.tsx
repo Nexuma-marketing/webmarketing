@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Building2, ArrowLeft, ArrowRight, FileText } from "lucide-react";
 import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload";
-import { useFormFieldMeta, fieldOptions } from "@/lib/form-meta";
+import { useFormFieldMeta, fieldOptions, fieldDisplay } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 import { logConsents } from "@/lib/consent-log";
 import { useLegalDocsOverlay } from "@/lib/legal-docs";
@@ -854,36 +854,81 @@ export default function OwnerFormPage() {
             {/* ═══ Step 1: Owner Profile ═══ */}
             {step === 1 && (
               <>
-                {/* #14: Investor or Owner */}
-                <div className="space-y-2">
-                  <Label>Are you a property owner or an investor?</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { value: "owner", label: "Property Owner", desc: "I own 1-3 properties for rental income" },
-                      { value: "investor", label: "Investor", desc: "I own 4+ properties as investment assets" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setValue("user_type", opt.value as "owner" | "investor")}
-                        className={`rounded-lg border p-4 text-left transition-all ${
-                          (watch("user_type") as string) === opt.value
-                            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                            : "border-muted hover:border-primary/30"
-                        }`}
-                      >
-                        <p className="font-medium text-sm">{opt.label}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{opt.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-                  {errors.user_type && (
-                    <p className="text-sm text-destructive" data-error="true">{errors.user_type.message}</p>
-                  )}
-                </div>
+                {/* #14: Investor or Owner.
+                    Steve 5/14: docx reported "perfil del propietario" no
+                    reflejaba cambios desde admin. Root cause: this whole
+                    Step 1 (label + the two cards + per-card descriptions)
+                    was hardcoded JSX with no fieldMeta overlay, so admin
+                    label/helper edits to user_type / property_count /
+                    objectives were ignored. The two card *values*
+                    ("owner" / "investor") still gate downstream business
+                    logic (role assignment, schema z.enum), so we let
+                    admin rename the visible card labels but keep the
+                    underlying values pinned to those two literals. */}
+                {(() => {
+                  const userTypeDisplay = fieldDisplay(fieldMeta, "user_type", {
+                    label: "Are you a property owner or an investor?",
+                  });
+                  if (userTypeDisplay.hidden) return null;
+                  const USER_TYPE_FALLBACK = [
+                    { value: "owner", label: "Property Owner" },
+                    { value: "investor", label: "Investor" },
+                  ] as const;
+                  const USER_TYPE_DESCRIPTIONS: Record<string, string> = {
+                    owner: "I own 1-3 properties for rental income",
+                    investor: "I own 4+ properties as investment assets",
+                  };
+                  // Drop any admin-added options whose value isn't one
+                  // of the two canonical literals — the schema would
+                  // reject them on submit anyway.
+                  const userTypeOptions = fieldOptions(
+                    fieldMeta,
+                    "user_type",
+                    USER_TYPE_FALLBACK,
+                  ).filter((opt) => opt.value === "owner" || opt.value === "investor");
+                  return (
+                    <div className="space-y-2">
+                      <Label>
+                        {userTypeDisplay.label}
+                        {userTypeDisplay.required && <span className="ml-1 text-red-500">*</span>}
+                      </Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {userTypeOptions.map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setValue("user_type", opt.value as "owner" | "investor")}
+                            className={`rounded-lg border p-4 text-left transition-all ${
+                              (watch("user_type") as string) === opt.value
+                                ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                                : "border-muted hover:border-primary/30"
+                            }`}
+                          >
+                            <p className="font-medium text-sm">{opt.label}</p>
+                            {USER_TYPE_DESCRIPTIONS[opt.value] && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {USER_TYPE_DESCRIPTIONS[opt.value]}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      {userTypeDisplay.helper && (
+                        <p className="text-xs text-muted-foreground">{userTypeDisplay.helper}</p>
+                      )}
+                      {errors.user_type && (
+                        <p className="text-sm text-destructive" data-error="true">{errors.user_type.message}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
-                <div className="space-y-2">
-                  <Label htmlFor="property_count">Number of properties</Label>
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="property_count"
+                  fallbackLabel="Number of properties"
+                  htmlFor="property_count"
+                >
                   <Input
                     id="property_count"
                     type="number"
@@ -899,10 +944,14 @@ export default function OwnerFormPage() {
                   <p className="text-xs text-muted-foreground">
                     Your service tier: <strong>{getServiceTier(propertyCount)}</strong>
                   </p>
-                </div>
+                </DynamicField>
 
-                <div className="space-y-3">
-                  <Label>What are your objectives? (select all that apply)</Label>
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="objectives"
+                  fallbackLabel="What are your objectives? (select all that apply)"
+                  className="space-y-3"
+                >
                   <div className="grid gap-2 sm:grid-cols-2">
                     {fieldOptions(fieldMeta, "objectives", OBJECTIVES).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -920,7 +969,7 @@ export default function OwnerFormPage() {
                   {errors.objectives && (
                     <p className="text-sm text-destructive" data-error="true">{errors.objectives.message}</p>
                   )}
-                </div>
+                </DynamicField>
               </>
             )}
 
@@ -1013,8 +1062,7 @@ export default function OwnerFormPage() {
                       <p className="text-sm text-destructive" data-error="true">{errors.property_type.message}</p>
                     )}
                   </DynamicField>
-                  <div className="space-y-2">
-                    <Label>Current occupancy status</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="occupancy_status" fallbackLabel="Current occupancy status">
                     <Select
                       value={occupancyStatus}
                       onValueChange={(val: string | null) => val && setValue("occupancy_status", val as OwnerFormData["occupancy_status"])}
@@ -1028,24 +1076,30 @@ export default function OwnerFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
+                  </DynamicField>
                 </div>
 
                 {/* #18: When occupied, ask when it becomes available */}
                 {occupancyStatus === "occupied" && (
-                  <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-                    <Label>When does the property become available?</Label>
-                    <Input type="date" {...register("vacancy_date")} />
-                    <p className="text-xs text-muted-foreground">
-                      Approximate date when the current tenant moves out.
-                    </p>
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                    <DynamicField
+                      meta={fieldMeta}
+                      fieldKey="vacancy_date"
+                      fallbackLabel="When does the property become available?"
+                      fallbackHelper="Approximate date when the current tenant moves out."
+                    >
+                      <Input type="date" {...register("vacancy_date")} />
+                    </DynamicField>
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Availability date (for new tenants)</Label>
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="availability_date"
+                  fallbackLabel="Availability date (for new tenants)"
+                >
                   <Input type="date" {...register("availability_date")} />
-                </div>
+                </DynamicField>
 
                 <div className="grid grid-cols-3 gap-4">
                   <DynamicField meta={fieldMeta} fieldKey="bedrooms" fallbackLabel="Bedrooms">
@@ -1078,8 +1132,7 @@ export default function OwnerFormPage() {
                       <p className="text-sm text-destructive" data-error="true">{errors.bathrooms.message}</p>
                     )}
                   </DynamicField>
-                  <div className="space-y-2">
-                    <Label>Size</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="area_sqft" fallbackLabel="Size">
                     <div className="flex gap-1">
                       <Input type="number" placeholder="800" {...register("area_sqft")} className="min-w-0" />
                       <Select value={(watch("area_unit") as string) || "sqft"} onValueChange={(v: string | null) => v && setValue("area_unit", v as "sqft" | "m2")}>
@@ -1092,11 +1145,10 @@ export default function OwnerFormPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  </DynamicField>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Style</Label>
+                <DynamicField meta={fieldMeta} fieldKey="style" fallbackLabel="Style">
                   <Select value={selectedStyle} onValueChange={(val: string | null) => val && setValue("style", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select style" />
@@ -1111,17 +1163,20 @@ export default function OwnerFormPage() {
                   {selectedStyle === "other" && (
                     <Input placeholder="Please specify the style" {...register("style_other")} />
                   )}
-                </div>
+                </DynamicField>
 
-                <div className="space-y-2">
-                  <Label>Levels / Floor</Label>
+                <DynamicField meta={fieldMeta} fieldKey="levels" fallbackLabel="Levels / Floor">
                   <Select value={selectedLevels} onValueChange={(val: string | null) => val && setValue("levels", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
-                      {["1", "2", "3", "4", "Other"].map((l) => (
-                        <SelectItem key={l} value={l}>{l}</SelectItem>
+                      {fieldOptions(
+                        fieldMeta,
+                        "levels",
+                        ["1", "2", "3", "4", "Other"].map((l) => ({ value: l, label: l })),
+                      ).map((l) => (
+                        <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1129,7 +1184,7 @@ export default function OwnerFormPage() {
                   {selectedLevels === "Other" && (
                     <Input placeholder="Please specify the level/floor" {...register("levels_other")} />
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                   {[
@@ -1177,8 +1232,7 @@ export default function OwnerFormPage() {
                   </div>
                 )}
 
-                <div className="space-y-3">
-                  <Label>Amenities</Label>
+                <DynamicField meta={fieldMeta} fieldKey="amenities" fallbackLabel="Amenities" className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     {fieldOptions(fieldMeta, "amenities", AMENITIES).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1195,10 +1249,9 @@ export default function OwnerFormPage() {
                   {amenities.includes("Other") && (
                     <Input placeholder="Please specify other amenities" {...register("amenities_other")} />
                   )}
-                </div>
+                </DynamicField>
 
-                <div className="space-y-3">
-                  <Label>Building common areas</Label>
+                <DynamicField meta={fieldMeta} fieldKey="common_areas" fallbackLabel="Building common areas" className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     {fieldOptions(fieldMeta, "common_areas", COMMON_AREAS).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1211,11 +1264,10 @@ export default function OwnerFormPage() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
 
                 {/* #9: Where is your property listed? */}
-                <div className="space-y-3">
-                  <Label>Where is your property currently listed?</Label>
+                <DynamicField meta={fieldMeta} fieldKey="listing_platforms" fallbackLabel="Where is your property currently listed?" className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     {fieldOptions(fieldMeta, "listing_platforms", LISTING_PLATFORMS).map((opt) => (
                       <div key={opt.value} className="flex items-center gap-2">
@@ -1232,7 +1284,7 @@ export default function OwnerFormPage() {
                   {listingPlatforms.includes("Other") && (
                     <Input placeholder="Please specify other platforms" {...register("listing_platforms_other")} />
                   )}
-                </div>
+                </DynamicField>
               </>
             )}
 
