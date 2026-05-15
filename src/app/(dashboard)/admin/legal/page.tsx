@@ -95,10 +95,20 @@ export default function AdminLegalPage() {
   const supabase = createClient();
 
   const load = useCallback(async () => {
+    // Steve 5/15: the embedded join syntax
+    //   profiles:user_id(full_name, email)
+    // returned null for every row in the Consent Logs table — the User
+    // column showed "Unknown" for all entries. The PostgREST alias
+    // disambiguation hint clashed with the auto-detected FK + RLS
+    // recursion on the profiles "Admins can view all" policy. Switch
+    // to a deterministic two-query manual join: fetch consent_logs
+    // with user_id, then look up all unique user_ids against profiles
+    // in a second query, and merge in JS. Reliable regardless of
+    // PostgREST version, FK constraint naming, or policy quirks.
     const [{ data: consentData }, { data: docData }] = await Promise.all([
       supabase
         .from("consent_logs")
-        .select("id, consent_type, granted, granted_at, ip_address, user_agent, profiles:user_id(full_name, email)")
+        .select("id, user_id, consent_type, granted, granted_at, ip_address, user_agent")
         .order("granted_at", { ascending: false })
         .limit(500),
       supabase
@@ -107,16 +117,47 @@ export default function AdminLegalPage() {
         .order("type"),
     ]);
 
-    const mappedConsents = (consentData || []).map((c) => ({
-      id: c.id,
-      user_name: (c.profiles as unknown as { full_name: string } | null)?.full_name || "Unknown",
-      user_email: (c.profiles as unknown as { email: string } | null)?.email || "",
-      consent_type: c.consent_type,
-      granted: c.granted,
-      granted_at: c.granted_at,
-      ip_address: (c.ip_address as string | null) ?? null,
-      user_agent: (c.user_agent as string | null) ?? null,
-    }));
+    const rows =
+      (consentData as Array<{
+        id: string;
+        user_id: string | null;
+        consent_type: string;
+        granted: boolean;
+        granted_at: string;
+        ip_address: string | null;
+        user_agent: string | null;
+      }> | null) ?? [];
+
+    const userIds = Array.from(
+      new Set(rows.map((r) => r.user_id).filter((v): v is string => !!v)),
+    );
+
+    let profileMap: Record<string, { full_name: string | null; email: string | null }> = {};
+    if (userIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", userIds);
+      profileMap = Object.fromEntries(
+        ((profilesData as Array<{ id: string; full_name: string | null; email: string | null }> | null) ?? []).map(
+          (p) => [p.id, { full_name: p.full_name, email: p.email }],
+        ),
+      );
+    }
+
+    const mappedConsents: ConsentRow[] = rows.map((c) => {
+      const prof = c.user_id ? profileMap[c.user_id] : undefined;
+      return {
+        id: c.id,
+        user_name: prof?.full_name || "Unknown",
+        user_email: prof?.email || "",
+        consent_type: c.consent_type,
+        granted: c.granted,
+        granted_at: c.granted_at,
+        ip_address: c.ip_address,
+        user_agent: c.user_agent,
+      };
+    });
 
     setConsents(mappedConsents);
     setLegalDocs((docData as LegalDoc[]) || []);
