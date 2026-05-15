@@ -1852,7 +1852,19 @@ export default function OwnerFormPage() {
                     field: "consent_electronic_signature" as const,
                     label: "I consent to use electronic signatures and acknowledge their legal validity.",
                   },
-                ].map(({ id, field, label }) => (
+                ].map(({ id, field, label }) => {
+                  // Steve 5/15: the short checkbox label (one-line
+                  // summary like "I authorize image usage...") was
+                  // hardcoded. Admins editing form_questions.label for
+                  // the matching consent field_key saw no effect on
+                  // this form. Apply the fieldDisplay overlay so the
+                  // label, helper text, and required flag honor admin
+                  // edits — the full document text (expanded via "Read
+                  // full document") already pulls from legal_documents
+                  // via useLegalDocsOverlay.
+                  const display = fieldDisplay(fieldMeta, field, { label });
+                  if (display.hidden) return null;
+                  return (
                   <div key={id} className="rounded-lg border p-3">
                     <div className="flex items-start gap-3">
                       <Checkbox
@@ -1862,8 +1874,12 @@ export default function OwnerFormPage() {
                       />
                       <div className="flex-1">
                         <Label htmlFor={id} className="text-sm font-normal leading-relaxed">
-                          {label}
+                          {display.label}
+                          {display.required && <span className="ml-1 text-red-500">*</span>}
                         </Label>
+                        {display.helper && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{display.helper}</p>
+                        )}
                         {/* #29: Read full document button */}
                         <button
                           type="button"
@@ -1900,7 +1916,8 @@ export default function OwnerFormPage() {
                       </p>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Review summary */}
                 <div className="rounded-lg border bg-primary/5 p-4 mt-4 space-y-3">

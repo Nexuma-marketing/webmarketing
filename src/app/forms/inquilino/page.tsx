@@ -541,8 +541,7 @@ export default function TenantFormPage() {
                 {/* Student sub-questions */}
                 {employmentType === "international_student" && (
                   <div className="space-y-3 rounded-md border p-4">
-                    <div className="space-y-2">
-                      <Label>Type of institution</Label>
+                    <DynamicField meta={fieldMeta} fieldKey="institution_type" fallbackLabel="Type of institution">
                       <Select value={watch("institution_type") as string | undefined} onValueChange={(val: string | null) => val && setValue("institution_type", val)}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select institution type" />
@@ -555,15 +554,14 @@ export default function TenantFormPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="institution_name">Name of institution (optional)</Label>
+                    </DynamicField>
+                    <DynamicField meta={fieldMeta} fieldKey="institution_name" fallbackLabel="Name of institution (optional)" htmlFor="institution_name">
                       <Input
                         id="institution_name"
                         placeholder="e.g. University of British Columbia"
                         {...register("institution_name")}
                       />
-                    </div>
+                    </DynamicField>
                   </div>
                 )}
 
@@ -621,8 +619,7 @@ export default function TenantFormPage() {
             {/* ═══ Step 2: Property Details & Preferences ═══ */}
             {step === 2 && (
               <>
-                <div className="space-y-3">
-                  <Label>Preferred zone (British Columbia)</Label>
+                <DynamicField meta={fieldMeta} fieldKey="preferred_zones" fallbackLabel="Preferred zone (British Columbia)" className="space-y-3">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {(() => {
                       const zoneOpts = fieldOptions(fieldMeta, "preferred_zones", BC_ZONES);
@@ -675,7 +672,7 @@ export default function TenantFormPage() {
                   {errors.preferred_zones && (
                     <p className="text-sm text-destructive">{errors.preferred_zones.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="grid grid-cols-2 gap-4">
                   <DynamicField meta={fieldMeta} fieldKey="bedrooms_needed" fallbackLabel="Bedrooms">
@@ -715,8 +712,7 @@ export default function TenantFormPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="size_sqft">Size (optional)</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="size_sqft" fallbackLabel="Size (optional)" htmlFor="size_sqft">
                     <div className="flex gap-2">
                       <Input
                         id="size_sqft"
@@ -737,17 +733,20 @@ export default function TenantFormPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Levels / Floor</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="levels_preferred" fallbackLabel="Levels / Floor">
                     <Select value={levelsPreferred} onValueChange={(val: string | null) => val && setValue("levels_preferred", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Any" />
                       </SelectTrigger>
                       <SelectContent>
-                        {["1", "2", "3", "4", "Other"].map((l) => (
-                          <SelectItem key={l} value={l}>
-                            {l}
+                        {fieldOptions(
+                          fieldMeta,
+                          "levels_preferred",
+                          ["1", "2", "3", "4", "Other"].map((l) => ({ value: l, label: l })),
+                        ).map((l) => (
+                          <SelectItem key={l.value} value={l.value}>
+                            {l.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -756,7 +755,7 @@ export default function TenantFormPage() {
                     {(watch("levels_preferred") as string) === "Other" && (
                       <Input placeholder="Please specify the level/floor" {...register("levels_other")} className="mt-1" />
                     )}
-                  </div>
+                  </DynamicField>
                 </div>
 
                 <DynamicField meta={fieldMeta} fieldKey="style_preference" fallbackLabel="Style preference">

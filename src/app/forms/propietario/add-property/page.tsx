@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/card";
 import { Building2, ArrowLeft, ArrowRight, FileText } from "lucide-react";
 import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload";
+import { useFormFieldMeta, fieldOptions } from "@/lib/form-meta";
+import { DynamicField } from "@/components/forms/dynamic-field";
 
 // ─── Property types (PDF 5.2.1.1) ───────────────────
 const PROPERTY_TYPES = [
@@ -119,6 +121,16 @@ export default function AddPropertyPage() {
   const [expandedLegal, setExpandedLegal] = useState<Record<string, boolean>>({});
   const [propertyImages, setPropertyImages] = useState<ImageWithMeta[]>([]);
   const formRef = useRef<HTMLDivElement>(null);
+
+  // Steve 5/15: this "add a second property" flow is a separate file
+  // from /forms/propietario but shares the same DB schema and the
+  // same form_questions metadata under slug 'owner_property'. Pull
+  // the same field metadata overlay so any admin edit in /admin/forms
+  // also reflects here. Without this hook the page used hardcoded
+  // <Label>s and ignored admin label / helper / options edits — the
+  // owner would have seen the new wording on /forms/propietario but
+  // not when registering an additional property from the dashboard.
+  const fieldMeta = useFormFieldMeta("owner_property");
 
   const {
     register,
@@ -406,14 +418,13 @@ export default function AddPropertyPage() {
             {/* ═══ Step 1: Property Details ═══ */}
             {step === 1 && (
               <>
-                <div className="space-y-2">
-                  <Label>Property Type</Label>
+                <DynamicField meta={fieldMeta} fieldKey="property_type" fallbackLabel="Property Type">
                   <Select value={watch("property_type") as string | undefined} onValueChange={(val: string | null) => val && setValue("property_type", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select property type" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROPERTY_TYPES.map((t) => (
+                      {fieldOptions(fieldMeta, "property_type", PROPERTY_TYPES).map((t) => (
                         <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -421,10 +432,9 @@ export default function AddPropertyPage() {
                   {errors.property_type && (
                     <p className="text-sm text-destructive" data-error="true">{errors.property_type.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
-                <div className="space-y-2">
-                  <Label htmlFor="monthly_rent">Monthly Rent (CAD)</Label>
+                <DynamicField meta={fieldMeta} fieldKey="monthly_rent" fallbackLabel="Monthly Rent (CAD)" htmlFor="monthly_rent">
                   <Input
                     id="monthly_rent"
                     type="number"
@@ -436,11 +446,10 @@ export default function AddPropertyPage() {
                   {errors.monthly_rent && (
                     <p className="text-sm text-destructive" data-error="true">{errors.monthly_rent.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 {/* Occupancy Status (#18) */}
-                <div className="space-y-2">
-                  <Label>Occupancy Status</Label>
+                <DynamicField meta={fieldMeta} fieldKey="occupancy_status" fallbackLabel="Occupancy Status">
                   <Select
                     value={watch("occupancy_status") as string | undefined}
                     onValueChange={(val: string | null) => val && setValue("occupancy_status", val as PropertyOnlyFormData["occupancy_status"])}
@@ -449,64 +458,59 @@ export default function AddPropertyPage() {
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
-                      {OCCUPANCY_OPTIONS.map((o) => (
+                      {fieldOptions(fieldMeta, "occupancy_status", OCCUPANCY_OPTIONS).map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {occupancyStatus === "occupied" && (
-                    <div className="space-y-1">
-                      <Label htmlFor="vacancy_date">Expected vacancy date</Label>
+                    <DynamicField meta={fieldMeta} fieldKey="vacancy_date" fallbackLabel="Expected vacancy date" htmlFor="vacancy_date" className="space-y-1">
                       <Input id="vacancy_date" type="date" {...register("vacancy_date")} />
-                    </div>
+                    </DynamicField>
                   )}
-                </div>
+                </DynamicField>
 
-                <div className="space-y-2">
-                  <Label htmlFor="availability_date">Availability Date</Label>
+                <DynamicField meta={fieldMeta} fieldKey="availability_date" fallbackLabel="Availability Date" htmlFor="availability_date">
                   <Input id="availability_date" type="date" {...register("availability_date")} />
-                </div>
+                </DynamicField>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Bedrooms</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="bedrooms" fallbackLabel="Bedrooms">
                     <Select value={watch("bedrooms") as string | undefined} onValueChange={(val: string | null) => val && setValue("bedrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BEDROOMS.map((b) => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bedrooms", BEDROOMS.map((b) => ({ value: b, label: b }))).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     {errors.bedrooms && (
                       <p className="text-sm text-destructive" data-error="true">{errors.bedrooms.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bathrooms</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="bathrooms" fallbackLabel="Bathrooms">
                     <Select value={watch("bathrooms") as string | undefined} onValueChange={(val: string | null) => val && setValue("bathrooms", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BATHROOMS.map((b) => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        {fieldOptions(fieldMeta, "bathrooms", BATHROOMS.map((b) => ({ value: b, label: b }))).map((b) => (
+                          <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     {errors.bathrooms && (
                       <p className="text-sm text-destructive" data-error="true">{errors.bathrooms.message}</p>
                     )}
-                  </div>
+                  </DynamicField>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="area_sqft">Size</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="area_sqft" fallbackLabel="Size" htmlFor="area_sqft">
                     <Input id="area_sqft" type="number" placeholder="e.g. 800" {...register("area_sqft")} />
-                  </div>
+                  </DynamicField>
                   <div className="space-y-2">
                     <Label>Unit</Label>
                     <Select value={(watch("area_unit") as string | undefined) || "sqft"} onValueChange={(val: string | null) => val && setValue("area_unit", val as "sqft" | "m2")}>
@@ -522,14 +526,13 @@ export default function AddPropertyPage() {
                 </div>
 
                 {/* Style */}
-                <div className="space-y-2">
-                  <Label>Style</Label>
+                <DynamicField meta={fieldMeta} fieldKey="style" fallbackLabel="Style">
                   <Select value={watch("style") as string | undefined} onValueChange={(val: string | null) => val && setValue("style", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select style" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STYLES.map((s) => (
+                      {fieldOptions(fieldMeta, "style", STYLES).map((s) => (
                         <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -537,25 +540,28 @@ export default function AddPropertyPage() {
                   {selectedStyle === "other" && (
                     <Input placeholder="Please specify style" {...register("style_other")} />
                   )}
-                </div>
+                </DynamicField>
 
                 {/* Levels */}
-                <div className="space-y-2">
-                  <Label>Levels / Floor</Label>
+                <DynamicField meta={fieldMeta} fieldKey="levels" fallbackLabel="Levels / Floor">
                   <Select value={watch("levels") as string | undefined} onValueChange={(val: string | null) => val && setValue("levels", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
-                      {["1", "2", "3", "4", "Other"].map((l) => (
-                        <SelectItem key={l} value={l}>{l}</SelectItem>
+                      {fieldOptions(
+                        fieldMeta,
+                        "levels",
+                        ["1", "2", "3", "4", "Other"].map((l) => ({ value: l, label: l })),
+                      ).map((l) => (
+                        <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {selectedLevels === "Other" && (
                     <Input placeholder="Please specify the level/floor" {...register("levels_other")} />
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                   {[
@@ -606,96 +612,90 @@ export default function AddPropertyPage() {
                 </div>
 
                 {/* Amenities */}
-                <div className="space-y-2">
-                  <Label>Amenities</Label>
+                <DynamicField meta={fieldMeta} fieldKey="amenities" fallbackLabel="Amenities">
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {AMENITIES.map((a) => (
-                      <div key={a} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "amenities", AMENITIES.map((a) => ({ value: a, label: a }))).map((a) => (
+                      <div key={a.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ap-am-${a}`}
-                          checked={amenities.includes(a)}
-                          onCheckedChange={() => toggleArray("amenities", a, amenities)}
+                          id={`ap-am-${a.value}`}
+                          checked={amenities.includes(a.value)}
+                          onCheckedChange={() => toggleArray("amenities", a.value, amenities)}
                         />
-                        <Label htmlFor={`ap-am-${a}`} className="text-sm font-normal">{a}</Label>
+                        <Label htmlFor={`ap-am-${a.value}`} className="text-sm font-normal">{a.label}</Label>
                       </div>
                     ))}
                   </div>
                   {amenities.includes("Other") && (
                     <Input placeholder="Please specify amenity" {...register("amenities_other")} />
                   )}
-                </div>
+                </DynamicField>
 
                 {/* Common Areas */}
-                <div className="space-y-2">
-                  <Label>Common Areas</Label>
+                <DynamicField meta={fieldMeta} fieldKey="common_areas" fallbackLabel="Common Areas">
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {COMMON_AREAS.map((ca) => (
-                      <div key={ca} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "common_areas", COMMON_AREAS.map((c) => ({ value: c, label: c }))).map((ca) => (
+                      <div key={ca.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ap-ca-${ca}`}
-                          checked={commonAreas.includes(ca)}
-                          onCheckedChange={() => toggleArray("common_areas", ca, commonAreas)}
+                          id={`ap-ca-${ca.value}`}
+                          checked={commonAreas.includes(ca.value)}
+                          onCheckedChange={() => toggleArray("common_areas", ca.value, commonAreas)}
                         />
-                        <Label htmlFor={`ap-ca-${ca}`} className="text-sm font-normal">{ca}</Label>
+                        <Label htmlFor={`ap-ca-${ca.value}`} className="text-sm font-normal">{ca.label}</Label>
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
 
                 {/* Listing Platforms (#9) */}
-                <div className="space-y-2">
-                  <Label>Currently listed on</Label>
+                <DynamicField meta={fieldMeta} fieldKey="listing_platforms" fallbackLabel="Currently listed on">
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {LISTING_PLATFORMS.map((lp) => (
-                      <div key={lp} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "listing_platforms", LISTING_PLATFORMS.map((p) => ({ value: p, label: p }))).map((lp) => (
+                      <div key={lp.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ap-lp-${lp}`}
-                          checked={listingPlatforms.includes(lp)}
-                          onCheckedChange={() => toggleArray("listing_platforms", lp, listingPlatforms)}
+                          id={`ap-lp-${lp.value}`}
+                          checked={listingPlatforms.includes(lp.value)}
+                          onCheckedChange={() => toggleArray("listing_platforms", lp.value, listingPlatforms)}
                         />
-                        <Label htmlFor={`ap-lp-${lp}`} className="text-sm font-normal">{lp}</Label>
+                        <Label htmlFor={`ap-lp-${lp.value}`} className="text-sm font-normal">{lp.label}</Label>
                       </div>
                     ))}
                   </div>
                   {listingPlatforms.includes("Other") && (
                     <Input placeholder="Please specify platform" {...register("listing_platforms_other")} />
                   )}
-                </div>
+                </DynamicField>
               </>
             )}
 
             {/* ═══ Step 2: Zone & Location ═══ */}
             {step === 2 && (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Full Address</Label>
+                <DynamicField meta={fieldMeta} fieldKey="address" fallbackLabel="Full Address" htmlFor="address">
                   <Input id="address" placeholder="123 Main St" {...register("address")} />
                   {errors.address && (
                     <p className="text-sm text-destructive" data-error="true">{errors.address.message}</p>
                   )}
-                </div>
+                </DynamicField>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>City</Label>
+                  <DynamicField meta={fieldMeta} fieldKey="city" fallbackLabel="City">
                     <Select value={watch("zone_city") as string | undefined} onValueChange={(val: string | null) => val && setValue("zone_city", val)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select city" />
                       </SelectTrigger>
                       <SelectContent>
-                        {BC_CITIES.map((c) => (
-                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        {fieldOptions(fieldMeta, "city", BC_CITIES.map((c) => ({ value: c, label: c }))).map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     {errors.zone_city && (
                       <p className="text-sm text-destructive" data-error="true">{errors.zone_city.message}</p>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="postal_code">Postal Code</Label>
+                  </DynamicField>
+                  <DynamicField meta={fieldMeta} fieldKey="postal_code" fallbackLabel="Postal Code" htmlFor="postal_code">
                     <Input id="postal_code" placeholder="V5K 0A1" {...register("postal_code")} />
-                  </div>
+                  </DynamicField>
                 </div>
 
                 <Input type="hidden" value="British Columbia" {...register("province")} />
@@ -749,8 +749,7 @@ export default function AddPropertyPage() {
                 </div>
 
                 {/* Social Life */}
-                <div className="space-y-2">
-                  <Label>Social Life / Nightlife</Label>
+                <DynamicField meta={fieldMeta} fieldKey="social_life" fallbackLabel="Social Life / Nightlife">
                   <Select value={watch("social_life") as string | undefined} onValueChange={(val: string | null) => val && setValue("social_life", val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select" />
@@ -761,24 +760,23 @@ export default function AddPropertyPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </DynamicField>
 
                 {/* Supermarkets */}
-                <div className="space-y-2">
-                  <Label>Nearby Supermarkets</Label>
+                <DynamicField meta={fieldMeta} fieldKey="nearby_supermarkets" fallbackLabel="Nearby Supermarkets">
                   <div className="grid gap-2 sm:grid-cols-3">
-                    {SUPERMARKETS.map((s) => (
-                      <div key={s} className="flex items-center gap-2">
+                    {fieldOptions(fieldMeta, "nearby_supermarkets", SUPERMARKETS.map((s) => ({ value: s, label: s }))).map((s) => (
+                      <div key={s.value} className="flex items-center gap-2">
                         <Checkbox
-                          id={`ap-sup-${s}`}
-                          checked={nearbySupermarkets.includes(s)}
-                          onCheckedChange={() => toggleArray("nearby_supermarkets", s, nearbySupermarkets)}
+                          id={`ap-sup-${s.value}`}
+                          checked={nearbySupermarkets.includes(s.value)}
+                          onCheckedChange={() => toggleArray("nearby_supermarkets", s.value, nearbySupermarkets)}
                         />
-                        <Label htmlFor={`ap-sup-${s}`} className="text-sm font-normal">{s}</Label>
+                        <Label htmlFor={`ap-sup-${s.value}`} className="text-sm font-normal">{s.label}</Label>
                       </div>
                     ))}
                   </div>
-                </div>
+                </DynamicField>
               </>
             )}
 
