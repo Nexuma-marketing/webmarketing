@@ -52,6 +52,44 @@ const PLANS: {
     defaultTiming: "~16 days avg.",
   },
   {
+    // Steve 5/15: client message — "porque ahora aqui ya no esta el
+    // Founders Package?". The Founders Package is the second plan
+    // offered inside the Owner Basic tier (alongside Low Price) on
+    // /dashboard/services. It deserves its own admin entry so the
+    // pricing terms and bullet list can be edited without touching
+    // the tier-level features. Defaults mirror what's currently
+    // hardcoded in src/app/(dashboard)/dashboard/services/page.tsx
+    // OWNER_TIERS.basic.plans[1] so the visible UI does not change
+    // until an admin edits it.
+    key: "owner_founders",
+    label: "Owner — Founders Package (Visionary Owners)",
+    defaultTagline:
+      "30% of first month's rent (one-time, lifetime rate) — limited to the first 20 Visionary Owners",
+    defaultFeatures: [
+      "Exclusive rate for the first 20 owners — limited spots",
+      "$200 system fee upfront (deducted from the 30%)",
+      "Pay the balance only after tenant signs the lease",
+      "No monthly commissions",
+      "Ideal for short-term rentals (weekly, monthly, up to 6 months)",
+    ],
+    color: "border-amber-200",
+  },
+  {
+    // Steve 5/15: same reasoning — Low Price is the other plan inside
+    // the Owner Basic tier and was also missing from the admin
+    // checklist editor. Defaults mirror OWNER_TIERS.basic.plans[0].
+    key: "owner_low_price",
+    label: "Owner — Low Price",
+    defaultTagline: "35% of first month's rent (one-time)",
+    defaultFeatures: [
+      "$200 system fee upfront (deducted from the 35%)",
+      "Pay the balance only after tenant signs the lease",
+      "No monthly commissions",
+      "Optional: +$100 for priority listing placement (1 month)",
+    ],
+    color: "border-sky-200",
+  },
+  {
     key: "owner_preferred",
     label: "Owner — Preferred Owners",
     defaultTagline: "Enhanced services for growing property portfolios (2–3 properties)",

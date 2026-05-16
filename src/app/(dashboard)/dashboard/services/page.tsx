@@ -614,10 +614,39 @@ export default async function ServicesPage() {
           override?.features && override.features.length > 0
             ? override.features
             : baseTier.features;
+
+        // Steve 5/15: client noticed the Founders Package and Low
+        // Price entries were missing from /admin/plans. After adding
+        // them as `owner_founders` and `owner_low_price` keys, also
+        // override the basic tier's plan cards here so admin edits
+        // to those bullets surface on /dashboard/services. The two
+        // cards are at hardcoded indices in OWNER_TIERS.basic.plans
+        // (0 = Low Price, 1 = Founders Package) — preserve that order.
+        const planCardKeys: Record<number, string> = ownerTier === "basic"
+          ? { 0: "owner_low_price", 1: "owner_founders" }
+          : {};
+        const overriddenPlans = baseTier.plans.map((plan, idx) => {
+          const cardKey = planCardKeys[idx];
+          if (!cardKey) return plan;
+          const cardOverride = planOverrides[cardKey];
+          if (!cardOverride) return plan;
+          return {
+            ...plan,
+            // tagline -> pricing line at top of the card
+            pricing: cardOverride.tagline ?? plan.pricing,
+            // features list -> bullet details under the pricing
+            details:
+              cardOverride.features && cardOverride.features.length > 0
+                ? cardOverride.features
+                : plan.details,
+          };
+        });
+
         return {
           ...baseTier,
           tagline: override?.tagline ?? baseTier.tagline,
           features: applyTimingToFeatures(featuresBase, override?.timeToTenant),
+          plans: overriddenPlans,
         };
       })()
     : null;
