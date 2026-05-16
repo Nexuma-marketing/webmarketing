@@ -170,6 +170,100 @@ export async function POST(request: Request) {
 
         break;
       }
+
+      // ── Steve 5/16 Milestone 4: Charge refunded ──
+      // Either a partial or full refund triggered from the Stripe
+      // dashboard or our admin UI. We flag the payment as refunded
+      // and stamp refunded_at so the Sales Report can chart refund
+      // volume by date.
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const paymentIntentId =
+          typeof charge.payment_intent === "string"
+            ? charge.payment_intent
+            : charge.payment_intent?.id;
+        if (paymentIntentId) {
+          await supabaseAdmin
+            .from("payments")
+            .update({
+              status: "refunded",
+              refunded_at: new Date().toISOString(),
+            })
+            .eq("stripe_payment_intent_id", paymentIntentId);
+        }
+        break;
+      }
+
+      // ── Steve 5/16 Milestone 4: Subscription deleted (canceled) ──
+      // Triggered when a PYMES installment subscription is canceled
+      // before all installments are paid (admin action, Stripe
+      // dashboard action, or auto-cancel after final installment).
+      // We only mark rows as "canceled" if they were previously
+      // "pending" — completed installment payments stay completed.
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const subscriptionId = subscription.id;
+        const canceledAt = new Date().toISOString();
+        // Stamp the subscription as canceled. We don't change status of
+        // already-completed installments — only outstanding/pending ones.
+        await supabaseAdmin
+          .from("payments")
+          .update({ status: "canceled", canceled_at: canceledAt })
+          .eq("stripe_subscription_id", subscriptionId)
+          .eq("status", "pending");
+
+        // Also record a marker row so /admin/payments shows the
+        // cancellation event even when no pending row exists. This
+        // makes it auditable from a single timeline.
+        const metadata = subscription.metadata || {};
+        const userId = metadata.user_id;
+        const pymesPlanId = metadata.pymes_plan_id;
+        if (userId) {
+          await supabaseAdmin.from("payments").insert({
+            user_id: userId,
+            pymes_plan_id: pymesPlanId || null,
+            stripe_session_id: subscriptionId,
+            stripe_subscription_id: subscriptionId,
+            amount: 0,
+            currency: "CAD",
+            payment_type: "subscription_canceled",
+            status: "canceled",
+            canceled_at: canceledAt,
+          });
+        }
+        break;
+      }
+
+      // ── Steve 5/16 Milestone 4: Recurring invoice failed ──
+      // A monthly installment failed to charge. We record a 'failed'
+      // payment row so the admin Sales Report and Payments table both
+      // surface it and a sales rep can follow up before the
+      // subscription auto-cancels after retries.
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subDetails = invoice.parent?.subscription_details;
+        if (!subDetails?.subscription) break;
+        const subscriptionId =
+          typeof subDetails.subscription === "string"
+            ? subDetails.subscription
+            : subDetails.subscription.id;
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const metadata = subscription.metadata || {};
+        const userId = metadata.user_id;
+        const pymesPlanId = metadata.pymes_plan_id;
+        if (!userId) break;
+        await supabaseAdmin.from("payments").insert({
+          user_id: userId,
+          pymes_plan_id: pymesPlanId || null,
+          stripe_session_id: invoice.id,
+          stripe_subscription_id: subscriptionId,
+          amount: (invoice.amount_due || 0) / 100,
+          currency: "CAD",
+          payment_type: "installment",
+          status: "failed",
+        });
+        break;
+      }
     }
   } catch (err) {
     console.error("Webhook handler error:", err);

@@ -17,8 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Download, Receipt } from "lucide-react";
+import { CreditCard, Download, Receipt, Calendar } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/admin";
+import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscription-button";
 
 const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
   completed: { variant: "default", label: "Completed" },
@@ -51,6 +52,59 @@ export default async function PaymentsPage() {
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
 
   const pendingCount = payments?.filter((p) => p.status === "pending").length || 0;
+
+  // Steve 5/16 Milestone 4: surface ACTIVE installment subscriptions
+  // so the user can see how many installments remain and cancel them
+  // from this page. A subscription is "active" if it has at least one
+  // payment row with stripe_subscription_id, the latest row is NOT
+  // 'canceled' and there are fewer completed installments than the
+  // expected total_installments.
+  type SubGroup = {
+    subscriptionId: string;
+    planName: string;
+    totalInstallments: number;
+    completedCount: number;
+    lastAmount: number;
+    lastDate: string;
+    canceled: boolean;
+  };
+  const subscriptionGroups: SubGroup[] = (() => {
+    if (!payments) return [];
+    const byId: Record<string, SubGroup & { rows: typeof payments }> = {};
+    for (const p of payments) {
+      if (!p.stripe_subscription_id) continue;
+      const id = p.stripe_subscription_id as string;
+      if (!byId[id]) {
+        byId[id] = {
+          subscriptionId: id,
+          planName:
+            p.pymes_plans?.name ||
+            p.services?.name ||
+            "Installment plan",
+          totalInstallments: Number(p.total_installments) || 0,
+          completedCount: 0,
+          lastAmount: 0,
+          lastDate: p.created_at,
+          canceled: false,
+          rows: [],
+        };
+      }
+      byId[id].rows.push(p);
+      if (p.status === "completed") byId[id].completedCount += 1;
+      if (p.status === "canceled") byId[id].canceled = true;
+      if (new Date(p.created_at) >= new Date(byId[id].lastDate)) {
+        byId[id].lastAmount = Number(p.amount) || 0;
+        byId[id].lastDate = p.created_at;
+      }
+      byId[id].totalInstallments =
+        Number(p.total_installments) || byId[id].totalInstallments;
+    }
+    return Object.values(byId).filter(
+      (g) =>
+        !g.canceled &&
+        (g.totalInstallments === 0 || g.completedCount < g.totalInstallments),
+    );
+  })();
 
   return (
     <div className="space-y-6">
@@ -91,6 +145,50 @@ export default async function PaymentsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Active installment subscriptions */}
+      {subscriptionGroups.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Active installment plans
+            </CardTitle>
+            <CardDescription>
+              These plans charge your card automatically. You can cancel any time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {subscriptionGroups.map((g) => {
+              const remaining =
+                g.totalInstallments > 0
+                  ? g.totalInstallments - g.completedCount
+                  : null;
+              return (
+                <div
+                  key={g.subscriptionId}
+                  className="flex flex-wrap items-start justify-between gap-3 rounded-md border p-3"
+                >
+                  <div className="space-y-1">
+                    <p className="font-medium">{g.planName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {g.completedCount} paid
+                      {remaining !== null
+                        ? ` · ${remaining} remaining of ${g.totalInstallments}`
+                        : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Last payment: {formatCurrency(g.lastAmount)} on{" "}
+                      {formatDate(g.lastDate)}
+                    </p>
+                  </div>
+                  <CancelSubscriptionButton subscriptionId={g.subscriptionId} />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payments table */}
       <Card>

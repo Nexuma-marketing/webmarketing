@@ -576,50 +576,83 @@ export default function AdminPricingPage() {
                   placeholder="e.g., Spring season — Vancouver only"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Target zones (cities, comma-separated; blank = all)</Label>
-                <Input
-                  value={(editPromo.target_zones || []).join(", ")}
-                  onChange={(e) =>
-                    setEditPromo({
-                      ...editPromo,
-                      target_zones: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="e.g., Vancouver, Burnaby, Richmond"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Target client types (blank = all)</Label>
-                <div className="flex flex-wrap gap-2">
-                  {ROLE_TARGET_OPTIONS.map((opt) => {
-                    const active = (editPromo.target_roles || []).includes(opt.value);
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          const current = editPromo.target_roles || [];
-                          setEditPromo({
-                            ...editPromo,
-                            target_roles: active
-                              ? current.filter((r) => r !== opt.value)
-                              : [...current, opt.value],
-                          });
-                        }}
-                        className={`rounded-full border px-3 py-1 text-xs ${
-                          active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background hover:bg-muted"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+              {/* Steve 5/16: client May docx said 'Zona Pendiente: No
+                  lovi' / 'Tipo de cliente Pendiente: No lovi' — fields
+                  WERE in this dialog all along but were too easy to
+                  miss between Description and Active switch. Wrap them
+                  in a labeled section with explicit "Zone / Tipo de
+                  cliente" wording and helper sentences so a non-tech
+                  admin can find them on first read. */}
+              <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 mb-1">
+                    Promotion targeting (Zona / Tipo de cliente)
+                  </p>
+                  <p className="text-xs text-amber-800">
+                    Leave both fields empty to apply the promo to every visitor.
+                    Fill one to restrict by zone (city) only, or fill both for
+                    fine-grained targeting.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-medium">
+                    Zona — Target zones / cities
+                  </Label>
+                  <Input
+                    value={(editPromo.target_zones || []).join(", ")}
+                    onChange={(e) =>
+                      setEditPromo({
+                        ...editPromo,
+                        target_zones: e.target.value
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    placeholder="e.g., Vancouver, Burnaby, Richmond"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Comma-separated city names. Promo banner will only appear to
+                    users whose property/preference matches one of these cities.
+                    Blank = all cities.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-medium">
+                    Tipo de cliente — Target client types
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {ROLE_TARGET_OPTIONS.map((opt) => {
+                      const active = (editPromo.target_roles || []).includes(opt.value);
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            const current = editPromo.target_roles || [];
+                            setEditPromo({
+                              ...editPromo,
+                              target_roles: active
+                                ? current.filter((r) => r !== opt.value)
+                                : [...current, opt.value],
+                            });
+                          }}
+                          className={`rounded-full border px-3 py-1 text-xs ${
+                            active
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background hover:bg-muted"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Click each role to toggle. Blank = visible to all client types.
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

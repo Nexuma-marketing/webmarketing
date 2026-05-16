@@ -24,6 +24,11 @@ interface PaymentRow {
   installment_number: number | null;
   status: string;
   created_at: string;
+  // Steve 5/16 Milestone 4: extra columns drive the refund / cancel
+  // action buttons in the actions cell. We never expose them in the
+  // visible table, only use them to decide which buttons render.
+  stripe_payment_intent_id: string | null;
+  stripe_subscription_id: string | null;
 }
 
 interface PromoStat {
@@ -56,6 +61,7 @@ export default function AdminPaymentsPage() {
         .from("payments")
         .select(`
           id, amount, currency, payment_type, installment_number, status, created_at,
+          stripe_payment_intent_id, stripe_subscription_id,
           profiles:user_id(full_name, email),
           services:service_id(name),
           pymes_plans:pymes_plan_id(name)
@@ -81,12 +87,67 @@ export default function AdminPaymentsPage() {
       installment_number: p.installment_number,
       status: p.status,
       created_at: p.created_at,
+      stripe_payment_intent_id: (p.stripe_payment_intent_id as string | null) ?? null,
+      stripe_subscription_id: (p.stripe_subscription_id as string | null) ?? null,
     }));
 
     setPayments(mapped);
     setPromoStats((promoData as PromoStat[]) || []);
     setLoading(false);
   }, [supabase]);
+
+  // Steve 5/16 Milestone 4: admin actions — issue a Stripe refund or
+  // cancel an installment subscription. The webhook writes the
+  // status/timestamp back into the row; we re-load to pick that up.
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+  async function handleRefund(row: PaymentRow) {
+    if (!confirm(
+      `Refund $${row.amount.toLocaleString()} ${row.currency} to ${row.user_name}?\n\n` +
+      "This issues a Stripe refund. The payment row will be marked 'refunded' once Stripe fires the webhook (usually within seconds).",
+    )) return;
+    setActionBusy(row.id);
+    setActionMsg(null);
+    const res = await fetch("/api/admin/stripe/refund", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentId: row.id }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setActionBusy(null);
+    if (!res.ok) {
+      setActionMsg(`Error: ${json.error || res.statusText}`);
+      return;
+    }
+    setActionMsg(`Refund submitted (Stripe id ${json.refundId}). Status updates when webhook fires.`);
+    setTimeout(() => setActionMsg(null), 8000);
+    loadPayments();
+  }
+
+  async function handleCancelSubscription(row: PaymentRow) {
+    if (!row.stripe_subscription_id) return;
+    if (!confirm(
+      `Cancel installment subscription for ${row.user_name}?\n\n` +
+      "Stripe will stop charging future invoices immediately. Already-completed installments are not refunded.",
+    )) return;
+    setActionBusy(row.id);
+    setActionMsg(null);
+    const res = await fetch("/api/admin/stripe/cancel-subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriptionId: row.stripe_subscription_id }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setActionBusy(null);
+    if (!res.ok) {
+      setActionMsg(`Error: ${json.error || res.statusText}`);
+      return;
+    }
+    setActionMsg(`Subscription canceled (Stripe status: ${json.status}).`);
+    setTimeout(() => setActionMsg(null), 8000);
+    loadPayments();
+  }
 
   useEffect(() => {
     loadPayments();
@@ -150,6 +211,42 @@ export default function AdminPaymentsPage() {
       },
       filterFn: "equals",
     },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => {
+        const p = row.original;
+        const canRefund = p.status === "completed" && !!p.stripe_payment_intent_id;
+        const canCancel = !!p.stripe_subscription_id && p.status !== "canceled";
+        if (!canRefund && !canCancel) {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+        return (
+          <div className="flex gap-1">
+            {canRefund && (
+              <button
+                type="button"
+                disabled={actionBusy === p.id}
+                onClick={() => handleRefund(p)}
+                className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {actionBusy === p.id ? "…" : "Refund"}
+              </button>
+            )}
+            {canCancel && (
+              <button
+                type="button"
+                disabled={actionBusy === p.id}
+                onClick={() => handleCancelSubscription(p)}
+                className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+              >
+                {actionBusy === p.id ? "…" : "Cancel sub"}
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
   ];
 
   return (
@@ -160,6 +257,18 @@ export default function AdminPaymentsPage() {
           View all payments and revenue reports
         </p>
       </div>
+
+      {actionMsg && (
+        <div
+          className={`rounded-md border p-3 text-sm ${
+            actionMsg.startsWith("Error")
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-green-300 bg-green-50 text-green-800"
+          }`}
+        >
+          {actionMsg}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>

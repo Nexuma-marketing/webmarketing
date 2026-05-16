@@ -29,6 +29,7 @@ import {
   Sliders,
   Image as ImageIcon2,
   ArrowRightLeft,
+  BarChart3,
 } from "lucide-react";
 
 interface NavItem {
@@ -122,6 +123,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Payments",
     href: "/admin/payments",
     icon: CreditCard,
+    roles: ["admin"],
+  },
+  {
+    label: "Sales Report",
+    href: "/admin/reports",
+    icon: BarChart3,
     roles: ["admin"],
   },
   {
