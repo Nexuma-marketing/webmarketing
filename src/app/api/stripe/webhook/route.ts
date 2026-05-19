@@ -1,7 +1,57 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import {
+  sendPaymentReceiptEmail,
+  sendRefundConfirmationEmail,
+  sendSubscriptionCanceledEmail,
+  sendPaymentFailedEmail,
+} from "@/lib/email";
 import type Stripe from "stripe";
+
+// Steve 5/20 Milestone 4: helper to load the customer's profile +
+// optional service/plan name for the payment email. Returns null if
+// the user can't be resolved — caller skips the email in that case
+// so a bad lookup never blocks the webhook response.
+async function loadEmailContext(
+  userId: string,
+  serviceId?: string | null,
+  pymesPlanId?: string | null,
+): Promise<{
+  email: string;
+  name: string;
+  serviceName: string;
+} | null> {
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("email, full_name")
+    .eq("id", userId)
+    .single();
+  if (!profile?.email) return null;
+
+  let serviceName = "Service";
+  if (serviceId) {
+    const { data: svc } = await supabaseAdmin
+      .from("services")
+      .select("name")
+      .eq("id", serviceId)
+      .single();
+    if (svc?.name) serviceName = svc.name as string;
+  } else if (pymesPlanId) {
+    const { data: plan } = await supabaseAdmin
+      .from("pymes_plans")
+      .select("name")
+      .eq("id", pymesPlanId)
+      .single();
+    if (plan?.name) serviceName = plan.name as string;
+  }
+
+  return {
+    email: profile.email as string,
+    name: (profile.full_name as string) || "there",
+    serviceName,
+  };
+}
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -71,6 +121,9 @@ export async function POST(request: Request) {
               currency: "cad",
               unit_amount: Math.round(installmentAmount * 100),
               recurring: { interval: "month", interval_count: 1 },
+              // Steve 5/20 Milestone 4: tax-exclusive so Stripe Tax
+              // adds 5% GST on top of each monthly installment.
+              tax_behavior: "exclusive",
               product_data: {
                 name: `${metadata.plan_type} Plan — Monthly Installment`,
               },
@@ -85,6 +138,8 @@ export async function POST(request: Request) {
               await stripe.subscriptions.create({
                 customer: customerId,
                 items: [{ price: price.id }],
+                // Apply Stripe Tax to every monthly invoice.
+                automatic_tax: { enabled: true },
                 metadata: {
                   user_id: userId,
                   pymes_plan_id: metadata.pymes_plan_id,
@@ -101,6 +156,29 @@ export async function POST(request: Request) {
           .update({ status: "en_proceso" })
           .eq("user_id", userId)
           .in("status", ["nuevo", "contactado"]);
+
+        // Steve 5/20 Milestone 4: send the customer-facing receipt.
+        // session.amount_total already includes any tax Stripe added,
+        // session.amount_subtotal is pre-tax. We send both so the
+        // receipt shows the GST line item the same way Stripe does.
+        const ctx = await loadEmailContext(
+          userId,
+          metadata.service_id || null,
+          metadata.pymes_plan_id || null,
+        );
+        if (ctx) {
+          const subtotalCents = session.amount_subtotal ?? session.amount_total ?? 0;
+          const taxCents = (session.total_details?.amount_tax ?? 0) as number;
+          await sendPaymentReceiptEmail({
+            to: ctx.email,
+            customerName: ctx.name,
+            serviceName: ctx.serviceName,
+            amountCents: subtotalCents,
+            taxCents,
+            currency: (session.currency || "cad").toUpperCase(),
+            receiptUrl: null,
+          });
+        }
 
         break;
       }
@@ -183,13 +261,34 @@ export async function POST(request: Request) {
             ? charge.payment_intent
             : charge.payment_intent?.id;
         if (paymentIntentId) {
-          await supabaseAdmin
+          const { data: updated } = await supabaseAdmin
             .from("payments")
             .update({
               status: "refunded",
               refunded_at: new Date().toISOString(),
             })
-            .eq("stripe_payment_intent_id", paymentIntentId);
+            .eq("stripe_payment_intent_id", paymentIntentId)
+            .select("user_id, service_id, pymes_plan_id")
+            .single();
+
+          // Steve 5/20 Milestone 4: notify the customer that the
+          // refund was issued. amount_refunded is in cents.
+          if (updated?.user_id) {
+            const ctx = await loadEmailContext(
+              updated.user_id as string,
+              (updated.service_id as string | null) || null,
+              (updated.pymes_plan_id as string | null) || null,
+            );
+            if (ctx) {
+              await sendRefundConfirmationEmail({
+                to: ctx.email,
+                customerName: ctx.name,
+                serviceName: ctx.serviceName,
+                amountCents: charge.amount_refunded || 0,
+                currency: (charge.currency || "cad").toUpperCase(),
+              });
+            }
+          }
         }
         break;
       }
@@ -230,6 +329,17 @@ export async function POST(request: Request) {
             status: "canceled",
             canceled_at: canceledAt,
           });
+
+          // Steve 5/20 Milestone 4: notify the customer their
+          // installment plan was canceled.
+          const ctx = await loadEmailContext(userId, null, pymesPlanId || null);
+          if (ctx) {
+            await sendSubscriptionCanceledEmail({
+              to: ctx.email,
+              customerName: ctx.name,
+              planName: ctx.serviceName,
+            });
+          }
         }
         break;
       }
@@ -262,6 +372,20 @@ export async function POST(request: Request) {
           payment_type: "installment",
           status: "failed",
         });
+
+        // Steve 5/20 Milestone 4: tell the customer to update their
+        // card before Stripe gives up retrying and auto-cancels the
+        // subscription.
+        const ctx = await loadEmailContext(userId, null, pymesPlanId || null);
+        if (ctx) {
+          await sendPaymentFailedEmail({
+            to: ctx.email,
+            customerName: ctx.name,
+            planName: ctx.serviceName,
+            amountCents: invoice.amount_due || 0,
+            currency: (invoice.currency || "cad").toUpperCase(),
+          });
+        }
         break;
       }
     }

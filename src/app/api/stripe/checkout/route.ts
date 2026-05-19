@@ -164,6 +164,16 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
+          // Steve 5/20 Milestone 4: client confirmed Stripe Tax is set
+          // up at the account level with 5% GST on marketing services
+          // (Canada). For Stripe Tax to actually apply to programmatic
+          // checkouts we have to (a) opt in via automatic_tax, (b)
+          // collect a billing address so Stripe can resolve the tax
+          // jurisdiction, and (c) ensure tax_behavior on line items is
+          // 'exclusive' (the client said prices are tax-exclusive).
+          automatic_tax: { enabled: true },
+          billing_address_collection: "required",
+          customer_update: { address: "auto", name: "auto" },
           line_items: [
             {
               price_data: {
@@ -174,6 +184,7 @@ export async function POST(request: Request) {
                     (service.description || "") + descriptionSuffix || undefined,
                 },
                 unit_amount: unitAmount,
+                tax_behavior: "exclusive",
               },
               quantity: 1,
             },
@@ -260,6 +271,12 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
+          // Steve 5/20 Milestone 4: same Stripe Tax setup as the
+          // one-time service flow above. The PYMES upfront amount is
+          // also tax-exclusive — Stripe adds 5% GST at checkout.
+          automatic_tax: { enabled: true },
+          billing_address_collection: "required",
+          customer_update: { address: "auto", name: "auto" },
           line_items: [
             {
               price_data: {
@@ -269,6 +286,7 @@ export async function POST(request: Request) {
                   description: `Upfront payment for ${plan.name} plan${descriptionSuffix}`,
                 },
                 unit_amount: unitAmount,
+                tax_behavior: "exclusive",
               },
               quantity: 1,
             },

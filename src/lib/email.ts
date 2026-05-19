@@ -103,3 +103,188 @@ export async function sendContactNotification({
     return { ok: false, reason: "send_failed" };
   }
 }
+
+// ============================================================
+// Steve 5/20 Milestone 4 — customer-facing payment emails.
+// Client confirmed: "los email automatico si tambien al cliente".
+// Four flavors, all called from the Stripe webhook handlers so the
+// trigger is the actual money-movement event (no duplicates from
+// retries because Stripe deduplicates events). Every helper is
+// fire-and-forget and never throws — webhook delivery to Stripe
+// must always succeed even if email is down.
+// ============================================================
+
+const APP_NAME = "Nexuma Marketing";
+
+function formatCurrency(amountCents: number, currency = "CAD"): string {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency,
+  }).format(amountCents / 100);
+}
+
+function brandFooter(): string {
+  return `
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+    <p style="color:#6b7280;font-size:12px;line-height:1.5">
+      You received this email because you are a registered customer of ${APP_NAME}.<br/>
+      Nexuma marketing ltd · British Columbia, Canada<br/>
+      Questions? Reply to this email or contact support.
+    </p>
+  `;
+}
+
+async function sendOne(args: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<void> {
+  emailMetrics.attempts += 1;
+  if (!process.env.RESEND_API_KEY) {
+    emailMetrics.skippedNoApiKey += 1;
+    emailMetrics.lastError = "RESEND_API_KEY not configured";
+    return;
+  }
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [args.to],
+      subject: args.subject,
+      html: args.html,
+    });
+    emailMetrics.succeeded += 1;
+    emailMetrics.lastSuccessAt = new Date().toISOString();
+  } catch (err) {
+    emailMetrics.failed += 1;
+    emailMetrics.lastError = err instanceof Error ? err.message : String(err);
+    console.error("payment email failed:", err);
+  }
+}
+
+export async function sendPaymentReceiptEmail(args: {
+  to: string;
+  customerName: string;
+  serviceName: string;
+  amountCents: number;
+  taxCents?: number;
+  currency?: string;
+  receiptUrl?: string | null;
+  paymentDate?: string;
+}): Promise<void> {
+  const currency = args.currency || "CAD";
+  const subtotal = formatCurrency(args.amountCents, currency);
+  const tax = args.taxCents
+    ? formatCurrency(args.taxCents, currency)
+    : null;
+  const total = formatCurrency(args.amountCents + (args.taxCents || 0), currency);
+  const date = args.paymentDate
+    ? new Date(args.paymentDate).toLocaleDateString("en-CA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : new Date().toLocaleDateString("en-CA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+  await sendOne({
+    to: args.to,
+    subject: `Payment receipt — ${args.serviceName}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#16a34a">Thank you, ${args.customerName}</h2>
+        <p>Your payment was processed successfully. Here are the details:</p>
+        <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
+          <tr><td style="padding:8px;color:#6b7280">Service</td><td style="padding:8px;text-align:right;font-weight:600">${args.serviceName}</td></tr>
+          <tr><td style="padding:8px;color:#6b7280">Date</td><td style="padding:8px;text-align:right">${date}</td></tr>
+          <tr><td style="padding:8px;color:#6b7280">Subtotal</td><td style="padding:8px;text-align:right">${subtotal}</td></tr>
+          ${tax ? `<tr><td style="padding:8px;color:#6b7280">GST (5%)</td><td style="padding:8px;text-align:right">${tax}</td></tr>` : ""}
+          <tr style="border-top:1px solid #e5e7eb"><td style="padding:8px;font-weight:600">Total paid</td><td style="padding:8px;text-align:right;font-weight:600;color:#16a34a">${total}</td></tr>
+        </table>
+        ${args.receiptUrl ? `<p><a href="${args.receiptUrl}" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">View Stripe receipt</a></p>` : ""}
+        <p>You can also see this payment any time in your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments">payment history</a>.</p>
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
+
+export async function sendRefundConfirmationEmail(args: {
+  to: string;
+  customerName: string;
+  serviceName: string;
+  amountCents: number;
+  currency?: string;
+}): Promise<void> {
+  const amount = formatCurrency(args.amountCents, args.currency || "CAD");
+  await sendOne({
+    to: args.to,
+    subject: `Refund processed — ${args.serviceName}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#2563eb">Refund processed for ${args.customerName}</h2>
+        <p>We've issued a refund for <strong>${amount}</strong> for your purchase of <strong>${args.serviceName}</strong>.</p>
+        <p>The refund will appear on your original payment method within <strong>5–10 business days</strong>, depending on your bank.</p>
+        <p>If you don't see it after 10 business days, contact your bank and reference the original transaction date.</p>
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
+
+export async function sendSubscriptionCanceledEmail(args: {
+  to: string;
+  customerName: string;
+  planName: string;
+}): Promise<void> {
+  await sendOne({
+    to: args.to,
+    subject: `Installment plan canceled — ${args.planName}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#d97706">Your installment plan was canceled</h2>
+        <p>Hi ${args.customerName},</p>
+        <p>Your monthly installments for <strong>${args.planName}</strong> have been canceled. You will not be charged again going forward.</p>
+        <p><strong>Important:</strong> any installments already paid are not refunded automatically. If you believe a refund is due, reply to this email and our team will review.</p>
+        <p>You can re-subscribe any time from your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/services">services dashboard</a>.</p>
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
+
+export async function sendPaymentFailedEmail(args: {
+  to: string;
+  customerName: string;
+  planName: string;
+  amountCents: number;
+  currency?: string;
+}): Promise<void> {
+  const amount = formatCurrency(args.amountCents, args.currency || "CAD");
+  await sendOne({
+    to: args.to,
+    subject: `Payment failed — please update your card`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#dc2626">Payment failed — action needed</h2>
+        <p>Hi ${args.customerName},</p>
+        <p>We were unable to charge <strong>${amount}</strong> for your <strong>${args.planName}</strong> installment.</p>
+        <p>This usually happens when:</p>
+        <ul style="line-height:1.6">
+          <li>The card on file has expired</li>
+          <li>The card has insufficient funds</li>
+          <li>Your bank blocked the transaction</li>
+        </ul>
+        <p>Please update your payment method as soon as possible to avoid your plan being canceled:</p>
+        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments" style="background:#dc2626;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">Update payment method</a></p>
+        <p style="font-size:13px;color:#6b7280;margin-top:16px">
+          Stripe will automatically retry the charge a few times over the next week. If all retries fail, your installment plan will be canceled.
+        </p>
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
