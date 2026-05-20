@@ -89,6 +89,37 @@ export async function GET() {
         process.env.CONTACT_NOTIFICATION_EMAIL || "alexsanabria33@hotmail.com",
       fromAddress:
         process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>",
+      commercialRecipient:
+        process.env.COMMERCIAL_AREA_EMAIL || "(not set — falls back to contact recipient)",
+    },
+    stripe: {
+      // Steve 5/20 Milestone 4: confirm the 3 Stripe env vars are
+      // configured WITHOUT ever leaking the value. We only check
+      // presence + the key prefix so we can tell test vs live at a
+      // glance. If any of the three is missing the checkout / refund /
+      // webhook flows will fail in obvious ways.
+      secretKeyConfigured: !!process.env.STRIPE_SECRET_KEY,
+      secretKeyMode: process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_")
+        ? "live"
+        : process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")
+          ? "test"
+          : "unconfigured",
+      publishableKeyConfigured: !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+      publishableKeyMode: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_live_")
+        ? "live"
+        : process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_")
+          ? "test"
+          : "unconfigured",
+      webhookSecretConfigured: !!process.env.STRIPE_WEBHOOK_SECRET,
+      // The mode check: in production both keys should be the same mode
+      // (both test or both live). A mismatch would make the publishable
+      // key reject API calls signed by the secret key.
+      keysMatch:
+        (!!process.env.STRIPE_SECRET_KEY &&
+          !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY &&
+          process.env.STRIPE_SECRET_KEY.startsWith("sk_test_") ===
+            process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_")) ||
+        false,
     },
     interpretation: {
       // Any non-"unknown" commit means Vercel is serving the build that was
@@ -111,6 +142,10 @@ export async function GET() {
         (r) => r === r.toLowerCase() && !r.includes(" "),
       ),
       emailReady: !!process.env.RESEND_API_KEY,
+      stripeReady:
+        !!process.env.STRIPE_SECRET_KEY &&
+        !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY &&
+        !!process.env.STRIPE_WEBHOOK_SECRET,
     },
   });
 }
