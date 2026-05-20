@@ -116,6 +116,15 @@ export async function sendContactNotification({
 
 const APP_NAME = "Nexuma Marketing";
 
+// Steve 5/20 Milestone 4 — client confirmed every payment-related
+// email should also CC the commercial team in real time.
+// `COMMERCIAL_AREA_EMAIL` is already in Vercel env.
+const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || NOTIFICATION_EMAIL;
+
+function commercialRecipients(): string[] {
+  return parseRecipients(COMMERCIAL_EMAIL);
+}
+
 function formatCurrency(amountCents: number, currency = "CAD"): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -134,10 +143,15 @@ function brandFooter(): string {
   `;
 }
 
+// Steve 5/20 Milestone 4: every payment email now also BCCs the
+// commercial team so they get a live feed of receipts / refunds /
+// cancellations / failed payments without seeing the customer's
+// To: header.
 async function sendOne(args: {
   to: string;
   subject: string;
   html: string;
+  notifyCommercial?: boolean;
 }): Promise<void> {
   emailMetrics.attempts += 1;
   if (!process.env.RESEND_API_KEY) {
@@ -150,6 +164,7 @@ async function sendOne(args: {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [args.to],
+      bcc: args.notifyCommercial ? commercialRecipients() : undefined,
       subject: args.subject,
       html: args.html,
     });
@@ -192,6 +207,7 @@ export async function sendPaymentReceiptEmail(args: {
 
   await sendOne({
     to: args.to,
+    notifyCommercial: true,
     subject: `Payment receipt — ${args.serviceName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
@@ -222,6 +238,7 @@ export async function sendRefundConfirmationEmail(args: {
   const amount = formatCurrency(args.amountCents, args.currency || "CAD");
   await sendOne({
     to: args.to,
+    notifyCommercial: true,
     subject: `Refund processed — ${args.serviceName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
@@ -242,6 +259,7 @@ export async function sendSubscriptionCanceledEmail(args: {
 }): Promise<void> {
   await sendOne({
     to: args.to,
+    notifyCommercial: true,
     subject: `Installment plan canceled — ${args.planName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
@@ -266,6 +284,7 @@ export async function sendPaymentFailedEmail(args: {
   const amount = formatCurrency(args.amountCents, args.currency || "CAD");
   await sendOne({
     to: args.to,
+    notifyCommercial: true,
     subject: `Payment failed — please update your card`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
@@ -282,6 +301,55 @@ export async function sendPaymentFailedEmail(args: {
         <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments" style="background:#dc2626;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">Update payment method</a></p>
         <p style="font-size:13px;color:#6b7280;margin-top:16px">
           Stripe will automatically retry the charge a few times over the next week. If all retries fail, your installment plan will be canceled.
+        </p>
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
+
+// Steve 5/20 Milestone 4: when a customer (or admin) requests a
+// subscription cancellation we set cancel_at_period_end=true in
+// Stripe. The actual deletion event fires at cycle end. The user
+// expects an immediate confirmation though, so we send this email
+// directly from the cancel API route — independent of the webhook —
+// with the exact end date Stripe returned. Per client policy: no
+// prorated refund, service continues until period end.
+export async function sendSubscriptionScheduledCancelEmail(args: {
+  to: string;
+  customerName: string;
+  planName: string;
+  cycleEndUnix: number | null;
+}): Promise<void> {
+  const dateLabel = args.cycleEndUnix
+    ? new Date(args.cycleEndUnix * 1000).toLocaleDateString("en-CA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "the end of your current billing cycle";
+
+  await sendOne({
+    to: args.to,
+    notifyCommercial: true,
+    subject: `Cancellation scheduled — ${args.planName}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#d97706">Cancellation scheduled</h2>
+        <p>Hi ${args.customerName},</p>
+        <p>Your cancellation request for <strong>${args.planName}</strong> has been received.</p>
+        <p style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;margin:16px 0">
+          <strong>Your service stays active until ${dateLabel}.</strong><br/>
+          You have already paid for the current billing cycle, so you continue to receive all benefits of your plan until that date. On ${dateLabel} the subscription will close and no further charges will be made.
+        </p>
+        <p style="font-size:14px;color:#374151">
+          Per our policy, payments already made are <strong>not refunded</strong> on cancellation
+          (no prorated refunds). If you believe a refund is due because of a technical issue or
+          service problem, reply to this email and our team will review your case manually.
+        </p>
+        <p>Changed your mind? You can re-subscribe any time from your
+          <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/services">services dashboard</a>
+          — if you do it before ${dateLabel} we simply resume billing on the existing schedule.
         </p>
         ${brandFooter()}
       </div>

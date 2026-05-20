@@ -138,6 +138,19 @@ export function CheckoutButton({
           Have a promo code?
         </button>
       )}
+
+      {/* Steve 5/20 Milestone 4 — client policy: Final Sale, no
+          refunds once service starts. Exact bilingual wording
+          confirmed by client and stored as legal_documents.type
+          'refund_policy' (v31). Surfaced inline at the checkout
+          button so the buyer cannot claim they were not warned. */}
+      <p className="text-[11px] leading-snug text-muted-foreground border-l-2 border-amber-300 pl-2 mt-2">
+        <span className="font-semibold">Final Sale · Venta definitiva.</span>{" "}
+        Due to the customized nature of our marketing and consulting
+        services, all sales are final. No full or partial refunds are
+        granted once the monthly service period has started or once the
+        first marketing assets have been delivered.
+      </p>
     </div>
   );
 }
