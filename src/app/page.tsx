@@ -3,6 +3,7 @@ import Image from "next/image";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { buildBranding } from "@/lib/branding";
+import { PublicPromotionsBanner } from "@/components/public/public-promotions-banner";
 
 // Steve 5/6: admin edits to /admin/content (hero_title, testimonials,
 // FAQ, branding) were not appearing on the public homepage. Without
@@ -530,6 +531,11 @@ export default async function HomePage({
           </div>
         </div>
       </section>
+
+      {/* Active promotions strip (public, role/zone-unrestricted promos only).
+          Steve 5/20 docx: client asked where promos appear "en la web" — they
+          weren't visible to anonymous visitors. */}
+      <PublicPromotionsBanner />
 
       {/* Services */}
       <section id="services" className="relative px-4 py-24">

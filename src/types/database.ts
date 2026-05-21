@@ -5,7 +5,10 @@ export type UserRole =
   | "inquilino"
   | "inquilino_premium"
   | "pymes"
-  | "admin";
+  | "admin"
+  | "marketing"
+  | "sales"
+  | "support";
 
 export type LeadStatus = "nuevo" | "contactado" | "en_proceso" | "cerrado";
 export type UrgencyLevel = "moderate" | "high" | "critical";

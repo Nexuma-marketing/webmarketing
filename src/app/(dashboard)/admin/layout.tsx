@@ -42,9 +42,21 @@ export default async function AdminSectionLayout({
   }
 
   const isAdmin = role === "admin";
+  const isInternalRole = role === "admin" || role === "marketing" || role === "sales" || role === "support";
 
   return (
     <div className="space-y-4">
+      {isInternalRole && !isAdmin && (
+        <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+          <p>
+            Signed in as <code className="rounded bg-blue-100 px-1.5 py-0.5 font-mono">{role}</code>
+            {email && (
+              <> ({<code className="rounded bg-blue-100 px-1.5 py-0.5 font-mono">{email}</code>})</>
+            )}
+            . You have limited access — only the sections your role permits will accept saves. See the Internal Team page for the full permission matrix.
+          </p>
+        </div>
+      )}
       {isAdmin ? (
         // Steve 5/15: positive confirmation banner. The May 15 client
         // message said: "nunca me dijiste o confirmaste con que correo

@@ -93,31 +93,39 @@ const NAV_ITEMS: NavItem[] = [
     icon: User,
     roles: ALL_ROLES,
   },
-  // ── Admin routes ──
+  // ── Admin / internal team routes ──
+  // Visibility per role follows the permission matrix in
+  // admin/team/page.tsx PERMISSIONS_BY_ROLE:
+  //   admin     = everything
+  //   marketing = content, articles, promotions(pricing), matching, leads(read), users(read)
+  //   sales     = leads, clients(users), reassign
+  //   support   = leads(read), clients(users) read-only
+  // Write enforcement happens at the DB layer via RLS — the sidebar
+  // just hides what each role has no business clicking.
   {
     label: "Admin Dashboard",
     href: "/admin",
     icon: LayoutDashboard,
-    roles: ["admin"],
+    roles: ["admin", "marketing", "sales", "support"],
     separator: true,
   },
   {
     label: "Users",
     href: "/admin/users",
     icon: Users,
-    roles: ["admin"],
+    roles: ["admin", "marketing", "sales", "support"],
   },
   {
     label: "Leads",
     href: "/admin/leads",
     icon: FileText,
-    roles: ["admin"],
+    roles: ["admin", "marketing", "sales", "support"],
   },
   {
     label: "Properties",
     href: "/admin/properties",
     icon: Building2,
-    roles: ["admin"],
+    roles: ["admin", "sales"],
   },
   {
     label: "Payments",
@@ -129,61 +137,61 @@ const NAV_ITEMS: NavItem[] = [
     label: "Sales Report",
     href: "/admin/reports",
     icon: BarChart3,
-    roles: ["admin"],
+    roles: ["admin", "sales"],
   },
   {
     label: "Services",
     href: "/admin/services",
     icon: Settings,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Plan Checklists",
     href: "/admin/plans",
     icon: Crown,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Reassign Services",
     href: "/admin/reassign",
     icon: ArrowRightLeft,
-    roles: ["admin"],
+    roles: ["admin", "sales"],
   },
   {
     label: "Forms",
     href: "/admin/forms",
     icon: ClipboardList,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Matching",
     href: "/admin/matching",
     icon: Link2,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Pricing",
     href: "/admin/pricing",
     icon: DollarSign,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Content",
     href: "/admin/content",
     icon: PenSquare,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Articles",
     href: "/admin/articles",
     icon: Newspaper,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Image Library",
     href: "/admin/images",
     icon: ImageIcon2,
-    roles: ["admin"],
+    roles: ["admin", "marketing"],
   },
   {
     label: "Internal Team",

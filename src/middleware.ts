@@ -50,7 +50,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Protect admin routes
+  // Protect admin routes. The client's 2026-05-20 docx asked for
+  // Admin / Marketing / Sales / Support roles with limited scopes
+  // (see admin/team/page.tsx PERMISSIONS_BY_ROLE). All four are
+  // internal team members and need to reach /admin/* — RLS at the DB
+  // layer (migration_v9_admin_suite.sql) enforces the per-role write
+  // boundary, and the page-level UI hides what each role can't do.
   if (user && request.nextUrl.pathname.startsWith("/admin")) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -58,7 +63,8 @@ export async function middleware(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (profile?.role !== "admin") {
+    const INTERNAL_ROLES = ["admin", "marketing", "sales", "support"];
+    if (!profile?.role || !INTERNAL_ROLES.includes(profile.role)) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       return NextResponse.redirect(url);

@@ -473,12 +473,30 @@ Idempotent migrations (most of them) can be run multiple times safely. Destructi
 ### Creating an internal team user
 
 1. Sign in as admin → `/admin/team`
-2. Click **+ Invite user**
-3. Fill name + email + role (admin / marketing / sales / support)
-4. Click Invite — Supabase sends them a signup email
-5. They click the link, set a password, and are auto-assigned the role
+2. Click **+ Add team member**
+3. Fill name + email + role (admin / marketing / sales / support) and generate a password
+4. Click **Create user** — they can sign in immediately and change their password from `/dashboard/profile`
 
-To change someone's role later: same page, edit the row.
+To change someone's role later: same page, click the role pill on their row.
+
+**Scope by role** (also enforced by RLS on the database side):
+
+| Section | admin | marketing | sales | support |
+|---------|:-:|:-:|:-:|:-:|
+| `/admin/users` (list) | ✓ | read | read | read |
+| `/admin/leads` | ✓ | read | ✓ | read |
+| `/admin/properties` | ✓ |   | ✓ |   |
+| `/admin/payments` | ✓ |   |   |   |
+| `/admin/reports` | ✓ |   | ✓ |   |
+| `/admin/services`, `/admin/plans` | ✓ | ✓ |   |   |
+| `/admin/pricing` (promotions) | ✓ | ✓ |   |   |
+| `/admin/content`, `/admin/articles`, `/admin/images` | ✓ | ✓ |   |   |
+| `/admin/forms`, `/admin/matching` | ✓ | ✓ |   |   |
+| `/admin/reassign` | ✓ |   | ✓ |   |
+| `/admin/team` (role mgmt) | ✓ |   |   |   |
+| `/admin/legal`, `/admin/export` | ✓ |   |   |   |
+
+The sidebar hides what each role shouldn't see. Direct-URL access to a forbidden page redirects to `/dashboard` (middleware) or `/admin` (page guard). Saves are additionally rejected at the DB layer by RLS.
 
 ### Configuring a campaign by Zona + Tipo de cliente
 
