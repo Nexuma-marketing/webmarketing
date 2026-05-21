@@ -154,6 +154,24 @@ admin@nexuma.ca   ← Steve's dev admin (intentional — project handover)
 
 **Migration**: `supabase/migration_v32_purge_test_accounts.sql` — written but **NOT auto-run**. Client should review and execute manually after final confirmation.
 
+### Follow-up — auth.users orphans (2026-05-20 docx feedback)
+
+After v32 ran, client reported in `20 May 26 Observaciones desarrollo Steve.docx`:
+
+> "si entro con uno correo de esos, me dice que el perfil aun existe"
+
+Cause: v32 only deletes from `profiles`. The matching `auth.users` rows remain because there is no FK from `auth.users` → `profiles` to drive a CASCADE. Supabase treats an existing `auth.users` row as a registered account, so re-signup with that email is blocked even though the profile is gone.
+
+**Resolution**: `supabase/migration_v33_purge_auth_users.sql` — `DELETE FROM auth.users WHERE LOWER(email) IN (...)` for the same 20 emails. Must be run by `postgres` / `service_role` from the Supabase SQL Editor. After v33 runs the emails are fully free for fresh test signups.
+
+---
+
+## 8. Handover documentation (2026-05-20 docx feedback)
+
+Client also requested a full handover manual covering tech stack, repo structure, how to manage pricing, architecture, Supabase data dictionary, environment variables, deployment, and operations.
+
+**Delivered**: `HANDOVER_MANUAL.md` at repo root — single canonical reference covering all of the above. Update it in the same commit whenever architecture, env vars, or operational procedures change.
+
 ---
 
 ## Items still needing answers (not addressed in client's 2026-05-20 reply)
