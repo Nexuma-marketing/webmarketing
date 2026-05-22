@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,48 +52,21 @@ export default function AdminPaymentsPage() {
   const [promoStats, setPromoStats] = useState<PromoStat[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const supabase = createClient();
-
+  // Steve 5/22 Milestone 4: client-side embedded join on profiles:user_id
+  // returned null for every row → "Unknown" everywhere. Switched to a
+  // server-side service-role route that joins manually. Same shape, no
+  // RLS/FK introspection traps.
   const loadPayments = useCallback(async () => {
-    const [{ data: paymentData }, { data: promoData }] = await Promise.all([
-      supabase
-        .from("payments")
-        .select(`
-          id, amount, currency, payment_type, installment_number, status, created_at,
-          stripe_payment_intent_id, stripe_subscription_id,
-          profiles:user_id(full_name, email),
-          services:service_id(name),
-          pymes_plans:pymes_plan_id(name)
-        `)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("promotions")
-        .select(
-          "code, used_count, max_uses, is_active, valid_until, discount_type, discount_value",
-        )
-        .order("used_count", { ascending: false }),
-    ]);
-
-    const mapped = (paymentData || []).map((p) => ({
-      id: p.id,
-      user_name: (p.profiles as unknown as { full_name: string } | null)?.full_name || "Unknown",
-      user_email: (p.profiles as unknown as { email: string } | null)?.email || "",
-      service_name: (p.services as unknown as { name: string } | null)?.name ||
-        (p.pymes_plans as unknown as { name: string } | null)?.name || "—",
-      amount: Number(p.amount) || 0,
-      currency: p.currency || "CAD",
-      payment_type: p.payment_type,
-      installment_number: p.installment_number,
-      status: p.status,
-      created_at: p.created_at,
-      stripe_payment_intent_id: (p.stripe_payment_intent_id as string | null) ?? null,
-      stripe_subscription_id: (p.stripe_subscription_id as string | null) ?? null,
-    }));
-
-    setPayments(mapped);
-    setPromoStats((promoData as PromoStat[]) || []);
+    const res = await fetch("/api/admin/payments", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as { payments: PaymentRow[]; promoStats: PromoStat[] };
+    setPayments(json.payments || []);
+    setPromoStats(json.promoStats || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   // Steve 5/16 Milestone 4: admin actions — issue a Stripe refund or
   // cancel an installment subscription. The webhook writes the

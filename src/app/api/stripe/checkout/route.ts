@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
 
 // Steve 5/4 / Milestone 4: validate an admin-defined promo code from the
@@ -18,7 +19,6 @@ import { stripe, APP_URL } from "@/lib/stripe";
 // but at checkout time the user has explicitly typed a code so we trust
 // their intent and let it through.
 async function validatePromoCode(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   code: string,
   baseAmountCad: number,
   userRole: string | null,
@@ -29,7 +29,12 @@ async function validatePromoCode(
   const trimmed = code.trim().toUpperCase();
   if (!trimmed) return { ok: false, error: "Empty code" };
 
-  const { data: promo } = await supabase
+  // Steve 5/22 Milestone 4: promotions has admin-only RLS, so reading
+  // via the caller's cookie-context client returned null for every
+  // non-admin user → "Promo code not found" even when the code existed.
+  // Use service-role here (server-only) so the lookup actually finds
+  // the row. We still re-check all eligibility rules below.
+  const { data: promo } = await supabaseAdmin
     .from("promotions")
     .select(
       "id, code, discount_type, discount_value, valid_from, valid_until, is_active, max_uses, used_count, target_roles",
@@ -147,7 +152,6 @@ export async function POST(request: Request) {
         let descriptionSuffix = "";
         if (promoCode) {
           const v = await validatePromoCode(
-            supabase,
             String(promoCode),
             service.price,
             userRole,
@@ -206,16 +210,18 @@ export async function POST(request: Request) {
 
         // Increment used_count immediately. Stripe webhook could roll it
         // back on payment failure; for our demo + testing flow we accept
-        // the slight over-counting risk. Plain select+update because we
-        // do not maintain an increment RPC for this table.
+        // the slight over-counting risk.
+        // Steve 5/22 Milestone 4: was writing via the cookie-context
+        // client and RLS denied it for every non-admin user, so the
+        // counter never moved. Service-role write to bypass RLS.
         if (promoMeta) {
-          const { data: p } = await supabase
+          const { data: p } = await supabaseAdmin
             .from("promotions")
             .select("used_count")
             .eq("id", promoMeta.promotionId)
             .single();
           if (p) {
-            await supabase
+            await supabaseAdmin
               .from("promotions")
               .update({ used_count: (p.used_count ?? 0) + 1 })
               .eq("id", promoMeta.promotionId);
@@ -254,7 +260,6 @@ export async function POST(request: Request) {
         let descriptionSuffix = "";
         if (promoCode) {
           const v = await validatePromoCode(
-            supabase,
             String(promoCode),
             upfrontAmount,
             userRole,
@@ -310,13 +315,13 @@ export async function POST(request: Request) {
         });
 
         if (promoMeta) {
-          const { data: p } = await supabase
+          const { data: p } = await supabaseAdmin
             .from("promotions")
             .select("used_count")
             .eq("id", promoMeta.promotionId)
             .single();
           if (p) {
-            await supabase
+            await supabaseAdmin
               .from("promotions")
               .update({ used_count: (p.used_count ?? 0) + 1 })
               .eq("id", promoMeta.promotionId);
