@@ -477,11 +477,21 @@ export default function AdminPricingPage() {
 
       {/* Promotion Editor Dialog */}
       <Dialog open={!!editPromo} onOpenChange={() => setEditPromo(null)}>
-        <DialogContent>
+        {/* Steve 5/22 Milestone 4: client said "no vi donde crearlo" for
+            Temporada / Zona / Tipo de cliente fields — all those exist
+            below but were hidden by the modal's default height clipping.
+            Make the dialog tall enough and explicitly scrollable, and
+            add a one-line index of sections at the top. */}
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{isNewPromo ? "New Promotion" : "Edit Promotion"}</DialogTitle>
-            <DialogDescription>
-              {isNewPromo ? "Create a discount code" : `Editing: ${editPromo?.code}`}
+            <DialogTitle>{isNewPromo ? "New Promotion / Campaign" : "Edit Promotion"}</DialogTitle>
+            <DialogDescription className="space-y-1">
+              <span>
+                {isNewPromo ? "Create a discount code or seasonal campaign." : `Editing: ${editPromo?.code}`}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Sections in this form: <b>Basic info</b> · <b>Validity dates (Temporada)</b> · <b>Max uses</b> · <b>Targeting (Zona + Tipo de cliente)</b> · <b>Active toggle</b>. Scroll down to see them all.
+              </span>
             </DialogDescription>
           </DialogHeader>
           {editPromo && (
@@ -531,26 +541,40 @@ export default function AdminPricingPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Valid From</Label>
-                  <Input
-                    type="date"
-                    value={editPromo.valid_from || ""}
-                    onChange={(e) =>
-                      setEditPromo({ ...editPromo, valid_from: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Valid Until</Label>
-                  <Input
-                    type="date"
-                    value={editPromo.valid_until || ""}
-                    onChange={(e) =>
-                      setEditPromo({ ...editPromo, valid_until: e.target.value })
-                    }
-                  />
+              {/* Steve 5/22 Milestone 4: client said "Temporada No vi
+                  donde crearlo" — the date pair IS the seasonal control.
+                  Label it explicitly so an admin understands. */}
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-3">
+                <p className="text-sm font-semibold">
+                  📅 Temporada / Validity dates
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Set start/end dates to make this a <b>seasonal campaign</b>
+                  {" "}(e.g., Spring sale, Black Friday). Outside this range the
+                  code is rejected at checkout. Leave Valid Until blank for an
+                  open-ended promo.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Valid From</Label>
+                    <Input
+                      type="date"
+                      value={editPromo.valid_from || ""}
+                      onChange={(e) =>
+                        setEditPromo({ ...editPromo, valid_from: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valid Until</Label>
+                    <Input
+                      type="date"
+                      value={editPromo.valid_until || ""}
+                      onChange={(e) =>
+                        setEditPromo({ ...editPromo, valid_until: e.target.value })
+                      }
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">

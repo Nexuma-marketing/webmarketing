@@ -276,6 +276,18 @@ Owner-registered units. **FK `owner_id` → profiles.id ON DELETE CASCADE.**
 
 **RLS**: Owners manage their own. Public SELECT for matching.
 
+**Where the actual image binary lives**: not in this table. The `image_url` column points to **Supabase Storage** → bucket `property-images`. The table only stores metadata + the public URL.
+
+##### How to view / manage uploaded property photos in Supabase Studio
+
+1. Open the Supabase Dashboard for project `nldnqvsbcyzcfbdpymsg` → left sidebar → **Storage**.
+2. Click the bucket named **`property-images`**.
+3. You'll see a folder tree. Each owner's uploads land under `{user_id}/{property_id}/{room_category}/...` so you can drill in to see one owner's images.
+4. Click any file to **preview**, **download**, or **delete** it.
+5. To revoke a photo from the public website without deleting the binary: go to the `property_images` table → find the row → set `status = 'rejected'`. Tenants stop seeing it; the file stays in Storage for audit.
+
+The corresponding admin UI at `/admin/images` (Image Library) does the same thing — it lists every `property_images` row, lets you Approve / Reject / Open in new tab. Use the Studio view above when you need raw file access (download originals, free up space).
+
 #### `tenant_preferences`
 Tenant's wishlist after filling `/forms/inquilino`.
 - `user_id` (FK CASCADE), employment, income range, preferred zones (TEXT[]), bedrooms_needed, bathrooms_needed, budget range, move-in date, amenities preferences, lots of `near_*` booleans

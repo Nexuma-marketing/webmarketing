@@ -107,6 +107,33 @@ export async function POST(request: Request) {
           status: "completed",
         });
 
+        // Steve 5/22 Milestone 4 (#7 docx): when an owner buys the
+        // Founders Package, increment the `founders_plan.taken` counter
+        // in app_config so the "X owners have already chosen" banner on
+        // /dashboard/services + the public landing reflects reality.
+        // Match by service name so we don't have to hard-code the UUID.
+        if (metadata.service_id) {
+          const { data: svc } = await supabaseAdmin
+            .from("services")
+            .select("name")
+            .eq("id", metadata.service_id)
+            .single();
+          if (svc?.name && /Founder.+Package/i.test(svc.name as string)) {
+            const { data: counter } = await supabaseAdmin
+              .from("app_config")
+              .select("value")
+              .eq("category", "founders_plan")
+              .eq("key", "taken")
+              .single();
+            const current = Number((counter?.value as string | undefined) ?? "0") || 0;
+            await supabaseAdmin
+              .from("app_config")
+              .update({ value: String(current + 1) })
+              .eq("category", "founders_plan")
+              .eq("key", "taken");
+          }
+        }
+
         // If upfront PYMES payment, create installment subscription
         if (
           paymentType === "upfront" &&

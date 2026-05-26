@@ -165,6 +165,21 @@ const OWNER_TIERS: Record<
   },
 };
 
+// Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
+// el enlace esta roto, no hace nada". The plan cards used
+// `<Link href="/dashboard/services#contact">` — a same-page anchor that
+// didn't trigger checkout. This map ties each static plan card name
+// to its row in the `services` table (seeded in migrations v11/v12/v19)
+// so we can render a real CheckoutButton with the right serviceId.
+// Plans not in this map (Elite "Asset Management") still fall back to
+// a contact link until the multi-sub-tier Elite flow is built.
+const PLAN_NAME_TO_DB_SERVICE: Record<string, string> = {
+  "Low Price": "Plan: Low Price",
+  "Founders Package — Visionary Owners": "Plan: Founder Package — Visionary Owners",
+  "Support Tier": "Plan: Owner Preferred — Support Tier",
+  "Premier Tier": "Plan: Owner Preferred — Premier Tier",
+};
+
 // ─── Elite Sub-Tiers ────────────────────────────────
 const ELITE_SUB_TIERS: Record<
   string,
@@ -483,6 +498,13 @@ export default async function ServicesPage() {
     .select("*")
     .eq("is_active", true)
     .order("category");
+
+  // Steve 5/22 Milestone 4: lookup table by DB name so the static plan
+  // cards can find their corresponding services row + price + id and
+  // render a working CheckoutButton.
+  const servicesByDbName = Object.fromEntries(
+    (allServices || []).map((s) => [s.name as string, s as { id: string; name: string; price: number; currency: string }]),
+  );
 
   // ─── Admin-assigned service recommendations (Steve 5/4 #2) ─────
   // /admin/reassign writes to service_recommendations, but the client
@@ -900,35 +922,51 @@ export default async function ServicesPage() {
           )}
 
           <div className={`grid gap-4 ${tierDetails.plans.length > 1 ? "md:grid-cols-2" : ""}`}>
-            {tierDetails.plans.map((plan, i) => (
-              <Card key={i} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle className="text-lg">{plan.name}</CardTitle>
-                  <CardDescription className={`text-base font-semibold ${tierDetails.color}`}>
-                    {plan.pricing}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 space-y-3">
-                  <ul className="space-y-1.5">
-                    {plan.details.map((detail, j) => (
-                      <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-                        {detail}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-                <div className="p-6 pt-0">
-                  <Link
-                    href="/dashboard/services#contact"
-                    className={cn(buttonVariants(), "w-full gap-2")}
-                  >
-                    {plan.cta}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </div>
-              </Card>
-            ))}
+            {tierDetails.plans.map((plan, i) => {
+              // Steve 5/22 Milestone 4: wire the static plan card to a
+              // real services row so the CTA triggers Stripe checkout
+              // instead of scrolling to a non-existent #contact anchor.
+              const dbName = PLAN_NAME_TO_DB_SERVICE[plan.name];
+              const svc = dbName ? servicesByDbName[dbName] : undefined;
+              const upfrontPrice = svc ? Number(svc.price) || 0 : 0;
+              return (
+                <Card key={i} className="flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <CardDescription className={`text-base font-semibold ${tierDetails.color}`}>
+                      {plan.pricing}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 space-y-3">
+                    <ul className="space-y-1.5">
+                      {plan.details.map((detail, j) => (
+                        <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                          {detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                  <div className="p-6 pt-0">
+                    {svc && upfrontPrice > 0 ? (
+                      <CheckoutButton
+                        type="service"
+                        serviceId={svc.id}
+                        label={`${plan.cta} — Pay $${upfrontPrice} ${svc.currency || "CAD"} upfront`}
+                      />
+                    ) : (
+                      <Link
+                        href="/dashboard/services#contact"
+                        className={cn(buttonVariants(), "w-full gap-2")}
+                      >
+                        {plan.cta}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
