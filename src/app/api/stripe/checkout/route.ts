@@ -168,16 +168,26 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
-          // Steve 5/20 Milestone 4: client confirmed Stripe Tax is set
-          // up at the account level with 5% GST on marketing services
-          // (Canada). For Stripe Tax to actually apply to programmatic
-          // checkouts we have to (a) opt in via automatic_tax, (b)
-          // collect a billing address so Stripe can resolve the tax
-          // jurisdiction, and (c) ensure tax_behavior on line items is
-          // 'exclusive' (the client said prices are tax-exclusive).
           automatic_tax: { enabled: true },
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },
+          // Steve 5/27 Milestone 4 (#7/#8 May 26 docx):
+          // - consent_collection: show Terms + Privacy links on the
+          //   Stripe Checkout page footer so the customer sees the
+          //   legal docs before paying (client said "No vi este al
+          //   momento de pagar").
+          // - allow_promotion_codes: show Stripe's native promo input
+          //   on the checkout page so the customer can enter a code
+          //   there even if they missed the one on our page.
+          consent_collection: {
+            terms_of_service: "required",
+          },
+          custom_text: {
+            terms_of_service_acceptance: {
+              message: "I agree to the [Terms of Service](https://webmarketing-lyart.vercel.app/legal/terms_of_service) and [Privacy Policy](https://webmarketing-lyart.vercel.app/legal/privacy_policy). All sales are final per our [Refund Policy](https://webmarketing-lyart.vercel.app/legal/refund_policy).",
+            },
+          },
+          allow_promotion_codes: !promoCode,
           line_items: [
             {
               price_data: {
@@ -276,12 +286,18 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
-          // Steve 5/20 Milestone 4: same Stripe Tax setup as the
-          // one-time service flow above. The PYMES upfront amount is
-          // also tax-exclusive — Stripe adds 5% GST at checkout.
           automatic_tax: { enabled: true },
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },
+          consent_collection: {
+            terms_of_service: "required",
+          },
+          custom_text: {
+            terms_of_service_acceptance: {
+              message: "I agree to the [Terms of Service](https://webmarketing-lyart.vercel.app/legal/terms_of_service) and [Privacy Policy](https://webmarketing-lyart.vercel.app/legal/privacy_policy). All sales are final per our [Refund Policy](https://webmarketing-lyart.vercel.app/legal/refund_policy).",
+            },
+          },
+          allow_promotion_codes: !promoCode,
           line_items: [
             {
               price_data: {
