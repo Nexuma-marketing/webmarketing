@@ -255,6 +255,34 @@ export default async function PaymentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Steve 5/27 Milestone 4 (#7d): client asked "Donde el cliente
+          pide una devolución de dinero? como es el proceso". Per the
+          Final Sale policy (MILESTONE4_FINAL_DECISIONS.md §3), refunds
+          are not standard — but exceptional cases (technical errors,
+          fraud) are handled by the admin. This note tells the customer
+          where to go instead of adding a self-serve button that would
+          conflict with the no-refund policy. */}
+      <div className="rounded-md border border-muted p-4 text-sm text-muted-foreground space-y-1">
+        <p className="font-medium text-foreground">Need help with a payment?</p>
+        <p>
+          If you believe a charge was made in error or need assistance,
+          contact our team at{" "}
+          <a
+            href={`mailto:${process.env.NEXT_PUBLIC_CONTACT_EMAIL || "partners@nexuma.ca"}`}
+            className="text-primary underline"
+          >
+            {process.env.NEXT_PUBLIC_CONTACT_EMAIL || "partners@nexuma.ca"}
+          </a>
+          . Please include your payment date and amount. Our team will
+          review your case within 2 business days.
+        </p>
+        <p className="text-xs">
+          Per our policy, all sales are final once the service period has
+          started. Refunds are considered only for exceptional circumstances
+          (technical errors, duplicate charges).
+        </p>
+      </div>
     </div>
   );
 }
