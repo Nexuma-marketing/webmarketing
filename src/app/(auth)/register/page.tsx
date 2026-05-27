@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Steve 5/27 Milestone 4 (#4b): when landing page hero buttons link
+  // to /register?role=propietario or ?role=pymes, pre-select the user
+  // type so the visitor doesn't have to pick it again.
+  const preselectedRole = searchParams.get("role") || "";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Steve 5/7: PIPA/PIPEDA + Terms acceptance was never logged to
@@ -159,7 +164,7 @@ export default function RegisterPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">User type</Label>
-            <Select name="role" required>
+            <Select name="role" required defaultValue={preselectedRole || undefined}>
               <SelectTrigger>
                 <SelectValue placeholder="Select your profile" />
               </SelectTrigger>

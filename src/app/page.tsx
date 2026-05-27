@@ -178,6 +178,8 @@ export default async function HomePage({
   // readable. Each call returns the saved value, or the Stage 1
   // fallback if the row is empty / missing.
   const hl = {
+    heroCTAOwner: pickHeadline(headlineRows, "hero_cta_owner", "Property Owners"),
+    heroCTABusiness: pickHeadline(headlineRows, "hero_cta_business", "Business Owners"),
     howitworksEyebrow: pickHeadline(headlineRows, "howitworks_eyebrow", "How it Works"),
     howitworksTitle: pickHeadline(headlineRows, "howitworks_title", "Simple Steps to Get Started"),
     servicesEyebrow: pickHeadline(headlineRows, "services_eyebrow", "Our Services"),
@@ -318,20 +320,27 @@ export default async function HomePage({
               transform your results.
             </p>
 
+            {/* Steve 5/27 Milestone 4 (#4a): labels now admin-editable
+                via /admin/content → hero_cta_owner / hero_cta_business.
+                (#4b): buttons go to /register (with role hint) instead
+                of directly to the form, because the form requires auth
+                to submit. A visitor who filled 6 steps and then got
+                redirected to /login lost all data. Now: register first
+                → auth redirect sends them to the form automatically. */}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/forms/propietario"
+                href="/register?role=propietario"
                 className={buttonVariants({
                   size: "lg",
                   className: "gap-2 px-8 shadow-lg shadow-primary/25",
                 })}
               >
                 <Building2 className="h-4 w-4" />
-                Property Owners
+                {hl.heroCTAOwner}
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                href="/forms/pymes"
+                href="/register?role=pymes"
                 className={buttonVariants({
                   size: "lg",
                   className:
@@ -339,7 +348,7 @@ export default async function HomePage({
                 })}
               >
                 <BarChart3 className="h-4 w-4" />
-                Business Owners
+                {hl.heroCTABusiness}
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
