@@ -386,9 +386,14 @@ export default function AdminPricingPage() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Tag className="h-5 w-5" />
-              Promotions
+              Promotions / Campaigns
             </CardTitle>
-            <CardDescription>Discount codes and promotional offers</CardDescription>
+            <CardDescription>
+              Discount codes, seasonal campaigns, and targeted offers.
+              Each promotion can be scoped by <b>date range</b> (Temporada),
+              <b>city</b> (Zona), and <b>customer type</b> (Tipo de cliente)
+              — click New or Edit to set these. No separate "campaigns" section is needed.
+            </CardDescription>
           </div>
           <Button
             onClick={() => {
@@ -448,7 +453,7 @@ export default function AdminPricingPage() {
                         {promo.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="space-x-1">
                       <Button
                         variant="outline"
                         size="sm"
@@ -458,6 +463,18 @@ export default function AdminPricingPage() {
                         }}
                       >
                         Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={async () => {
+                          if (!confirm(`Delete promotion "${promo.code}" permanently? This cannot be undone.`)) return;
+                          await supabase.from("promotions").delete().eq("id", promo.id);
+                          load();
+                        }}
+                      >
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
