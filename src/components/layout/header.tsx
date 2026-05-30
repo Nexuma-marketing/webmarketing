@@ -19,7 +19,7 @@ import type { UserRole } from "@/types/database";
 export function DashboardHeader({
   userName,
   role,
-  brandName = "WebMarketing",
+  brandName = "Nexuma Marketing",
 }: {
   userName: string;
   role: UserRole;

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com";
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 
 export async function POST(request: Request) {
   try {

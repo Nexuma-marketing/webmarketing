@@ -4,7 +4,7 @@ import { Resend } from "resend";
 
 // Steve 4/19: nexuma.ca domain + alexsanabria33@hotmail.com as commercial receiver
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || process.env.CONTACT_NOTIFICATION_EMAIL || "alexsanabria33@hotmail.com";
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 
 export async function POST(request: Request) {
   console.log("[apply-property] POST received");

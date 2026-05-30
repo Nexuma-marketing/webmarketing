@@ -88,7 +88,7 @@ export async function GET() {
       notificationRecipient:
         process.env.CONTACT_NOTIFICATION_EMAIL || "alexsanabria33@hotmail.com",
       fromAddress:
-        process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>",
+        process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>",
       commercialRecipient:
         process.env.COMMERCIAL_AREA_EMAIL || "(not set — falls back to contact recipient)",
     },
@@ -135,7 +135,7 @@ export async function GET() {
         (branding.data || []).some((r) => r.key === "site_cover_image_url"),
       brandingNameApplied:
         (branding.data || []).find((r) => r.key === "site_brand_name")?.value !==
-        "WebMarketing",
+        "Nexuma Marketing",
       noNullLeadRoles:
         (leads.data?.length || 0) > 0 && !("NULL" in leadRoles),
       roomCasingNormalized: distinctRooms.every(

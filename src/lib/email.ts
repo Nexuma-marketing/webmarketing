@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 // Steve 4/19: domain is nexuma.ca, receiver is alexsanabria33@hotmail.com until commercial email ready
 const NOTIFICATION_EMAIL = process.env.CONTACT_NOTIFICATION_EMAIL || "alexsanabria33@hotmail.com";
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 
 // Support multi-recipient: comma-separated emails → array
 function parseRecipients(value: string): string[] {

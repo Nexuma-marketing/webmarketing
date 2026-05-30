@@ -44,8 +44,8 @@ const SECTIONS: SectionDef[] = [
     label: "Site Branding (name, logo, cover)",
     hint: "Change the site name, tagline, and homepage cover/logo image URLs. Paste a PUBLIC URL (must start with https:// and return an image directly when opened in a browser). Image specs are in each helper. After saving, hard-refresh the public site (Ctrl+Shift+R) to see the change.",
     starter: [
-      { key: "site_brand_name", value: "WebMarketing", helper: "Shown in the header and browser tab title." },
-      { key: "site_short_name", value: "WebMarketing", helper: "Used in the mobile menu when the full name is too long." },
+      { key: "site_brand_name", value: "Nexuma Marketing", helper: "Shown in the header and browser tab title." },
+      { key: "site_short_name", value: "Nexuma", helper: "Used in the mobile menu when the full name is too long." },
       { key: "site_tagline", value: "Residential & Business Marketing", helper: "Shown next to the site name in <title> on the homepage." },
       { key: "site_logo_url", value: "", helper: "Logo URL. Recommended: 256×256 or 512×512 px, PNG or SVG with transparent background, < 200 KB. Replaces the default Sparkles icon. URL must end in .png/.jpg/.svg and be publicly accessible (no Google Drive sharing links)." },
       { key: "site_cover_image_url", value: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=1000&fit=crop&crop=center", helper: "Stage 1 approved homepage hero image. Recommended: 1200×800 px (4:5 ratio), JPG or PNG, < 500 KB. Note: the public homepage hero now uses the Stage 1 photo directly; this URL is kept for future reuse but does not currently appear on /." },

@@ -4,7 +4,7 @@ import { Resend } from "resend";
 
 // Steve 4/22 #8: Send email when Tenant completes preferences form
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com";
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 
 export async function POST(request: Request) {
   try {

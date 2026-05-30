@@ -13,8 +13,8 @@ export interface SiteBranding {
 }
 
 const DEFAULT_BRANDING: SiteBranding = {
-  name: "WebMarketing",
-  shortName: "WebMarketing",
+  name: "Nexuma Marketing",
+  shortName: "Nexuma",
   tagline: "Residential & Business Marketing",
   logoUrl: "",
   // Steve 5/6: revert to the Stage 1 approved cover image so any future

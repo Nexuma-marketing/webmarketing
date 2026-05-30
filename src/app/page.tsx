@@ -41,7 +41,7 @@ const DEFAULT_TESTIMONIALS: Testimonial[] = [
   {
     name: "Sarah Mitchell",
     role: "Property Owner",
-    text: "Thanks to WebMarketing, I rented my apartment in record time. The professional photos and digital strategy made all the difference.",
+    text: "Thanks to Nexuma Marketing, I rented my apartment in record time. The professional photos and digital strategy made all the difference.",
     img: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=face",
   },
   {

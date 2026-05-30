@@ -5,7 +5,7 @@ import { Resend } from "resend";
 // Steve 4/26: "Schedule My Rescue Session" button on Sales Leak Diagnosis result page
 // must trigger a commercial alert (and tenant confirmation), same as Captacion form.
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com";
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "WebMarketing <notifications@nexuma.ca>";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 
 export async function POST(request: Request) {
   console.log("[pymes-schedule-rescue] POST received");

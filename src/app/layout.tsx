@@ -40,7 +40,7 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   } catch {
     return {
-      title: "WebMarketing - Residential & Business Marketing",
+      title: "Nexuma Marketing - Residential & Business Marketing",
       description:
         "Residential and business marketing platform. We connect property owners, tenants, and businesses with the marketing services they need.",
     };
