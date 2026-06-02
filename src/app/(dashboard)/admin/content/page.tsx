@@ -65,9 +65,16 @@ const SECTIONS: SectionDef[] = [
   // left blank, so deleting a row reverts to the approved default.
   {
     value: "landing_headlines",
-    label: "Landing Page - Section Headlines",
-    hint: "Headlines for the home page sections (How it Works, Services, Mission, Benefits, Contact). Leave a row blank or delete it to fall back to the Stage 1 default. Hero is locked separately and not edited from here.",
+    label: "Landing Page - Headlines & Hero CTAs",
+    hint: "Headlines for the home page sections (How it Works, Services, Mission, Benefits, Contact) plus the two hero CTA button labels (Property Owners / Business Owners). Leave a row blank or delete it to fall back to the Stage 1 default.",
     starter: [
+      // Steve 6/2 (#05 in 6-2.md): the two hero CTA button labels.
+      // Added via pickHeadline() in commit f54a07a so the code reads
+      // them, but the admin starter list never exposed them — so the
+      // client couldn't edit them. Now part of the standard headline
+      // section.
+      { key: "hero_cta_owner", value: "Property Owners", helper: "Label of the BLUE hero button on the home page (links to Property Owner registration)." },
+      { key: "hero_cta_business", value: "Business Owners", helper: "Label of the GREEN hero button on the home page (links to Business / PYMES registration)." },
       { key: "howitworks_eyebrow", value: "How it Works", helper: "Small uppercase label above the heading." },
       { key: "howitworks_title", value: "Simple Steps to Get Started", helper: "Main heading for the How it Works section." },
       { key: "services_eyebrow", value: "Our Services" },
@@ -155,7 +162,11 @@ const SECTIONS: SectionDef[] = [
 export default function AdminContentPage() {
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSection, setSelectedSection] = useState("landing_hero");
+  // Steve 6/2 (#05 in 6-2.md): default was "landing_hero" — an orphan
+  // section name that no longer exists in SECTIONS, so the page opened
+  // with no selected section + no hint. Default to landing_headlines
+  // (which is where the hero CTAs now live too).
+  const [selectedSection, setSelectedSection] = useState("landing_headlines");
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [newKey, setNewKey] = useState("");
