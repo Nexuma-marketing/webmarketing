@@ -605,8 +605,15 @@ export default async function HomePage({
                     </li>
                   ))}
                 </ul>
+                {/* Steve 6/2 (#09 in 6-2.md): the hero buttons were fixed
+                    in f54a07a to go through /register?role=... first so the
+                    visitor doesn't fill the 6-step brief unauthenticated,
+                    lose it on the auth redirect, register, then have to
+                    refill the brief from scratch. The Services-section CTA
+                    was overlooked and still bypassed registration — same
+                    bug, different button. */}
                 <Link
-                  href="/forms/propietario"
+                  href="/register?role=propietario"
                   className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
                 >
                   Start Discovery Brief
@@ -654,7 +661,7 @@ export default async function HomePage({
                   ))}
                 </ul>
                 <Link
-                  href="/register"
+                  href="/register?role=inquilino"
                   className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
                 >
                   Find your home
@@ -709,7 +716,7 @@ export default async function HomePage({
                   ))}
                 </ul>
                 <Link
-                  href="/forms/pymes"
+                  href="/register?role=pymes"
                   className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent/80"
                 >
                   Calculate your sales leak
