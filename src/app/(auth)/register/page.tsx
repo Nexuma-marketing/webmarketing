@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -32,7 +32,12 @@ const ROLE_LABELS: Record<string, string> = {
   pymes: "Business Owner (SMB)",
 };
 
-export default function RegisterPage() {
+// Steve 6/2 (6-2.md #20): Next.js 16 requires useSearchParams() to be
+// wrapped in a <Suspense> boundary on any page that may be prerendered,
+// otherwise the build fails with "useSearchParams should be wrapped in
+// a suspense boundary at page /register". The inner content component
+// reads the param; the exported page wraps it in Suspense.
+function RegisterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Steve 5/27 Milestone 4 (#4b): when landing page hero buttons link
@@ -271,5 +276,13 @@ export default function RegisterPage() {
         </CardFooter>
       </form>
     </Card>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterPageContent />
+    </Suspense>
   );
 }
