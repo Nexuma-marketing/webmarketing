@@ -70,28 +70,21 @@ export default function AdminReassignPage() {
 
   const supabase = createClient();
 
+  // Steve 6/5 (6-2.md #25): cookie-context client returned 0 profiles
+  // here even though /admin/users displayed them — RLS quirk on the
+  // recursive admin SELECT. Service-role API surfaces the same data
+  // reliably for the admin reassign flow.
   const loadInitial = useCallback(async () => {
-    const [{ data: u }, { data: s }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .in("role", ["propietario", "propietario_preferido", "inversionista", "inquilino", "inquilino_premium", "pymes"])
-        .order("full_name"),
-      // Steve 4/28 round 2: dropdown was empty for the client.
-      // .neq("status", "archived") excludes rows where status IS NULL,
-      // which is the case for any service inserted before migration v9
-      // backfilled the column. Use .or() so NULL status passes too.
-      supabase
-        .from("services")
-        .select("id, name, category, price, currency, status")
-        .or("status.is.null,status.neq.archived")
-        .order("category")
-        .order("name"),
-    ]);
-    setUsers((u as UserRow[]) || []);
-    setServices((s as ServiceRow[]) || []);
+    const res = await fetch("/api/admin/reassign", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as { users: UserRow[]; services: ServiceRow[] };
+    setUsers(json.users || []);
+    setServices(json.services || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     loadInitial();

@@ -98,17 +98,20 @@ export default function AdminTeamPage() {
 
   const supabase = createClient();
 
+  // Steve 6/5 (6-2.md #27): cookie-context SELECT returned the
+  // admin row only; new marketing/sales/support members were created
+  // (auth.users + profiles confirmed via DB) but didn't appear in the
+  // list. Service-role API fetches the full roster reliably.
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, email, full_name, role, created_at")
-      .in("role", ["admin", "marketing", "sales", "support"])
-      .order("role")
-      .order("created_at", { ascending: false });
-
-    setTeam((data as InternalUser[]) || []);
+    const res = await fetch("/api/admin/team", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as { team: InternalUser[] };
+    setTeam(json.team || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     load();

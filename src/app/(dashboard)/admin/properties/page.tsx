@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SERVICE_TIERS, ELITE_TIERS } from "@/lib/constants";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -20,6 +19,8 @@ interface PropertyRow {
   bedrooms: number | null;
   created_at: string;
   owner_name: string;
+  owner_email: string;
+  owner_phone: string;
 }
 
 export default function AdminPropertiesPage() {
@@ -28,20 +29,22 @@ export default function AdminPropertiesPage() {
 
   const supabase = createClient();
 
+  // Steve 6/5 (6-2.md #23): client-side embedded join
+  // `profiles:owner_id(full_name)` returned null for every row → "Unknown"
+  // in the Owner column. Same RLS/embed quirk that broke the original
+  // /admin/payments. Switched to a server-role API route. Toggle on
+  // is_available is still done via the cookie-context client because
+  // admin RLS on properties allows writes by admin / marketing roles.
   const loadProperties = useCallback(async () => {
-    const { data } = await supabase
-      .from("properties")
-      .select("id, address, city, monthly_rent, is_available, service_tier, elite_tier, bedrooms, created_at, profiles:owner_id(full_name)")
-      .order("created_at", { ascending: false });
-
-    const mapped = (data || []).map((p) => ({
-      ...p,
-      owner_name: (p.profiles as unknown as { full_name: string } | null)?.full_name || "Unknown",
-    }));
-
-    setProperties(mapped as PropertyRow[]);
+    const res = await fetch("/api/admin/properties", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as { properties: PropertyRow[] };
+    setProperties(json.properties || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     loadProperties();
@@ -66,6 +69,16 @@ export default function AdminPropertiesPage() {
     {
       accessorKey: "owner_name",
       header: "Owner",
+      cell: ({ row }) => {
+        const name = row.getValue("owner_name") as string;
+        const email = row.original.owner_email;
+        return (
+          <div>
+            <p className="font-medium">{name}</p>
+            {email && <p className="text-xs text-muted-foreground">{email}</p>}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "city",

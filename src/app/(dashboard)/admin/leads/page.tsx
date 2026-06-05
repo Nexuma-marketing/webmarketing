@@ -24,7 +24,6 @@ import {
   ROLE_LABELS,
   LEAD_STATUS_LABELS,
   LEAD_STATUS_COLORS,
-  LEAD_STATUS_TRANSITIONS,
 } from "@/lib/constants";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -89,16 +88,9 @@ export default function AdminLeadsPage() {
 
     const updates: Record<string, unknown> = {};
     if (newStatus && newStatus !== selectedLead.status) {
-      // Defense-in-depth: validate transition client-side. The DB has a trigger
-      // that also rejects invalid transitions in case this is bypassed.
-      const allowed = LEAD_STATUS_TRANSITIONS[selectedLead.status] || [];
-      if (!allowed.includes(newStatus)) {
-        setUpdateError(
-          `Cannot transition from ${selectedLead.status} to ${newStatus}.`,
-        );
-        setSaving(false);
-        return;
-      }
+      // Steve 6/5 (6-2.md #24): client requested ANY-to-ANY status
+      // changes. The strict workflow guard has been removed (also see
+      // allowedStatuses below + migration v35).
       updates.status = newStatus;
     }
     if (notes !== (selectedLead.notes || "")) {
@@ -227,12 +219,15 @@ export default function AdminLeadsPage() {
     new Set(leads.map((l) => l.source).filter((s): s is string => !!s)),
   ).map((s) => ({ value: s, label: s }));
 
-  // Available transitions for selected lead
+  // Steve 6/5 (6-2.md #24): client reported "solo sale en proceso y
+  // cerrado" — the workflow-only transition list hid `nuevo` and
+  // `contactado` whenever the selected lead was already past those
+  // points. Per the client's expectation, sales need to be able to
+  // pick ANY of the 4 statuses (e.g., revert a closed lead to
+  // contactado). Expose all 4. The DB-side transition trigger has
+  // also been relaxed in migration v35 to accept manual reverts.
   const allowedStatuses = selectedLead
-    ? [
-        selectedLead.status,
-        ...(LEAD_STATUS_TRANSITIONS[selectedLead.status] || []),
-      ]
+    ? Object.keys(LEAD_STATUS_LABELS)
     : [];
 
   return (

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Card,
   CardContent,
@@ -98,7 +97,11 @@ const COLUMN_DEFS: Record<ExportTarget, { key: string; label: string }[]> = {
     { key: "created_at", label: "Created" },
   ],
   payments: [
+    // Steve 6/5 (6-2.md #29): added Customer Name + Plan/Service so
+    // the CSV is usable for reconciliation without cross-referencing.
+    { key: "user_name", label: "Customer Name" },
     { key: "user_email", label: "User Email" },
+    { key: "plan_or_service", label: "Plan / Service" },
     { key: "amount", label: "Amount" },
     { key: "currency", label: "Currency" },
     { key: "payment_type", label: "Type" },
@@ -113,97 +116,28 @@ export default function AdminExportPage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [exporting, setExporting] = useState<ExportTarget | null>(null);
 
-  const supabase = createClient();
-
+  // Steve 6/5 (6-2.md #29): all exports go through the service-role
+  // /api/admin/export route. Joins are done server-side so the CSV
+  // always has the rich Owner / Customer / Plan columns Alex requested.
   async function handleExport(target: ExportTarget) {
     setExporting(target);
-
-    let query;
-
-    switch (target) {
-      case "users":
-        query = supabase
-          .from("profiles")
-          .select("full_name, email, role, phone, property_count, is_premium_tenant, created_at");
-        if (roleFilter !== "all") {
-          query = query.eq("role", roleFilter);
-        }
-        break;
-
-      case "properties":
-        query = supabase
-          .from("properties")
-          .select("address, city, province, property_type, monthly_rent, bedrooms, bathrooms, is_available, service_tier, elite_tier, cfp_monthly, payback_months, created_at, owner:owner_id(full_name, email, phone)");
-        break;
-
-      case "leads":
-        // Steve 4/28: leads.role can be NULL for contact_form / older inserts.
-        // Don't apply server-side role filter here — filter client-side after
-        // we've resolved the effective role (leads.role || profiles.role).
-        query = supabase
-          .from("leads")
-          .select("full_name, email, phone, role, source, status, notes, created_at, user_id, profiles:user_id(role)");
-        break;
-
-      case "payments":
-        query = supabase
-          .from("payments")
-          .select("amount, currency, payment_type, status, created_at, profiles:user_id(email)");
-        break;
-    }
-
-    // Apply date filters
-    if (dateFrom) {
-      query = query.gte("created_at", `${dateFrom}T00:00:00`);
-    }
-    if (dateTo) {
-      query = query.lte("created_at", `${dateTo}T23:59:59`);
-    }
-
-    const { data } = await query.order("created_at", { ascending: false });
-
-    if (data && data.length > 0) {
-      const rawData = data as Record<string, unknown>[];
-      let processedData: Record<string, unknown>[] = rawData;
-
-      if (target === "payments") {
-        processedData = rawData.map((row) => ({
-          ...row,
-          user_email: (row.profiles as { email: string } | null)?.email || "",
-        }));
-      } else if (target === "properties") {
-        processedData = rawData.map((row) => {
-          const owner = row.owner as { full_name: string; email: string; phone: string | null } | null;
-          return {
-            ...row,
-            owner_full_name: owner?.full_name || "",
-            owner_email: owner?.email || "",
-            owner_phone: owner?.phone || "",
-          };
-        });
-      } else if (target === "leads") {
-        // Steve 4/28: leads.role can be NULL when the lead came from a public
-        // form (contact_form). Fall back to the linked profile's role so the
-        // CSV is never blank in column "Role".
-        processedData = rawData.map((row) => {
-          const profile = row.profiles as { role: string } | null;
-          return {
-            ...row,
-            role: row.role || profile?.role || "",
-          };
-        });
-        // Apply role filter AFTER fallback resolution so NULL-role leads with
-        // a known profile role still match (Steve 4/28: Pymes filter "trajo todo").
-        if (roleFilter !== "all") {
-          processedData = processedData.filter((row) => row.role === roleFilter);
-        }
+    try {
+      const params = new URLSearchParams({ target });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      if (roleFilter !== "all") params.set("role", roleFilter);
+      const res = await fetch(`/api/admin/export?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) {
+        setExporting(null);
+        return;
       }
-
-      const csv = generateCSV(
-        processedData as Record<string, unknown>[],
-        COLUMN_DEFS[target]
-      );
-
+      const json = (await res.json()) as { rows: Record<string, unknown>[] };
+      const rows = json.rows || [];
+      if (rows.length === 0) {
+        setExporting(null);
+        return;
+      }
+      const csv = generateCSV(rows, COLUMN_DEFS[target]);
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -211,9 +145,9 @@ export default function AdminExportPage() {
       a.download = `${target}_export_${new Date().toISOString().split("T")[0]}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+    } finally {
+      setExporting(null);
     }
-
-    setExporting(null);
   }
 
   return (

@@ -63,12 +63,18 @@ export default async function AdminSectionLayout({
         // probar o cual email quedo de administrador" — they had been
         // testing without knowing whether their account was admin. The
         // negative warning below only fires for non-admins, so admins
-        // saw nothing and remained uncertain. The banner now auto-
-        // hides after 12s and remembers via sessionStorage that the
-        // user has been confirmed this session, so it does not push
-        // the section header down on every admin page navigation.
+        // saw nothing and remained uncertain.
         <AdminConfirmBanner email={email} />
-      ) : (
+      ) : !isInternalRole ? (
+        // Steve 6/5 (6-2.md #22): the red "RLS will deny every save"
+        // warning was firing for marketing/sales/support too — making
+        // legitimate team members think the system was broken. The
+        // permission matrix in /admin/team grants those roles real
+        // write access to their scoped tables (RLS in v9 allows it).
+        // The blue banner above already tells them they're in limited
+        // access mode. The red warning is now reserved for users with
+        // a TRULY non-internal role (propietario / inquilino / pymes
+        // / NULL) who somehow navigated to /admin/*.
         <div
           role="alert"
           className="rounded-lg border-2 border-red-500 bg-red-50 p-4 text-sm text-red-900"
@@ -97,7 +103,7 @@ export default async function AdminSectionLayout({
             then log out and log back in to refresh your session token.
           </p>
         </div>
-      )}
+      ) : null}
       {children}
     </div>
   );

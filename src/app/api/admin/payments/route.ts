@@ -23,7 +23,12 @@ export async function GET() {
     .select("role")
     .eq("id", user.id)
     .single();
-  if (callerProfile?.role !== "admin") {
+  // Steve 6/5 (6-2.md #28): widened from admin-only to all internal
+  // roles so sales / marketing can read payments (sales needs the
+  // history for client follow-up; marketing wants promo redemption
+  // numbers). Refund and cancel-subscription endpoints stay admin-only.
+  const INTERNAL_ROLES = ["admin", "marketing", "sales", "support"];
+  if (!callerProfile?.role || !INTERNAL_ROLES.includes(callerProfile.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

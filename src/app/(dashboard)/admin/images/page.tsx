@@ -28,18 +28,16 @@ interface ImageRow {
   room_category: string;
   status: string;
   uploaded_at: string;
-  properties?: {
+  property?: {
     id: string;
     address: string;
     city: string;
-    owner_id: string;
+    owner_id: string | null;
   } | null;
-}
-
-interface OwnerInfo {
-  id: string;
-  full_name: string;
-  email: string;
+  owner?: {
+    full_name: string;
+    email: string;
+  } | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -50,7 +48,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function AdminImagesPage() {
   const [images, setImages] = useState<ImageRow[]>([]);
-  const [owners, setOwners] = useState<Record<string, OwnerInfo>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -59,36 +56,21 @@ export default function AdminImagesPage() {
 
   const supabase = createClient();
 
+  // Steve 6/5 (6-2.md #26): the original two-query pattern using the
+  // cookie-context client (PostgREST embed for property + second
+  // profile fetch) silently dropped property/owner data so the
+  // search-by-owner-name filter never matched. Swapped to a server
+  // role API route that joins everything reliably.
   const load = useCallback(async () => {
-    // Steve 4/29: column is `uploaded_at`, not `created_at`. The previous query
-    // errored out silently and the page rendered "no images" even when uploads
-    // existed.
-    const { data: imageData } = await supabase
-      .from("property_images")
-      .select("id, property_id, image_url, room_category, status, uploaded_at, properties:property_id(id, address, city, owner_id)")
-      .order("uploaded_at", { ascending: false })
-      .limit(500);
-
-    const list = (imageData as unknown as ImageRow[]) || [];
-    setImages(list);
-
-    const ownerIds = Array.from(
-      new Set(list.map((i) => i.properties?.owner_id).filter((x): x is string => !!x)),
-    );
-    if (ownerIds.length > 0) {
-      const { data: ownerData } = await supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .in("id", ownerIds);
-      const map: Record<string, OwnerInfo> = {};
-      (ownerData || []).forEach((o) => {
-        map[o.id] = o;
-      });
-      setOwners(map);
+    const res = await fetch("/api/admin/images", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
     }
-
+    const json = (await res.json()) as { images: ImageRow[] };
+    setImages(json.images || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -117,13 +99,12 @@ export default function AdminImagesPage() {
     if (roomFilter !== "all" && canonicalRoom(img.room_category) !== roomFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      const owner = img.properties ? owners[img.properties.owner_id] : null;
       const haystack = [
-        img.properties?.address,
-        img.properties?.city,
+        img.property?.address,
+        img.property?.city,
         img.room_category,
-        owner?.full_name,
-        owner?.email,
+        img.owner?.full_name,
+        img.owner?.email,
       ]
         .filter(Boolean)
         .join(" ")
@@ -205,7 +186,7 @@ export default function AdminImagesPage() {
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {filtered.map((img) => {
-            const owner = img.properties ? owners[img.properties.owner_id] : null;
+            const owner = img.owner;
             return (
               <Card key={img.id} className="overflow-hidden flex flex-col">
                 <div className="aspect-[4/3] bg-muted relative">
@@ -225,7 +206,7 @@ export default function AdminImagesPage() {
                 <CardHeader className="pb-1">
                   <CardTitle className="text-sm truncate">{img.room_category}</CardTitle>
                   <CardDescription className="text-xs">
-                    {img.properties?.address || "(deleted property)"}, {img.properties?.city}
+                    {img.property?.address || "(deleted property)"}, {img.property?.city}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2 text-xs flex-1 flex flex-col justify-between">

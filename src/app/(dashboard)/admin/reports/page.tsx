@@ -139,36 +139,28 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("1y");
 
-  const supabase = createClient();
-
+  // Steve 6/5 (6-2.md #28): payments + promotions had admin-only RLS,
+  // so the sales role saw CA$0 / 0 transactions even when admin saw
+  // real revenue. Service-role API delivers the same data regardless
+  // of role.
   const load = useCallback(async () => {
-    const [paymentsRes, servicesRes, promosRes, leadsRes] = await Promise.all([
-      supabase
-        .from("payments")
-        .select(
-          "id, user_id, service_id, pymes_plan_id, amount, currency, payment_type, status, created_at",
-        )
-        .order("created_at", { ascending: false }),
-      supabase.from("services").select("id, name"),
-      supabase
-        .from("promotions")
-        .select(
-          "id, code, discount_type, discount_value, used_count, max_uses, is_active, valid_until",
-        )
-        .order("used_count", { ascending: false }),
-      supabase
-        .from("leads")
-        .select("id, status, created_at")
-        .order("created_at", { ascending: false })
-        .limit(2000),
-    ]);
-
-    setPayments((paymentsRes.data as PaymentRow[] | null) || []);
-    setServices((servicesRes.data as ServiceRow[] | null) || []);
-    setPromos((promosRes.data as PromoStat[] | null) || []);
-    setLeads((leadsRes.data as LeadRow[] | null) || []);
+    const res = await fetch("/api/admin/reports", { cache: "no-store" });
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as {
+      payments: PaymentRow[];
+      services: ServiceRow[];
+      promos: PromoStat[];
+      leads: LeadRow[];
+    };
+    setPayments(json.payments || []);
+    setServices(json.services || []);
+    setPromos(json.promos || []);
+    setLeads(json.leads || []);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     load();
