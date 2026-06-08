@@ -519,16 +519,55 @@ export default async function ServicesPage() {
     return svc ? { ...svc, _recommendation_reason: r.reason, _recommendation_id: r.id } : null;
   }).filter(Boolean) as (Record<string, unknown> & { _recommendation_reason: string | null })[];
 
-  // ─── Founders plan counter (admin-editable from /admin/pricing) ─────
-  const { data: foundersConfig } = await supabase
-    .from("app_config")
-    .select("key, value")
-    .eq("category", "founders_plan");
-  const cfg = Object.fromEntries(
-    (foundersConfig || []).map((r: { key: string; value: string }) => [r.key, r.value]),
-  );
-  const foundersTaken = Number(cfg.taken ?? "0");
-  const foundersLimit = Number(cfg.limit ?? "20");
+  // ─── Founders plan counter ─────────────────────────────────────
+  // Steve 6/8 (6-2.md #34): Alex reported "Se compró un founders
+  // package y no restó los puestos." The banner used to read the
+  // `founders_plan.taken` counter in app_config, which the Stripe
+  // webhook increments on each Founders purchase. But that stored
+  // counter silently drifts whenever:
+  //   - a profile is CASCADE-deleted (today's #01 cleanup wiped
+  //     Founders payments but left the counter at the old value)
+  //   - a Founders payment is refunded (no decrement hook)
+  //   - the webhook double-fires or fails halfway
+  // So we now derive `taken` from a live COUNT(*) of completed
+  // Founders Package payments via the service-role client (this
+  // page is RSC + the payments+services tables are admin-only RLS
+  // for SELECT). Limit stays in app_config since that's a config
+  // value, not a derived one. After this change the banner is
+  // always exact regardless of how the user table drifts.
+  const supabaseSrv = (() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return null;
+    const { createClient: createSb } = require("@supabase/supabase-js") as {
+      createClient: (u: string, k: string, o: { auth: { persistSession: boolean } }) => typeof supabase;
+    };
+    return createSb(url, key, { auth: { persistSession: false } });
+  })();
+
+  let foundersTaken = 0;
+  let foundersLimit = 20;
+
+  if (supabaseSrv) {
+    const [{ data: foundersConfig }, { data: foundersService }] = await Promise.all([
+      supabaseSrv.from("app_config").select("key, value").eq("category", "founders_plan"),
+      supabaseSrv.from("services").select("id, name").ilike("name", "%Founder%Package%"),
+    ]);
+    const cfg = Object.fromEntries(
+      (foundersConfig || []).map((r: { key: string; value: string }) => [r.key, r.value]),
+    );
+    foundersLimit = Number(cfg.limit ?? "20");
+
+    const foundersIds = (foundersService || []).map((s: { id: string }) => s.id);
+    if (foundersIds.length > 0) {
+      const { count } = await supabaseSrv
+        .from("payments")
+        .select("id", { count: "exact", head: true })
+        .in("service_id", foundersIds)
+        .eq("status", "completed");
+      foundersTaken = count ?? 0;
+    }
+  }
 
   // ─── Plan tier overrides (admin-editable from /admin/plans) ─────
   // Steve 4/28 round 2: when admin edits the per-tier checklist in
