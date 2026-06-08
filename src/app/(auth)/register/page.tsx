@@ -44,6 +44,13 @@ function RegisterPageContent() {
   // to /register?role=propietario or ?role=pymes, pre-select the user
   // type so the visitor doesn't have to pick it again.
   const preselectedRole = searchParams.get("role") || "";
+  // Steve 6/8 (6-2.md #31): phone is now REQUIRED for propietario and
+  // pymes roles — the commercial team uses these contact numbers to
+  // follow up on high-value leads. We track the currently-selected role
+  // in state so the Phone label / required attribute / placeholder
+  // update live as the visitor changes the dropdown.
+  const [selectedRole, setSelectedRole] = useState<string>(preselectedRole);
+  const phoneRequired = selectedRole === "propietario" || selectedRole === "pymes";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Steve 5/7: PIPA/PIPEDA + Terms acceptance was never logged to
@@ -75,6 +82,15 @@ function RegisterPageContent() {
 
     if (!role) {
       setError("Please select a user type");
+      setLoading(false);
+      return;
+    }
+
+    // Steve 6/8 (6-2.md #31): phone is required for the two roles the
+    // commercial team needs to call back (property owners + business
+    // owners). Tenants stay optional.
+    if ((role === "propietario" || role === "pymes") && (!phone || phone.trim().length < 7)) {
+      setError("Phone number is required for property owners and business owners (so our team can follow up).");
       setLoading(false);
       return;
     }
@@ -159,17 +175,30 @@ function RegisterPageContent() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="phone">Phone (optional)</Label>
+            <Label htmlFor="phone">
+              Phone{phoneRequired ? <span className="ml-1 text-red-500">*</span> : <span className="ml-1 text-muted-foreground">(optional)</span>}
+            </Label>
             <Input
               id="phone"
               name="phone"
               type="tel"
               placeholder="+1 514 000 0000"
+              required={phoneRequired}
             />
+            {phoneRequired && (
+              <p className="text-xs text-muted-foreground">
+                Required for property owners and business owners — our commercial team uses this to follow up with you.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">User type</Label>
-            <Select name="role" required defaultValue={preselectedRole || undefined}>
+            <Select
+              name="role"
+              required
+              value={selectedRole || undefined}
+              onValueChange={(v) => v && setSelectedRole(v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select your profile" />
               </SelectTrigger>

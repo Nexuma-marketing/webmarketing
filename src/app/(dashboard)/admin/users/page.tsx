@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -26,6 +28,9 @@ interface UserRow {
   id: string;
   full_name: string;
   email: string;
+  // Steve 6/8 (6-2.md #31 Option B): phone added so admin can edit
+  // and backfill phones for owners who never provided one at signup.
+  phone: string | null;
   role: string;
   property_count: number;
   is_premium_tenant: boolean;
@@ -109,15 +114,20 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
-  const [newRole, setNewRole] = useState("");
+  // Steve 6/8 (6-2.md #31 Option B): expanded from role-only Edit to a
+  // full Edit dialog so admin can backfill name + phone too.
+  const [editFullName, setEditFullName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editRole, setEditRole] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const supabase = createClient();
 
   const loadUsers = useCallback(async () => {
     const { data } = await supabase
       .from("profiles")
-      .select("id, full_name, email, role, property_count, is_premium_tenant, created_at")
+      .select("id, full_name, email, phone, role, property_count, is_premium_tenant, created_at")
       .order("created_at", { ascending: false });
 
     setUsers(data || []);
@@ -128,20 +138,38 @@ export default function AdminUsersPage() {
     loadUsers();
   }, [loadUsers]);
 
-  async function handleRoleChange() {
-    if (!selectedUser || !newRole) return;
-    setSaving(true);
+  function openEdit(user: UserRow) {
+    setSelectedUser(user);
+    setEditFullName(user.full_name || "");
+    setEditPhone(user.phone || "");
+    setEditRole(user.role);
+    setSaveError(null);
+  }
 
-    // Steve 4/28: lock the role so the auto-profiling job won't override the
-    // admin's manual choice on the next form submission.
-    await supabase
+  async function handleSave() {
+    if (!selectedUser || !editRole) return;
+    setSaving(true);
+    setSaveError(null);
+
+    const { error } = await supabase
       .from("profiles")
-      .update({ role: newRole, role_locked: true })
+      .update({
+        full_name: editFullName.trim() || null,
+        phone: editPhone.trim() || null,
+        role: editRole,
+        // Steve 4/28: lock the role so the auto-profiling job won't
+        // override the admin's manual choice on the next form submission.
+        role_locked: true,
+      })
       .eq("id", selectedUser.id);
 
-    setSelectedUser(null);
-    setNewRole("");
     setSaving(false);
+    if (error) {
+      setSaveError(`Save failed: ${error.message}`);
+      return;
+    }
+
+    setSelectedUser(null);
     loadUsers();
   }
 
@@ -154,12 +182,9 @@ export default function AdminUsersPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => {
-            setSelectedUser(row.original);
-            setNewRole(row.original.role);
-          }}
+          onClick={() => openEdit(row.original)}
         >
-          Edit Role
+          Edit
         </Button>
       ),
     },
@@ -189,19 +214,46 @@ export default function AdminUsersPage() {
         ]}
       />
 
-      {/* Role Edit Dialog */}
+      {/* Edit User Dialog */}
       <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change User Role</DialogTitle>
+            <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
-              Changing the role for {selectedUser?.full_name} ({selectedUser?.email})
+              {selectedUser?.email}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
+            {saveError && (
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                {saveError}
+              </div>
+            )}
             <div className="space-y-2">
-              <label className="text-sm font-medium">New Role</label>
-              <Select value={newRole} onValueChange={(v) => v && setNewRole(v)}>
+              <Label htmlFor="edit-fullname">Full name</Label>
+              <Input
+                id="edit-fullname"
+                value={editFullName}
+                onChange={(e) => setEditFullName(e.target.value)}
+                placeholder="Full name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                type="tel"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                placeholder="+1 514 000 0000"
+              />
+              <p className="text-xs text-muted-foreground">
+                Backfill phone numbers for owners who skipped this field at signup.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              <Select value={editRole} onValueChange={(v) => v && setEditRole(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -218,7 +270,7 @@ export default function AdminUsersPage() {
               <Button variant="outline" onClick={() => setSelectedUser(null)}>
                 Cancel
               </Button>
-              <Button onClick={handleRoleChange} disabled={saving}>
+              <Button onClick={handleSave} disabled={saving}>
                 {saving ? "Saving..." : "Save"}
               </Button>
             </div>
