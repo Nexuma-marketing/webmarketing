@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Card,
   CardContent,
@@ -54,18 +53,27 @@ export default function AdminArticlesPage() {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Partial<Article> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tagsText, setTagsText] = useState("");
 
-  const supabase = createClient();
-
+  // Steve 6/8 (6-2.md #32): articles list / create / update / delete
+  // now all go through the service-role API at /api/admin/articles.
+  // Marketing role previously got a silent RLS pass on cookie-context
+  // reads, so the article they just created never appeared in this
+  // table afterwards.
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("articles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setArticles((data as Article[]) || []);
-    setLoading(false);
-  }, [supabase]);
+    try {
+      const res = await fetch("/api/admin/articles", { cache: "no-store" });
+      if (!res.ok) {
+        setArticles([]);
+        return;
+      }
+      const json = (await res.json()) as { articles: Article[] };
+      setArticles(json.articles || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load();
@@ -95,6 +103,7 @@ export default function AdminArticlesPage() {
   async function save() {
     if (!edit?.title || !edit?.slug) return;
     setSaving(true);
+    setSaveError(null);
     const tags = tagsText.split(",").map((t) => t.trim()).filter(Boolean);
     const isPublished = edit.is_published ?? false;
     const payload = {
@@ -109,31 +118,56 @@ export default function AdminArticlesPage() {
       is_published: isPublished,
       published_at: isPublished ? edit.published_at || new Date().toISOString() : null,
     };
-    if (edit.id) {
-      await supabase.from("articles").update(payload).eq("id", edit.id);
-    } else {
-      await supabase.from("articles").insert(payload);
-    }
+    const res = edit.id
+      ? await fetch("/api/admin/articles", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: edit.id, ...payload }),
+        })
+      : await fetch("/api/admin/articles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
     setSaving(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setSaveError(body.error || `Save failed: ${res.status}`);
+      return;
+    }
     setOpen(false);
     setEdit(null);
     load();
   }
 
   async function togglePublish(a: Article) {
-    await supabase
-      .from("articles")
-      .update({
+    const res = await fetch("/api/admin/articles", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: a.id,
         is_published: !a.is_published,
         published_at: !a.is_published ? new Date().toISOString() : null,
-      })
-      .eq("id", a.id);
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(`Publish toggle failed: ${body.error || res.status}`);
+      return;
+    }
     load();
   }
 
   async function deleteArticle(id: string) {
     if (!confirm("Delete this article? This cannot be undone.")) return;
-    await supabase.from("articles").delete().eq("id", id);
+    const res = await fetch(`/api/admin/articles?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(`Delete failed: ${body.error || res.status}`);
+      return;
+    }
     load();
   }
 
@@ -235,6 +269,11 @@ export default function AdminArticlesPage() {
           </DialogHeader>
           {edit && (
             <div className="space-y-4 pt-2">
+              {saveError && (
+                <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                  {saveError}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Title</Label>

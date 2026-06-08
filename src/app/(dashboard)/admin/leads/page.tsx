@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,25 +56,29 @@ export default function AdminLeadsPage() {
   const [saving, setSaving] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const supabase = createClient();
-
+  // Steve 6/8 (6-2.md #32): leads page used to query the leads
+  // table directly via cookie-context client. RLS silently
+  // returned 0 rows for sales / marketing / support — "No
+  // results found" even though leads exist. Switched to the
+  // service-role API at /api/admin/leads (GET roster + admins,
+  // PATCH updates) so every internal role can read leads, with
+  // write privileges still enforced server-side (admin + sales
+  // only).
   const loadLeads = useCallback(async () => {
-    const [{ data: leadData }, { data: adminData }] = await Promise.all([
-      supabase
-        .from("leads")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .eq("role", "admin")
-        .order("full_name"),
-    ]);
-
-    setLeads(leadData || []);
-    setAdmins((adminData as AdminUser[]) || []);
-    setLoading(false);
-  }, [supabase]);
+    try {
+      const res = await fetch("/api/admin/leads", { cache: "no-store" });
+      if (!res.ok) {
+        setLeads([]);
+        setAdmins([]);
+        return;
+      }
+      const json = (await res.json()) as { leads: LeadRow[]; admins: AdminUser[] };
+      setLeads(json.leads || []);
+      setAdmins(json.admins || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadLeads();
@@ -102,12 +105,14 @@ export default function AdminLeadsPage() {
     }
 
     if (Object.keys(updates).length > 0) {
-      const { error } = await supabase
-        .from("leads")
-        .update(updates)
-        .eq("id", selectedLead.id);
-      if (error) {
-        setUpdateError(error.message);
+      const res = await fetch("/api/admin/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedLead.id, ...updates }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setUpdateError(body.error || `Update failed: ${res.status}`);
         setSaving(false);
         return;
       }

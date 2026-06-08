@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Card,
   CardContent,
@@ -96,8 +95,6 @@ export default function AdminTeamPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("marketing");
 
-  const supabase = createClient();
-
   // Steve 6/5 (6-2.md #27): cookie-context SELECT returned the
   // admin row only; new marketing/sales/support members were created
   // (auth.users + profiles confirmed via DB) but didn't appear in the
@@ -152,20 +149,40 @@ export default function AdminTeamPage() {
     load();
   }
 
+  // Steve 6/8 (6-2.md #32): role pill UI was wired directly to a
+  // cookie-context supabase.from("profiles").update(...) call. RLS
+  // returned "no error" but blocked the actual write — Select
+  // visually showed the new role but the DB stayed untouched.
+  // Switching both mutations onto the service-role PATCH endpoint
+  // (admin gate enforced server-side) makes role changes persist.
   async function changeRole(userId: string, newRole: string) {
-    await supabase
-      .from("profiles")
-      .update({ role: newRole, role_locked: true })
-      .eq("id", userId);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: userId, role: newRole }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(`Role change failed: ${body.error || res.status}`);
+      return;
+    }
     load();
   }
 
   async function removeFromTeam(userId: string) {
     if (!confirm("Demote this user back to a regular tenant role? They will lose admin access immediately.")) return;
-    await supabase
-      .from("profiles")
-      .update({ role: "inquilino", role_locked: true })
-      .eq("id", userId);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: userId, role: "inquilino" }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(`Remove failed: ${body.error || res.status}`);
+      return;
+    }
     load();
   }
 
