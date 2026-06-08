@@ -21,42 +21,70 @@ export async function POST(request: Request) {
       .eq("id", user.id)
       .single();
 
-    if (process.env.RESEND_API_KEY) {
+    // Steve 6/7 (6-2.md #30): client reported Jun 7 docx — Client
+    // Acquisition form completes successfully but neither commercial
+    // nor customer email arrives. Previous version of this route used
+    // fire-and-forget `.catch(console.error)` for Resend sends, so any
+    // delivery failure was silenced and the route still returned
+    // { success: true }. Now we AWAIT both sends, capture any Resend
+    // error, and surface it to the API response so the issue is
+    // visible in Network / Vercel logs.
+    const emailResults: { commercial: string; customer: string } = {
+      commercial: "skipped",
+      customer: "skipped",
+    };
+
+    if (!process.env.RESEND_API_KEY) {
+      console.error("Captacion: RESEND_API_KEY not configured");
+      emailResults.commercial = "no_api_key";
+      emailResults.customer = "no_api_key";
+    } else {
       const resend = new Resend(process.env.RESEND_API_KEY);
 
       // 1. Commercial team notification
-      resend.emails.send({
-        from: FROM_EMAIL,
-        to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
-        subject: `New Client Acquisition Lead — ${body.business_name || "Unknown"}`,
-        html: `
-          <h2>New Rescue Session Request (Client Acquisition)</h2>
-          <p>A PYMES client has completed the Client Acquisition form and requested a rescue session.</p>
-          <table style="border-collapse:collapse;width:100%;max-width:600px">
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Contact Name</td><td style="padding:8px">${profile?.full_name || "N/A"}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Email</td><td style="padding:8px"><a href="mailto:${profile?.email || user.email}">${profile?.email || user.email}</a></td></tr>
-            ${profile?.phone ? `<tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Phone</td><td style="padding:8px">${profile.phone}</td></tr>` : ""}
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Business Name</td><td style="padding:8px">${body.business_name || "N/A"}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Industry</td><td style="padding:8px">${body.industry || "N/A"}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Goals</td><td style="padding:8px">${Array.isArray(body.business_goals) ? body.business_goals.join(", ") : body.business_goals || "N/A"}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Biggest Challenge</td><td style="padding:8px">${body.biggest_challenge || "N/A"}</td></tr>
-          </table>
-          <p style="margin-top:20px;color:#666;font-size:12px">Please contact this lead within 24 hours to schedule their rescue session.</p>
-        `,
-      }).catch((err) => console.error("Captacion email send failed:", err));
+      try {
+        const result = await resend.emails.send({
+          from: FROM_EMAIL,
+          to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
+          subject: `New Client Acquisition Lead — ${body.business_name || "Unknown"}`,
+          html: `
+            <h2>New Rescue Session Request (Client Acquisition)</h2>
+            <p>A PYMES client has completed the Client Acquisition form and requested a rescue session.</p>
+            <table style="border-collapse:collapse;width:100%;max-width:600px">
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Contact Name</td><td style="padding:8px">${profile?.full_name || "N/A"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Email</td><td style="padding:8px"><a href="mailto:${profile?.email || user.email}">${profile?.email || user.email}</a></td></tr>
+              ${profile?.phone ? `<tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Phone</td><td style="padding:8px">${profile.phone}</td></tr>` : ""}
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Business Name</td><td style="padding:8px">${body.business_name || "N/A"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Industry</td><td style="padding:8px">${body.industry || "N/A"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Goals</td><td style="padding:8px">${Array.isArray(body.business_goals) ? body.business_goals.join(", ") : body.business_goals || "N/A"}</td></tr>
+              <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Biggest Challenge</td><td style="padding:8px">${body.biggest_challenge || "N/A"}</td></tr>
+            </table>
+            <p style="margin-top:20px;color:#666;font-size:12px">Please contact this lead within 24 hours to schedule their rescue session.</p>
+          `,
+        });
+        if (result.error) {
+          console.error("Captacion commercial email Resend error:", result.error);
+          emailResults.commercial = `error: ${result.error.message || result.error.name || "unknown"}`;
+        } else {
+          emailResults.commercial = `sent (id=${result.data?.id || "?"})`;
+          console.log("Captacion commercial email sent:", result.data?.id);
+        }
+      } catch (err) {
+        console.error("Captacion commercial email exception:", err);
+        emailResults.commercial = `exception: ${err instanceof Error ? err.message : "unknown"}`;
+      }
 
       // 2. Customer confirmation email
-      // Steve 5/27 Milestone 4: May 26 docx reported "Si entro por
-      // Business owner en la pagina principal, no llega ningún e-mail"
-      // — this route was only sending to commercial, never to the
-      // customer. Added the matching confirmation email.
       const clientEmail = user.email || profile?.email;
-      if (clientEmail) {
-        resend.emails.send({
-          from: FROM_EMAIL,
-          to: [clientEmail],
-          subject: `Your business consultation request is confirmed — Nexuma`,
-          html: `
+      if (!clientEmail) {
+        emailResults.customer = "no_recipient";
+      } else {
+        try {
+          const result = await resend.emails.send({
+            from: FROM_EMAIL,
+            to: [clientEmail],
+            subject: `Your business consultation request is confirmed — Nexuma`,
+            html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:linear-gradient(135deg,#0B38D9 0%,#0FA37F 100%);padding:28px 24px;border-radius:8px 8px 0 0">
     <h1 style="color:#fff;margin:0;font-size:24px">Welcome, ${profile?.full_name || "there"}!</h1>
@@ -69,18 +97,29 @@ export async function POST(request: Request) {
       <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Industry</td><td style="padding:8px">${body.industry || "N/A"}</td></tr>
     </table>
     <p style="margin-top:24px">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://webmarketing-lyart.vercel.app"}/dashboard" style="display:inline-block;background:#0B38D9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600">Go to my Dashboard</a>
+      <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://nexuma.ca"}/dashboard" style="display:inline-block;background:#0B38D9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600">Go to my Dashboard</a>
     </p>
     <p style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:12px;color:#888;text-align:center">
       Nexuma marketing ltd
     </p>
   </div>
 </div>`,
-        }).catch((err) => console.error("Client confirmation email failed:", err));
+          });
+          if (result.error) {
+            console.error("Captacion customer email Resend error:", result.error);
+            emailResults.customer = `error: ${result.error.message || result.error.name || "unknown"}`;
+          } else {
+            emailResults.customer = `sent (id=${result.data?.id || "?"})`;
+            console.log("Captacion customer email sent:", result.data?.id);
+          }
+        } catch (err) {
+          console.error("Captacion customer email exception:", err);
+          emailResults.customer = `exception: ${err instanceof Error ? err.message : "unknown"}`;
+        }
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, emails: emailResults });
   } catch (err) {
     console.error("Captacion email error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
