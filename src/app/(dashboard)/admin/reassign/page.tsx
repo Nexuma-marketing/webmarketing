@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Card,
   CardContent,
@@ -68,12 +67,15 @@ export default function AdminReassignPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const supabase = createClient();
-
   // Steve 6/5 (6-2.md #25): cookie-context client returned 0 profiles
   // here even though /admin/users displayed them — RLS quirk on the
   // recursive admin SELECT. Service-role API surfaces the same data
   // reliably for the admin reassign flow.
+  //
+  // Steve 6/9 (6-2.md #37): extended same service-role API to cover
+  // the recommendations CRUD too — previously add/swap/remove all
+  // wrote via cookie-context and silently failed under RLS, hence
+  // Alex's "no hace nada" complaint.
   const loadInitial = useCallback(async () => {
     const res = await fetch("/api/admin/reassign", { cache: "no-store" });
     if (!res.ok) {
@@ -91,12 +93,15 @@ export default function AdminReassignPage() {
   }, [loadInitial]);
 
   async function loadUserRecommendations(userId: string) {
-    const { data } = await supabase
-      .from("service_recommendations")
-      .select("id, user_id, service_id, reason, is_purchased, created_at, services:service_id(id, name, category, price, currency)")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-    setRecommendations((data as unknown as RecommendationRow[]) || []);
+    const res = await fetch(`/api/admin/reassign?userId=${encodeURIComponent(userId)}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      setRecommendations([]);
+      return;
+    }
+    const json = (await res.json()) as { recommendations: RecommendationRow[] };
+    setRecommendations(json.recommendations || []);
   }
 
   async function selectUser(user: UserRow) {
@@ -111,14 +116,19 @@ export default function AdminReassignPage() {
     if (!selectedUser || !newServiceId) return;
     setSaving(true);
     setMessage(null);
-    const { error } = await supabase.from("service_recommendations").insert({
-      user_id: selectedUser.id,
-      service_id: newServiceId,
-      reason: newReason || "Manually assigned by admin",
+    const res = await fetch("/api/admin/reassign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: selectedUser.id,
+        service_id: newServiceId,
+        reason: newReason || null,
+      }),
     });
     setSaving(false);
-    if (error) {
-      setMessage(`Error: ${error.message}`);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(`Error: ${body.error || res.status}`);
       return;
     }
     setMessage("Recommendation added.");
@@ -134,16 +144,29 @@ export default function AdminReassignPage() {
         return;
       }
     }
-    await supabase.from("service_recommendations").delete().eq("id", id);
+    const res = await fetch(`/api/admin/reassign?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(`Remove failed: ${body.error || res.status}`);
+      return;
+    }
     if (selectedUser) loadUserRecommendations(selectedUser.id);
   }
 
   async function replaceRecommendation(recId: string, newServiceId: string) {
     if (!newServiceId) return;
-    await supabase
-      .from("service_recommendations")
-      .update({ service_id: newServiceId, reason: "Reassigned by admin" })
-      .eq("id", recId);
+    const res = await fetch("/api/admin/reassign", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: recId, service_id: newServiceId }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(`Swap failed: ${body.error || res.status}`);
+      return;
+    }
     if (selectedUser) loadUserRecommendations(selectedUser.id);
   }
 
