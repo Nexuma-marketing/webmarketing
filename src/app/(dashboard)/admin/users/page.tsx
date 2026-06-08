@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,17 +121,22 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const supabase = createClient();
-
+  // Steve 6/8 (6-2.md #31): switched from cookie-context Supabase
+  // client (RLS returned only the admin's own row) to the new
+  // service-role API at /api/admin/users for both list + save.
   const loadUsers = useCallback(async () => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, phone, role, property_count, is_premium_tenant, created_at")
-      .order("created_at", { ascending: false });
-
-    setUsers(data || []);
-    setLoading(false);
-  }, [supabase]);
+    try {
+      const res = await fetch("/api/admin/users", { cache: "no-store" });
+      if (!res.ok) {
+        setUsers([]);
+        return;
+      }
+      const json = (await res.json()) as { users: UserRow[] };
+      setUsers(json.users || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadUsers();
@@ -151,21 +155,21 @@ export default function AdminUsersPage() {
     setSaving(true);
     setSaveError(null);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: selectedUser.id,
         full_name: editFullName.trim() || null,
         phone: editPhone.trim() || null,
         role: editRole,
-        // Steve 4/28: lock the role so the auto-profiling job won't
-        // override the admin's manual choice on the next form submission.
-        role_locked: true,
-      })
-      .eq("id", selectedUser.id);
+      }),
+    });
 
     setSaving(false);
-    if (error) {
-      setSaveError(`Save failed: ${error.message}`);
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      setSaveError(`Save failed: ${err.error || res.status}`);
       return;
     }
 
