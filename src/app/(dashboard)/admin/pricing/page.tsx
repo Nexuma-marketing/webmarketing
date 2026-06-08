@@ -226,6 +226,26 @@ export default function AdminPricingPage() {
         </p>
       </div>
 
+      {/* Steve 6/8 (6-2.md #35): Alex reported confusion — she edited a
+          plan price here but the "$200 system fee" text on the public
+          card didn't change. Those bullets + the tagline ("35% of first
+          month's rent") live in /admin/plans, NOT here. Adding this
+          banner so admins know where to go for each field. */}
+      <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 text-sm">
+        <p className="font-semibold text-blue-900 mb-2">Where to edit what:</p>
+        <ul className="list-disc ml-5 space-y-1 text-blue-900">
+          <li>
+            <strong>Here (Pricing)</strong>: the dollar amount on the &ldquo;Pay $X CAD upfront&rdquo; button (the total price field per service).
+          </li>
+          <li>
+            <strong><a href="/admin/plans" className="underline font-semibold">Plan Checklists →</a></strong>: the feature bullets (e.g. &ldquo;$200 system fee upfront&rdquo;, &ldquo;Pay the balance only after tenant signs the lease&rdquo;) and the tagline (e.g. &ldquo;35% of first month&apos;s rent&rdquo;).
+          </li>
+          <li>
+            The two are intentionally separate — the system fee is a fixed platform fee, the plan price varies per tier.
+          </li>
+        </ul>
+      </div>
+
       {/* Founders Plan Counter */}
       <Card>
         <CardHeader>
