@@ -89,15 +89,18 @@ export default function AdminPricingPage() {
   const supabase = createClient();
 
   const load = useCallback(async () => {
-    const [{ data: svcData }, { data: promoData }, { data: cfgData }] = await Promise.all([
+    // Steve 6/8 (6-2.md #36): promo list/save now go through the
+    // service-role API. Cookie-context reads on promotions worked
+    // for the admin row but cookie-context writes silently failed —
+    // Alex's date edit on POR_CREER never persisted.
+    const [{ data: svcData }, promoRes, { data: cfgData }] = await Promise.all([
       supabase
         .from("services")
         .select("id, name, description, category, price, currency, is_active")
         .order("name"),
-      supabase
-        .from("promotions")
-        .select("*")
-        .order("created_at", { ascending: false }),
+      fetch("/api/admin/promotions", { cache: "no-store" }).then(async (r) =>
+        r.ok ? ((await r.json()) as { promotions: Promotion[] }) : { promotions: [] as Promotion[] },
+      ),
       supabase
         .from("app_config")
         .select("key, value")
@@ -105,7 +108,7 @@ export default function AdminPricingPage() {
     ]);
 
     setServices(svcData || []);
-    setPromotions((promoData as Promotion[]) || []);
+    setPromotions(promoRes.promotions || []);
     const cfg = Object.fromEntries(
       ((cfgData || []) as { key: string; value: string }[]).map((r) => [r.key, r.value]),
     );
@@ -195,17 +198,28 @@ export default function AdminPricingPage() {
       target_roles: editPromo.target_roles || [],
     };
 
-    if (isNewPromo) {
-      await supabase.from("promotions").insert(payload);
-    } else {
-      await supabase
-        .from("promotions")
-        .update(payload)
-        .eq("id", editPromo.id!);
+    // Steve 6/8 (6-2.md #36): service-role API instead of
+    // cookie-context writes — see load() for context.
+    const res = isNewPromo
+      ? await fetch("/api/admin/promotions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      : await fetch("/api/admin/promotions", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editPromo.id, ...payload }),
+        });
+
+    setSaving(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(`Save failed: ${body.error || res.status}`);
+      return;
     }
 
     setEditPromo(null);
-    setSaving(false);
     load();
   }
 
@@ -490,7 +504,14 @@ export default function AdminPricingPage() {
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={async () => {
                           if (!confirm(`Delete promotion "${promo.code}" permanently? This cannot be undone.`)) return;
-                          await supabase.from("promotions").delete().eq("id", promo.id);
+                          const res = await fetch(`/api/admin/promotions?id=${encodeURIComponent(promo.id)}`, {
+                            method: "DELETE",
+                          });
+                          if (!res.ok) {
+                            const body = (await res.json().catch(() => ({}))) as { error?: string };
+                            alert(`Delete failed: ${body.error || res.status}`);
+                            return;
+                          }
                           load();
                         }}
                       >
