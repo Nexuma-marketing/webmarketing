@@ -37,9 +37,24 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [leadsRes, adminsRes] = await Promise.all([
+  // Steve 6/8 (6-2.md #33): Alex reported screenshot 5 — the
+  // "Assign to" dropdown in the Manage Lead dialog only showed her
+  // own admin row. Annotation: "no trae a los miembros del team.
+  // Commercial Marketing?" Marketing + Sales team members were
+  // invisible because this query filtered profiles by role=admin
+  // only. Widened to all internal roles (admin / marketing / sales
+  // / support) so any internal team member can be assigned to a
+  // lead. The field is still labelled "admins" on the wire for
+  // backwards-compat with the existing client; the page renders
+  // them as generic assignable internal users.
+  const [leadsRes, assigneeRes] = await Promise.all([
     supabaseAdmin.from("leads").select("*").order("created_at", { ascending: false }),
-    supabaseAdmin.from("profiles").select("id, full_name, email").eq("role", "admin").order("full_name"),
+    supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .in("role", INTERNAL_ROLES)
+      .order("role")
+      .order("full_name"),
   ]);
 
   if (leadsRes.error) {
@@ -51,7 +66,7 @@ export async function GET() {
 
   return NextResponse.json({
     leads: leadsRes.data ?? [],
-    admins: adminsRes.data ?? [],
+    admins: assigneeRes.data ?? [],
   });
 }
 

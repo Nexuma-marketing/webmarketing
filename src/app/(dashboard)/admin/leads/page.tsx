@@ -43,6 +43,10 @@ interface AdminUser {
   id: string;
   full_name: string | null;
   email: string;
+  // Steve 6/8 (6-2.md #33): role is now included so the assign
+  // dropdown can show the team member's role next to their name.
+  // Backend widened from admin-only to all internal roles.
+  role?: string;
 }
 
 export default function AdminLeadsPage() {
@@ -124,7 +128,15 @@ export default function AdminLeadsPage() {
   }
 
   function adminLabel(a: AdminUser) {
-    return a.full_name?.trim() || a.email;
+    const name = a.full_name?.trim() || a.email;
+    // Steve 6/8 (6-2.md #33): show role next to the name in the
+    // assign dropdown — Alex needs to know which marketing/sales
+    // member she's picking. Admin entries don't get a tag to keep
+    // the legacy display unchanged.
+    if (a.role && a.role !== "admin") {
+      return `${name} — ${a.role}`;
+    }
+    return name;
   }
 
   const columns: ColumnDef<LeadRow>[] = [
