@@ -54,10 +54,16 @@ export async function GET() {
   }
 
   // 2. Pull each tenant's latest preferences in one IN() query
+  // Steve 6/9 (6-2.md #40): widened the SELECT list to every column
+  // the customer ever fills in the inquilino form, so the expanded
+  // row on /admin/matches can show sales / marketing "todo lo que
+  // llenó el inquilino" rather than just budget + bedrooms.
   const tenantIds = tenants.map((t) => t.id as string);
   const { data: prefsRows } = await supabaseAdmin
     .from("tenant_preferences")
-    .select("user_id, max_budget, min_budget, bedrooms_needed, preferred_amenities, is_premium, created_at, target_zones")
+    .select(
+      "user_id, preferred_city, preferred_zone, min_budget, max_budget, bedrooms_needed, move_in_date, move_in_flexible, pet_friendly, parking_needed, additional_requirements, number_of_people, property_type_desired, furnished, utilities_included, levels_preferred, size_sqft, size_unit, common_areas, skytrain_lines, near_bus, near_social, near_banks, near_downtown, institution_type, institution_name, is_premium, target_zones, preferred_amenities, created_at"
+    )
     .in("user_id", tenantIds)
     .order("created_at", { ascending: false });
   const prefsByTenant: Record<string, typeof prefsRows extends (infer U)[] | null ? U : never> = {};
@@ -108,6 +114,40 @@ export async function GET() {
       created_at: t.created_at,
       has_preferences: !!prefs,
       is_premium: prefs?.is_premium ?? false,
+      // Steve 6/9 (6-2.md #40): full preferences payload so the UI
+      // can render "todo lo que llenó el inquilino en el formulario"
+      // — Alex's specific complaint that sales needs this to negotiate.
+      preferences: prefs
+        ? {
+            preferred_city: prefs.preferred_city,
+            preferred_zone: prefs.preferred_zone,
+            target_zones: prefs.target_zones,
+            min_budget: prefs.min_budget,
+            max_budget: prefs.max_budget,
+            bedrooms_needed: prefs.bedrooms_needed,
+            move_in_date: prefs.move_in_date,
+            move_in_flexible: prefs.move_in_flexible,
+            pet_friendly: prefs.pet_friendly,
+            parking_needed: prefs.parking_needed,
+            furnished: prefs.furnished,
+            utilities_included: prefs.utilities_included,
+            number_of_people: prefs.number_of_people,
+            property_type_desired: prefs.property_type_desired,
+            levels_preferred: prefs.levels_preferred,
+            size_sqft: prefs.size_sqft,
+            size_unit: prefs.size_unit,
+            common_areas: prefs.common_areas,
+            preferred_amenities: prefs.preferred_amenities,
+            skytrain_lines: prefs.skytrain_lines,
+            near_bus: prefs.near_bus,
+            near_social: prefs.near_social,
+            near_banks: prefs.near_banks,
+            near_downtown: prefs.near_downtown,
+            institution_type: prefs.institution_type,
+            institution_name: prefs.institution_name,
+            additional_requirements: prefs.additional_requirements,
+          }
+        : null,
       max_budget: prefs?.max_budget ?? null,
       bedrooms_needed: prefs?.bedrooms_needed ?? null,
       matches,

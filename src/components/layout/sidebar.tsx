@@ -30,6 +30,7 @@ import {
   Image as ImageIcon2,
   ArrowRightLeft,
   BarChart3,
+  Briefcase,
 } from "lucide-react";
 
 interface NavItem {
@@ -177,6 +178,15 @@ const NAV_ITEMS: NavItem[] = [
     label: "Tenant Matches",
     href: "/admin/matches",
     icon: Link2,
+    roles: ["admin", "marketing", "sales", "support"],
+  },
+  // Steve 6/9 (6-2.md #40): Sales also needs the equivalent view
+  // for PYMES users — "Donde ve la informacion de empresas?" per
+  // her 2026-06-07 docx Item 5 sub-issue 4+5.
+  {
+    label: "Business Profiles",
+    href: "/admin/businesses",
+    icon: Briefcase,
     roles: ["admin", "marketing", "sales", "support"],
   },
   {
