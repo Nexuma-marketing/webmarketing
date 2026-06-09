@@ -78,6 +78,11 @@ export default function AdminPropertiesPage() {
   // Steve 6/9 (6-2.md #42): multi-field search state (was previously
   // address-only inside DataTable). See filteredProperties below.
   const [propertySearch, setPropertySearch] = useState("");
+  // Steve 6/9 (6-2.md #44): plan details (tagline + features) fetched
+  // when the modal opens — sales asked for the full plan breakdown
+  // alongside the tier badge.
+  const [planDetails, setPlanDetails] = useState<{ tagline: string; features: string[] } | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
 
   const supabase = createClient();
 
@@ -112,18 +117,32 @@ export default function AdminPropertiesPage() {
 
   // Steve 6/9 (6-2.md #41): open the detail modal — lazily fetch the
   // photos for that property from the per-property endpoint.
+  // Steve 6/9 (6-2.md #44): also fetches the plan_features (tagline +
+  // checklist) for the property's tier so sales can read "what's in
+  // this Basic plan" inline.
   async function openDetails(p: PropertyRow) {
     setSelectedProperty(p);
     setPhotos([]);
     setPhotosLoading(true);
+    setPlanDetails(null);
+    if (p.service_tier) setPlanLoading(true);
     try {
-      const res = await fetch(`/api/admin/properties/${p.id}/photos`, { cache: "no-store" });
-      if (res.ok) {
-        const json = (await res.json()) as { photos: PhotoRow[] };
+      const photosPromise = fetch(`/api/admin/properties/${p.id}/photos`, { cache: "no-store" });
+      const planPromise = p.service_tier
+        ? fetch(`/api/admin/plan-details/${encodeURIComponent(p.service_tier)}`, { cache: "no-store" })
+        : Promise.resolve<Response | null>(null);
+      const [photosRes, planRes] = await Promise.all([photosPromise, planPromise]);
+      if (photosRes.ok) {
+        const json = (await photosRes.json()) as { photos: PhotoRow[] };
         setPhotos(json.photos || []);
+      }
+      if (planRes && planRes.ok) {
+        const plan = (await planRes.json()) as { tagline: string; features: string[] };
+        setPlanDetails({ tagline: plan.tagline || "", features: plan.features || [] });
       }
     } finally {
       setPhotosLoading(false);
+      setPlanLoading(false);
     }
   }
 
@@ -418,6 +437,41 @@ export default function AdminPropertiesPage() {
               {selectedProperty.description && (
                 <DetailSection title="Description">
                   <p className="text-sm whitespace-pre-wrap">{selectedProperty.description}</p>
+                </DetailSection>
+              )}
+
+              {/* Steve 6/9 (6-2.md #44): plan/tier breakdown so sales
+                  knows what's included with the property's assigned
+                  service tier. */}
+              {selectedProperty.service_tier && (
+                <DetailSection
+                  title={`Plan: ${SERVICE_TIERS[selectedProperty.service_tier] || selectedProperty.service_tier}`}
+                >
+                  {planLoading ? (
+                    <p className="text-xs text-muted-foreground">Loading plan details...</p>
+                  ) : planDetails ? (
+                    <>
+                      {planDetails.tagline && (
+                        <p className="text-sm italic mb-2">{planDetails.tagline}</p>
+                      )}
+                      {planDetails.features.length > 0 ? (
+                        <ul className="space-y-1 text-xs">
+                          {planDetails.features.map((f, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="text-muted-foreground">•</span>
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">
+                          No checklist configured for this tier yet — admin can edit it from /admin/plans.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No plan details available.</p>
+                  )}
                 </DetailSection>
               )}
 
