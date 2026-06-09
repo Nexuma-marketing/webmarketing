@@ -12,6 +12,12 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 const INTERNAL_ROLES = ["admin", "marketing", "sales", "support"];
+// Steve 6/10 (6-2.md #45): toggle availability is a sales-flow
+// action — the commercial team knows which properties have signed
+// contracts (so they should be unavailable) and which are back on
+// the market. Admin + marketing + sales can flip the switch;
+// support stays read-only.
+const PROPERTY_WRITE_ROLES = ["admin", "marketing", "sales"];
 
 export async function GET() {
   const supabase = await createClient();
@@ -139,4 +145,50 @@ export async function GET() {
   });
 
   return NextResponse.json({ properties });
+}
+
+// Steve 6/10 (6-2.md #45): the Available toggle on /admin/properties
+// used to call supabase.from("properties").update() from the cookie-
+// context client. RLS allowed admin but silently dropped the write
+// for sales / marketing, so the switch visually flipped, the page
+// refetched, and the value snapped back — Alex's "no sirve, no
+// deja cambiar al comercial" complaint. PATCH endpoint with a
+// proper role gate fixes it.
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  const { data: callerProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (!callerProfile?.role || !PROPERTY_WRITE_ROLES.includes(callerProfile.role)) {
+    return NextResponse.json(
+      { error: "Forbidden — your role can only read properties" },
+      { status: 403 },
+    );
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const { id, is_available } = body as { id?: string; is_available?: boolean };
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  if (typeof is_available !== "boolean") {
+    return NextResponse.json(
+      { error: "is_available (boolean) required" },
+      { status: 400 },
+    );
+  }
+  const { error } = await supabaseAdmin
+    .from("properties")
+    .update({ is_available })
+    .eq("id", id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ success: true });
 }

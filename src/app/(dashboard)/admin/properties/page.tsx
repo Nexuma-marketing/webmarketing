@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,8 +83,6 @@ export default function AdminPropertiesPage() {
   const [planDetails, setPlanDetails] = useState<{ tagline: string; features: string[] } | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
 
-  const supabase = createClient();
-
   // Steve 6/5 (6-2.md #23): client-side embedded join
   // `profiles:owner_id(full_name)` returned null for every row → "Unknown"
   // in the Owner column. Same RLS/embed quirk that broke the original
@@ -107,12 +104,29 @@ export default function AdminPropertiesPage() {
     loadProperties();
   }, [loadProperties]);
 
+  // Steve 6/10 (6-2.md #45): route the toggle through the
+  // service-role PATCH endpoint so sales can flip availability
+  // when a property goes off the market (contract signed) or
+  // comes back on. Optimistic update + revert on error so the
+  // switch doesn't lag.
   async function toggleAvailability(id: string, current: boolean) {
-    await supabase
-      .from("properties")
-      .update({ is_available: !current })
-      .eq("id", id);
-    loadProperties();
+    const next = !current;
+    setProperties((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, is_available: next } : p)),
+    );
+    const res = await fetch("/api/admin/properties", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, is_available: next }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(`Availability change failed: ${body.error || res.status}`);
+      // revert the optimistic update
+      setProperties((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, is_available: current } : p)),
+      );
+    }
   }
 
   // Steve 6/9 (6-2.md #41): open the detail modal — lazily fetch the
