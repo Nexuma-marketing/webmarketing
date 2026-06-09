@@ -150,6 +150,36 @@ export default function AdminLeadsPage() {
     {
       accessorKey: "email",
       header: "Email",
+      // Steve 6/9 (6-2.md #43): mailto link so sales can click to
+      // open their mail client straight from the table.
+      cell: ({ row }) => {
+        const email = row.getValue("email") as string;
+        return email ? (
+          <a href={`mailto:${email}`} className="text-blue-600 hover:underline">
+            {email}
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
+    },
+    // Steve 6/9 (6-2.md #43): Alex docx Item 5 sub-issue 8 — sales
+    // needs the phone number visible in the table to call the lead
+    // without having to open the dialog. Phone is already in the
+    // leads.phone column we fetch, just wasn't surfaced.
+    {
+      accessorKey: "phone",
+      header: "Phone",
+      cell: ({ row }) => {
+        const phone = row.getValue("phone") as string | null;
+        return phone ? (
+          <a href={`tel:${phone}`} className="text-blue-600 hover:underline">
+            {phone}
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
     },
     {
       accessorKey: "role",
@@ -287,10 +317,52 @@ export default function AdminLeadsPage() {
           <DialogHeader>
             <DialogTitle>Manage Lead</DialogTitle>
             <DialogDescription>
-              {selectedLead?.full_name} — {selectedLead?.email}
+              {selectedLead?.full_name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
+            {/* Steve 6/9 (6-2.md #43): contact card at the top so
+                sales can copy/click everything they need to make the
+                call right from the lead dialog. Email and phone are
+                clickable (mailto / tel). Role and source give context
+                on which form the lead came from. */}
+            {selectedLead && (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1 text-sm">
+                <p className="font-semibold">Contact info</p>
+                <div className="grid gap-x-3 gap-y-1 sm:grid-cols-2 text-xs">
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground min-w-[60px]">Email:</span>
+                    {selectedLead.email ? (
+                      <a href={`mailto:${selectedLead.email}`} className="text-blue-600 hover:underline truncate">
+                        {selectedLead.email}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground min-w-[60px]">Phone:</span>
+                    {selectedLead.phone ? (
+                      <a href={`tel:${selectedLead.phone}`} className="text-blue-600 hover:underline">
+                        {selectedLead.phone}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground min-w-[60px]">Role:</span>
+                    <span className="font-medium">
+                      {selectedLead.role ? ROLE_LABELS[selectedLead.role] || selectedLead.role : "—"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground min-w-[60px]">Source:</span>
+                    <span className="font-medium">{selectedLead.source || "—"}</span>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Status</label>
               <Select value={newStatus} onValueChange={(v) => v && setNewStatus(v)}>
