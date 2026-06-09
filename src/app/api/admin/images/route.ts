@@ -13,6 +13,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 const INTERNAL_ROLES = ["admin", "marketing", "sales", "support"];
+// Steve 6/9 (6-2.md #39): admin / marketing / sales can approve or
+// reject photos. Support is read-only (per the permission matrix
+// on /admin/team).
+const IMAGE_WRITE_ROLES = ["admin", "marketing", "sales"];
 
 export async function GET() {
   const supabase = await createClient();
@@ -130,4 +134,49 @@ export async function GET() {
   });
 
   return NextResponse.json({ images });
+}
+
+// Steve 6/9 (6-2.md #39): Approve / Reject buttons on /admin/images
+// were calling supabase.from("property_images").update({status})
+// directly from the cookie-context client. RLS allowed admin but
+// silently dropped writes from sales / marketing — so Alex's
+// "Aprobar o no fotos" complaint was that the buttons looked clickable
+// but did nothing visible. Service-role PATCH fixes it cleanly.
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  const { data: callerProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (!callerProfile?.role || !IMAGE_WRITE_ROLES.includes(callerProfile.role)) {
+    return NextResponse.json(
+      { error: "Forbidden — your role can only read images" },
+      { status: 403 },
+    );
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const { id, status } = body as { id?: string; status?: string };
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  if (!status || !["pending", "approved", "rejected"].includes(status)) {
+    return NextResponse.json(
+      { error: "status must be pending / approved / rejected" },
+      { status: 400 },
+    );
+  }
+  const { error } = await supabaseAdmin
+    .from("property_images")
+    .update({ status })
+    .eq("id", id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ success: true });
 }

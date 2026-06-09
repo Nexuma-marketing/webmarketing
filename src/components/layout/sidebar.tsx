@@ -200,8 +200,12 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Image Library",
     href: "/admin/images",
+    // Steve 6/9 (6-2.md #39): Alex docx Item 5 sub-issue 3 — sales
+    // role needs to see and approve/reject property photos. Added
+    // sales here so they can navigate to the Image Library; the
+    // /api/admin/images PATCH endpoint enforces who can write.
     icon: ImageIcon2,
-    roles: ["admin", "marketing"],
+    roles: ["admin", "marketing", "sales"],
   },
   {
     label: "Internal Team",

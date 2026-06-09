@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Card,
   CardContent,
@@ -54,8 +53,6 @@ export default function AdminImagesPage() {
   const [roomFilter, setRoomFilter] = useState<string>("all");
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const supabase = createClient();
-
   // Steve 6/5 (6-2.md #26): the original two-query pattern using the
   // cookie-context client (PostgREST embed for property + second
   // profile fetch) silently dropped property/owner data so the
@@ -76,11 +73,24 @@ export default function AdminImagesPage() {
     load();
   }, [load]);
 
+  // Steve 6/9 (6-2.md #39): route status changes through the
+  // service-role PATCH endpoint so sales / marketing can actually
+  // approve or reject. Old cookie-context update silently no-op'd
+  // for non-admin roles.
   async function changeStatus(id: string, status: string) {
     setSavingId(id);
-    await supabase.from("property_images").update({ status }).eq("id", id);
-    setImages((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
+    const res = await fetch("/api/admin/images", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    });
     setSavingId(null);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(`Status change failed: ${body.error || res.status}`);
+      return;
+    }
+    setImages((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
   }
 
   // Steve 5/6: dedup the room filter dropdown by canonicalising every
