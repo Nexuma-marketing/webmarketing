@@ -169,6 +169,16 @@ const NAV_ITEMS: NavItem[] = [
     icon: Link2,
     roles: ["admin", "marketing"],
   },
+  // Steve 6/9 (6-2.md #38): live tenant-property matches view —
+  // separate from the "Matching" rules editor above. Sales role
+  // needs this to see which tenants got matched with which
+  // properties, per Alex's 2026-06-07 docx Item 5 screenshot 2.
+  {
+    label: "Tenant Matches",
+    href: "/admin/matches",
+    icon: Link2,
+    roles: ["admin", "marketing", "sales", "support"],
+  },
   {
     label: "Pricing",
     href: "/admin/pricing",
