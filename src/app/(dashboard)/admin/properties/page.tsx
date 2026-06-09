@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ExternalLink, Eye, ImageIcon } from "lucide-react";
+import { ExternalLink, Eye, ImageIcon, Search as SearchIcon } from "lucide-react";
 import { SERVICE_TIERS, ELITE_TIERS } from "@/lib/constants";
 import type { ColumnDef } from "@tanstack/react-table";
 
@@ -75,6 +75,9 @@ export default function AdminPropertiesPage() {
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photoSavingId, setPhotoSavingId] = useState<string | null>(null);
+  // Steve 6/9 (6-2.md #42): multi-field search state (was previously
+  // address-only inside DataTable). See filteredProperties below.
+  const [propertySearch, setPropertySearch] = useState("");
 
   const supabase = createClient();
 
@@ -274,6 +277,29 @@ export default function AdminPropertiesPage() {
     label,
   }));
 
+  // Steve 6/9 (6-2.md #42): Alex docx Item 5 sub-issue 7 — sales
+  // needs to search the property list by owner name / address /
+  // city / property type, not just address. Filter the array
+  // ourselves before passing to DataTable so we can match across
+  // several columns at once. The empty-search early return keeps
+  // the case-folding off the hot path when nothing is typed.
+  const filteredProperties = propertySearch
+    ? properties.filter((p) => {
+        const q = propertySearch.toLowerCase();
+        return (
+          p.address.toLowerCase().includes(q) ||
+          p.city.toLowerCase().includes(q) ||
+          p.province.toLowerCase().includes(q) ||
+          p.postal_code.toLowerCase().includes(q) ||
+          (p.property_type || "").toLowerCase().includes(q) ||
+          p.owner_name.toLowerCase().includes(q) ||
+          p.owner_email.toLowerCase().includes(q) ||
+          (p.owner_phone || "").toLowerCase().includes(q) ||
+          (p.title || "").toLowerCase().includes(q)
+        );
+      })
+    : properties;
+
   return (
     <div className="space-y-6">
       <div>
@@ -283,12 +309,24 @@ export default function AdminPropertiesPage() {
         </p>
       </div>
 
+      {/* Steve 6/9 (6-2.md #42): widened search bar — single input
+          covers owner / address / city / type / postal code instead
+          of address-only. Live filter on every keystroke. */}
+      <div className="relative max-w-md">
+        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={propertySearch}
+          onChange={(e) => setPropertySearch(e.target.value)}
+          placeholder="Search by owner, address, city, type, postal code..."
+          className="w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+
       <DataTable
         columns={columns}
-        data={properties}
+        data={filteredProperties}
         loading={loading}
-        searchKey="address"
-        searchPlaceholder="Search by address..."
         filters={[
           {
             key: "service_tier",
