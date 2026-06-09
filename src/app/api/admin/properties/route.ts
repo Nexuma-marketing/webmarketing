@@ -28,10 +28,14 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Steve 6/9 (6-2.md #41): widened SELECT to every customer-facing
+  // column so the new property-detail modal on /admin/properties can
+  // show "toda la informacion" Alex asked for in 2026-06-07 docx
+  // Item 5 sub-issue 6.
   const { data: propertyRows, error: propErr } = await supabaseAdmin
     .from("properties")
     .select(
-      "id, owner_id, address, city, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, created_at",
+      "id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, vacancy_date, availability_date, cfp_monthly, payback_months, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -71,12 +75,41 @@ export async function GET() {
     );
   }
 
+  // Steve 6/9 (6-2.md #41): pull photo counts per property in one
+  // bulk query so the table can show "N photos" badges without an
+  // N+1 query per row.
+  const propertyIds = rows.map((r) => r.id as string);
+  let photoCountByProp: Record<string, { total: number; pending: number; approved: number; rejected: number }> = {};
+  if (propertyIds.length > 0) {
+    const { data: photoRows } = await supabaseAdmin
+      .from("property_images")
+      .select("property_id, status")
+      .in("property_id", propertyIds);
+    photoCountByProp = (photoRows ?? []).reduce<typeof photoCountByProp>((acc, r) => {
+      const pid = r.property_id as string;
+      const status = (r.status as string) || "pending";
+      if (!acc[pid]) acc[pid] = { total: 0, pending: 0, approved: 0, rejected: 0 };
+      acc[pid].total++;
+      if (status === "pending") acc[pid].pending++;
+      else if (status === "approved") acc[pid].approved++;
+      else if (status === "rejected") acc[pid].rejected++;
+      return acc;
+    }, {});
+  }
+
   const properties = rows.map((p) => {
     const owner = p.owner_id ? ownerMap[p.owner_id as string] : undefined;
+    const photos = photoCountByProp[p.id as string] ?? { total: 0, pending: 0, approved: 0, rejected: 0 };
     return {
       id: p.id as string,
+      title: (p.title as string) || "",
+      description: (p.description as string) || "",
       address: (p.address as string) || "",
       city: (p.city as string) || "",
+      province: (p.province as string) || "",
+      postal_code: (p.postal_code as string) || "",
+      country: (p.country as string) || "",
+      property_type: (p.property_type as string) || "",
       monthly_rent: (p.monthly_rent as number | null) ?? null,
       is_available: (p.is_available as boolean) ?? false,
       service_tier: (p.service_tier as string | null) ?? null,
@@ -84,10 +117,24 @@ export async function GET() {
       bedrooms: (p.bedrooms as number | null) ?? null,
       bathrooms: (p.bathrooms as number | null) ?? null,
       area_sqft: (p.area_sqft as number | null) ?? null,
+      amenities: (p.amenities as string[] | null) ?? [],
+      common_areas: (p.common_areas as string[] | null) ?? [],
+      pet_friendly: (p.pet_friendly as boolean | null) ?? null,
+      smart_home: (p.smart_home as boolean | null) ?? null,
+      dishwasher: (p.dishwasher as boolean | null) ?? null,
+      occupancy_status: (p.occupancy_status as string | null) ?? null,
+      vacancy_date: (p.vacancy_date as string | null) ?? null,
+      availability_date: (p.availability_date as string | null) ?? null,
+      cfp_monthly: (p.cfp_monthly as number | null) ?? null,
+      payback_months: (p.payback_months as number | null) ?? null,
       created_at: p.created_at as string,
       owner_name: owner?.full_name || "Unknown",
       owner_email: owner?.email || "",
       owner_phone: owner?.phone || "",
+      photo_count: photos.total,
+      photo_pending: photos.pending,
+      photo_approved: photos.approved,
+      photo_rejected: photos.rejected,
     };
   });
 
