@@ -304,7 +304,11 @@ export default function AdminPropertiesPage() {
           docx Item 5 sub-issue 6 — "ver todas las propiedades
           registradas para buscar una nueva propuesta". */}
       <Dialog open={!!selectedProperty} onOpenChange={() => setSelectedProperty(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        {/* Steve 6/9: the base DialogContent caps at sm:max-w-sm; we
+            need a much wider modal here for the spec sheet + photos
+            grid. Use the same responsive prefix so tailwind-merge
+            recognises the conflict and wins. */}
+        <DialogContent className="sm:max-w-4xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {selectedProperty?.title || selectedProperty?.address || "Property Details"}
