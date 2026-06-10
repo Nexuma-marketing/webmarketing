@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { CreditCard, Download, Receipt, Calendar } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/admin";
 import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscription-button";
+import { RefundRequestButton } from "@/components/dashboard/refund-request-button";
 
 const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
   completed: { variant: "default", label: "Completed" },
@@ -216,6 +217,7 @@ export default async function PaymentsPage() {
                     <TableHead>Type</TableHead>
                     <TableHead>Installment</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,6 +248,20 @@ export default async function PaymentsPage() {
                         <TableCell>
                           <Badge variant={badge.variant}>{badge.label}</Badge>
                         </TableCell>
+                        <TableCell className="text-right">
+                          {/* Steve 6/10 (6-2.md #52): only show Request
+                              Refund on completed payments — refunded /
+                              failed / pending rows don't qualify. */}
+                          {payment.status === "completed" && (
+                            <RefundRequestButton
+                              paymentId={payment.id}
+                              serviceName={serviceName}
+                              amount={Number(payment.amount)}
+                              currency={payment.currency || "CAD"}
+                              paymentDate={formatDate(payment.created_at)}
+                            />
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -256,26 +272,27 @@ export default async function PaymentsPage() {
         </CardContent>
       </Card>
 
-      {/* Steve 5/27 Milestone 4 (#7d): client asked "Donde el cliente
-          pide una devolución de dinero? como es el proceso". Per the
-          Final Sale policy (MILESTONE4_FINAL_DECISIONS.md §3), refunds
-          are not standard — but exceptional cases (technical errors,
-          fraud) are handled by the admin. This note tells the customer
-          where to go instead of adding a self-serve button that would
-          conflict with the no-refund policy. */}
+      {/* Steve 6/10 (6-2.md #52): converted the static "email us"
+          block into a pointer at the new in-row Request refund button.
+          The button opens a modal, collects a reason, and emails the
+          commercial team with the full payment context. The team
+          processes the actual Stripe refund through /admin/payments. */}
       <div className="rounded-md border border-muted p-4 text-sm text-muted-foreground space-y-1">
         <p className="font-medium text-foreground">Need help with a payment?</p>
         <p>
-          If you believe a charge was made in error or need assistance,
-          contact our team at{" "}
+          Use the <b>Request refund</b> button on any completed payment above to send
+          a request to our team. We&apos;ll review it within 2 business days and
+          contact you at the email on your account.
+        </p>
+        <p>
+          For anything else, write to{" "}
           <a
             href={`mailto:${process.env.NEXT_PUBLIC_CONTACT_EMAIL || "partners@nexuma.ca"}`}
             className="text-primary underline"
           >
             {process.env.NEXT_PUBLIC_CONTACT_EMAIL || "partners@nexuma.ca"}
           </a>
-          . Please include your payment date and amount. Our team will
-          review your case within 2 business days.
+          .
         </p>
         <p className="text-xs">
           Per our policy, all sales are final once the service period has
