@@ -233,7 +233,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Export",
     href: "/admin/export",
     icon: Download,
-    roles: ["admin"],
+    // Steve 6/10 (6-2.md #46): Alex docx Item 5 sub-issue 15 — "El
+    // comercial debe poder descargar todos los archivos." Sales now
+    // sees Export in the sidebar; /api/admin/export already accepts
+    // all internal roles, no auth change needed there.
+    roles: ["admin", "marketing", "sales", "support"],
   },
 ];
 

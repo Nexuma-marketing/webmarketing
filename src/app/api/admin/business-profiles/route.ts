@@ -48,9 +48,19 @@ export async function GET() {
 
   const ids = businesses.map((b) => b.id as string);
 
-  // Latest diagnosis + captacion per user, fetched in two bulk
-  // queries then keyed by user_id in memory.
-  const [{ data: diagRows }, { data: captRows }] = await Promise.all([
+  // Latest diagnosis + captacion per user, fetched in bulk
+  // queries then keyed by user_id in memory. Also fetch the
+  // recommended PYMES plans (from service_recommendations) and
+  // completed plan purchases (from payments) so the UI can show
+  // "what plan does this business have" — Alex docx Item 5
+  // sub-issue 14.
+  const [
+    { data: diagRows },
+    { data: captRows },
+    { data: recRows },
+    { data: payRows },
+    { data: planRows },
+  ] = await Promise.all([
     supabaseAdmin
       .from("pymes_diagnosis")
       .select(
@@ -65,6 +75,27 @@ export async function GET() {
       )
       .in("user_id", ids)
       .order("created_at", { ascending: false }),
+    // Steve 6/10 (6-2.md #46): recommendations point at either a
+    // services row (legacy plans) or a pymes_plans row; both ids
+    // are valid foreign keys. We pull both columns and resolve
+    // names below.
+    supabaseAdmin
+      .from("service_recommendations")
+      .select("user_id, service_id, reason, is_purchased, created_at")
+      .in("user_id", ids)
+      .order("created_at", { ascending: false }),
+    supabaseAdmin
+      .from("payments")
+      .select("user_id, amount, currency, status, service_id, pymes_plan_id, created_at")
+      .in("user_id", ids)
+      .eq("status", "completed"),
+    // Pull all active PYMES plans once so we can resolve names
+    // for both recommendations and payments without an extra
+    // round-trip per business.
+    supabaseAdmin
+      .from("pymes_plans")
+      .select("id, plan_type, name, price, features")
+      .eq("is_active", true),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,9 +111,91 @@ export async function GET() {
     if (!captByUser[uid]) captByUser[uid] = row;
   }
 
+  // Index PYMES plans by id so we can resolve recommendation +
+  // payment service_id references to a human-readable plan name.
+  const pymesPlanById = Object.fromEntries(
+    (planRows ?? []).map((p) => [
+      p.id as string,
+      {
+        id: p.id as string,
+        plan_type: (p.plan_type as string) || "",
+        name: (p.name as string) || "",
+        price: Number(p.price ?? 0),
+        features: (p.features as string[]) ?? [],
+      },
+    ]),
+  );
+
+  // Also pull any legacy services rows referenced by either
+  // recommendations or payments so we can name "Plan: PYMES —
+  // Growth" etc. consistently.
+  const serviceIds = Array.from(
+    new Set(
+      [
+        ...((recRows ?? []).map((r) => r.service_id as string | null)),
+        ...((payRows ?? []).map((r) => r.service_id as string | null)),
+      ].filter((v): v is string => !!v),
+    ),
+  );
+  let serviceById: Record<string, { id: string; name: string; price: number }> = {};
+  if (serviceIds.length > 0) {
+    const { data: svcRows } = await supabaseAdmin
+      .from("services")
+      .select("id, name, price")
+      .in("id", serviceIds);
+    serviceById = Object.fromEntries(
+      (svcRows ?? []).map((s) => [
+        s.id as string,
+        {
+          id: s.id as string,
+          name: (s.name as string) || "",
+          price: Number(s.price ?? 0),
+        },
+      ]),
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recsByUser: Record<string, any[]> = {};
+  for (const row of recRows ?? []) {
+    const uid = row.user_id as string;
+    if (!recsByUser[uid]) recsByUser[uid] = [];
+    const svcId = row.service_id as string | null;
+    const svc = svcId ? serviceById[svcId] : null;
+    recsByUser[uid].push({
+      reason: row.reason,
+      is_purchased: row.is_purchased,
+      created_at: row.created_at,
+      service_id: svcId,
+      service_name: svc?.name || null,
+      service_price: svc?.price ?? null,
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paysByUser: Record<string, any[]> = {};
+  for (const row of payRows ?? []) {
+    const uid = row.user_id as string;
+    if (!paysByUser[uid]) paysByUser[uid] = [];
+    const svcId = row.service_id as string | null;
+    const planId = row.pymes_plan_id as string | null;
+    const svc = svcId ? serviceById[svcId] : null;
+    const plan = planId ? pymesPlanById[planId] : null;
+    paysByUser[uid].push({
+      amount: Number(row.amount ?? 0),
+      currency: row.currency,
+      status: row.status,
+      created_at: row.created_at,
+      plan_name: svc?.name || plan?.name || null,
+      plan_type: plan?.plan_type || null,
+    });
+  }
+
   const enriched = businesses.map((b) => {
     const diag = diagByUser[b.id as string] ?? null;
     const capt = captByUser[b.id as string] ?? null;
+    const recommendations = recsByUser[b.id as string] ?? [];
+    const purchases = paysByUser[b.id as string] ?? [];
     return {
       id: b.id,
       full_name: b.full_name,
@@ -93,6 +206,8 @@ export async function GET() {
       has_captacion: !!capt,
       diagnosis: diag,
       captacion: capt,
+      recommendations,
+      purchases,
     };
   });
 

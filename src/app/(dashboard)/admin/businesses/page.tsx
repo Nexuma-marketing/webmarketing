@@ -52,6 +52,26 @@ interface Captacion {
   biggest_challenge: string | null;
   created_at: string;
 }
+// Steve 6/10 (6-2.md #46): added recommended + purchased plan
+// lists so sales can answer "what plan does this business have?"
+// per Alex docx Item 5 sub-issue 14.
+interface PlanRecommendation {
+  reason: string | null;
+  is_purchased: boolean;
+  created_at: string;
+  service_id: string | null;
+  service_name: string | null;
+  service_price: number | null;
+}
+interface PlanPurchase {
+  amount: number;
+  currency: string;
+  status: string;
+  created_at: string;
+  plan_name: string | null;
+  plan_type: string | null;
+}
+
 interface BusinessProfile {
   id: string;
   full_name: string;
@@ -62,6 +82,8 @@ interface BusinessProfile {
   has_captacion: boolean;
   diagnosis: Diagnosis | null;
   captacion: Captacion | null;
+  recommendations: PlanRecommendation[];
+  purchases: PlanPurchase[];
 }
 
 const URGENCY_COLOR: Record<string, string> = {
@@ -209,13 +231,30 @@ export default function AdminBusinessesPage() {
                         Client Acquisition
                       </Badge>
                     )}
+                    {/* Steve 6/10 (6-2.md #46): show a green badge if
+                        the business has actually purchased a plan; an
+                        outline one if there's only a recommendation. */}
+                    {b.purchases.length > 0 && (
+                      <Badge className="bg-green-50 text-green-700 border-green-200">
+                        {b.purchases.length === 1
+                          ? b.purchases[0].plan_name || "Plan purchased"
+                          : `${b.purchases.length} plans purchased`}
+                      </Badge>
+                    )}
+                    {b.purchases.length === 0 && b.recommendations.length > 0 && (
+                      <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-200">
+                        {b.recommendations.length === 1
+                          ? `Rec: ${b.recommendations[0].service_name || "plan"}`
+                          : `${b.recommendations.length} recommendations`}
+                      </Badge>
+                    )}
                     {!b.has_diagnosis && !b.has_captacion && (
                       <Badge variant="outline" className="bg-muted/50">
                         <AlertCircle className="h-3 w-3 mr-1" />
                         No assessment yet
                       </Badge>
                     )}
-                    {(b.has_diagnosis || b.has_captacion) && (
+                    {(b.has_diagnosis || b.has_captacion || b.recommendations.length > 0 || b.purchases.length > 0) && (
                       <Button variant="ghost" size="sm" onClick={() => toggle(b.id)}>
                         {isExpanded ? "Hide" : "View"}
                       </Button>
@@ -225,6 +264,61 @@ export default function AdminBusinessesPage() {
               </CardHeader>
               {isExpanded && (
                 <CardContent className="pt-0 space-y-4">
+                  {(b.recommendations.length > 0 || b.purchases.length > 0) && (
+                    <div className="rounded-md border bg-green-50/30 p-3 space-y-3">
+                      <p className="text-sm font-semibold">Assigned Plan(s)</p>
+                      {b.purchases.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">Purchased:</p>
+                          {b.purchases.map((p, i) => (
+                            <div key={i} className="text-xs flex flex-wrap gap-2 items-center">
+                              <Badge className="bg-green-50 text-green-700 border-green-200">
+                                {p.plan_name || "Unknown plan"}
+                              </Badge>
+                              <span className="font-medium">
+                                ${p.amount.toLocaleString()} {p.currency || "CAD"}
+                              </span>
+                              {p.plan_type && (
+                                <span className="text-muted-foreground">
+                                  · {p.plan_type}
+                                </span>
+                              )}
+                              <span className="text-muted-foreground">
+                                · {new Date(p.created_at).toLocaleDateString("en-CA")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {b.recommendations.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">Recommendations:</p>
+                          {b.recommendations.map((r, i) => (
+                            <div key={i} className="text-xs flex flex-wrap gap-2 items-center">
+                              <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-200">
+                                {r.service_name || "Unknown plan"}
+                              </Badge>
+                              {r.service_price != null && (
+                                <span className="font-medium">
+                                  ${r.service_price.toLocaleString()} CAD
+                                </span>
+                              )}
+                              {r.is_purchased && (
+                                <Badge className="bg-green-50 text-green-700 border-green-200 text-[10px]">
+                                  Purchased
+                                </Badge>
+                              )}
+                              {r.reason && (
+                                <span className="text-muted-foreground italic truncate">
+                                  &ldquo;{r.reason}&rdquo;
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {b.diagnosis && (
                     <div className="rounded-md border bg-blue-50/30 p-3 space-y-2">
                       <p className="text-sm font-semibold">Sales Leak Diagnosis</p>
