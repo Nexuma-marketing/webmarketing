@@ -100,12 +100,15 @@ export default function AdminMatchesPage() {
     load();
   }, [load]);
 
+  // Steve 6/10 (6-2.md #48): added phone to the search haystack so
+  // sales can type a number and land on the tenant.
   const filtered = tenants.filter((t) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
       (t.full_name || "").toLowerCase().includes(q) ||
-      (t.email || "").toLowerCase().includes(q)
+      (t.email || "").toLowerCase().includes(q) ||
+      (t.phone || "").toLowerCase().includes(q)
     );
   });
 
@@ -165,7 +168,7 @@ export default function AdminMatchesPage() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by tenant name or email..."
+          placeholder="Search by tenant name, email, or phone..."
           className="pl-9"
         />
       </div>

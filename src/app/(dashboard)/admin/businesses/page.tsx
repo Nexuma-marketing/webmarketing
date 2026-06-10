@@ -117,12 +117,15 @@ export default function AdminBusinessesPage() {
     load();
   }, [load]);
 
+  // Steve 6/10 (6-2.md #48): added phone to the haystack so sales
+  // can type a number and land on the business.
   const filtered = businesses.filter((b) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
       (b.full_name || "").toLowerCase().includes(q) ||
       (b.email || "").toLowerCase().includes(q) ||
+      (b.phone || "").toLowerCase().includes(q) ||
       (b.diagnosis?.company_name || "").toLowerCase().includes(q) ||
       (b.captacion?.business_name || "").toLowerCase().includes(q)
     );
@@ -183,7 +186,7 @@ export default function AdminBusinessesPage() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by owner, email, or business name..."
+          placeholder="Search by owner, email, phone, or business name..."
           className="pl-9"
         />
       </div>

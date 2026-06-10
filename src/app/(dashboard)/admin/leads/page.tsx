@@ -59,6 +59,10 @@ export default function AdminLeadsPage() {
   const [assignedTo, setAssignedTo] = useState<string>("unassigned");
   const [saving, setSaving] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  // Steve 6/10 (6-2.md #48): multi-field search state. DataTable's
+  // built-in single-column search wasn't enough — sales needs to
+  // type a phone or a name and land on the lead.
+  const [leadSearch, setLeadSearch] = useState("");
 
   // Steve 6/8 (6-2.md #32): leads page used to query the leads
   // table directly via cookie-context client. RLS silently
@@ -277,6 +281,22 @@ export default function AdminLeadsPage() {
     ? Object.keys(LEAD_STATUS_LABELS)
     : [];
 
+  // Steve 6/10 (6-2.md #48): multi-field filter. Searches name,
+  // email, phone, source, and the role label so any commercial
+  // facet sales might type lands on the right lead.
+  const filteredLeads = leadSearch
+    ? leads.filter((l) => {
+        const q = leadSearch.toLowerCase();
+        return (
+          (l.full_name || "").toLowerCase().includes(q) ||
+          (l.email || "").toLowerCase().includes(q) ||
+          (l.phone || "").toLowerCase().includes(q) ||
+          (l.source || "").toLowerCase().includes(q) ||
+          (l.role ? (ROLE_LABELS[l.role] || l.role).toLowerCase() : "").includes(q)
+        );
+      })
+    : leads;
+
   return (
     <div className="space-y-6">
       <div>
@@ -286,12 +306,22 @@ export default function AdminLeadsPage() {
         </p>
       </div>
 
+      {/* Steve 6/10 (6-2.md #48): multi-field search above the table.
+          Replaces DataTable's single-column email search. */}
+      <div className="relative max-w-md">
+        <input
+          type="text"
+          value={leadSearch}
+          onChange={(e) => setLeadSearch(e.target.value)}
+          placeholder="Search by name, email, phone, source, or role..."
+          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+
       <DataTable
         columns={columns}
-        data={leads}
+        data={filteredLeads}
         loading={loading}
-        searchKey="email"
-        searchPlaceholder="Search by email..."
         filters={[
           {
             key: "status",
