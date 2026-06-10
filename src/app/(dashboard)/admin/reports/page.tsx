@@ -138,6 +138,12 @@ export default function AdminReportsPage() {
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("1y");
+  // Steve 6/10 (6-2.md #49): Stripe reconciliation state. Lets
+  // admin pull missing payment rows from Stripe when the report
+  // sums diverge from the Stripe dashboard.
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Steve 6/5 (6-2.md #28): payments + promotions had admin-only RLS,
   // so the sales role saw CA$0 / 0 transactions even when admin saw
@@ -165,6 +171,55 @@ export default function AdminReportsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Steve 6/10 (6-2.md #49): figure out whether the current user
+  // is admin (and therefore allowed to trigger the Stripe sync).
+  useEffect(() => {
+    (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      setIsAdmin(profile?.role === "admin");
+    })();
+  }, []);
+
+  async function reconcileFromStripe() {
+    if (!confirm("Pull every paid Stripe checkout session from the last 90 days and insert any that are missing from the payments table? This may take 30s.")) return;
+    setReconciling(true);
+    setReconcileResult(null);
+    try {
+      const res = await fetch("/api/admin/stripe/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 90 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        summary?: {
+          stripe_paid_sessions?: number;
+          already_in_db?: number;
+          inserted?: number;
+          missing_user?: number;
+        };
+        error?: string;
+      };
+      if (!res.ok) {
+        setReconcileResult(`Failed: ${body.error || res.status}`);
+        return;
+      }
+      const s = body.summary || {};
+      setReconcileResult(
+        `Stripe had ${s.stripe_paid_sessions ?? 0} paid sessions in 90d. ${s.already_in_db ?? 0} already in DB. Inserted ${s.inserted ?? 0} missing rows (${s.missing_user ?? 0} with no matching profile, kept as Unknown).`,
+      );
+      load();
+    } finally {
+      setReconciling(false);
+    }
+  }
 
   // ─── Filtered payments by selected period ─────────────────────
   const filteredPayments = useMemo(() => {
@@ -353,8 +408,30 @@ export default function AdminReportsPage() {
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
+          {/* Steve 6/10 (6-2.md #49): admin can sync missing payments
+              from Stripe when the totals diverge from the Stripe
+              dashboard (e.g., after a CASCADE cleanup or a missed
+              webhook). Admin-only — the endpoint will refuse other
+              roles. */}
+          {isAdmin && (
+            <Button variant="outline" onClick={reconcileFromStripe} disabled={reconciling}>
+              {reconciling ? "Syncing…" : "Sync from Stripe"}
+            </Button>
+          )}
         </div>
       </div>
+
+      {reconcileResult && (
+        <div
+          className={`rounded-md border p-3 text-sm ${
+            reconcileResult.startsWith("Failed")
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-green-300 bg-green-50 text-green-800"
+          }`}
+        >
+          {reconcileResult}
+        </div>
+      )}
 
       {/* ─── Revenue cards ───────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
