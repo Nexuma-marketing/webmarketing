@@ -162,11 +162,21 @@ export async function POST(request: Request) {
                 : session.customer?.id;
 
             if (customerId) {
+              // Steve 6/10 (6-2.md #51): same GST workaround as the
+              // checkout sessions — if STRIPE_GST_RATE_ID is set, apply
+              // the manual 5% rate to the subscription. Otherwise fall
+              // back to automatic_tax (will yield 0 until Alex adds a
+              // CRA registration in Stripe Dashboard).
+              const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
               await stripe.subscriptions.create({
                 customer: customerId,
-                items: [{ price: price.id }],
-                // Apply Stripe Tax to every monthly invoice.
-                automatic_tax: { enabled: true },
+                items: [
+                  {
+                    price: price.id,
+                    ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
+                  },
+                ],
+                ...(gstRateId ? {} : { automatic_tax: { enabled: true } }),
                 metadata: {
                   user_id: userId,
                   pymes_plan_id: metadata.pymes_plan_id,

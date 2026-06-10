@@ -3,6 +3,32 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
 
+// Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
+// `automatic_tax: { enabled: true }` requires the Stripe Tax module
+// to be activated in the dashboard AND a Canada tax registration —
+// the second part needs a CRA business number Alex doesn't have yet.
+//
+// Workaround: create a manual "GST 5%" tax rate in the Stripe
+// dashboard (Products → Tax rates → Add tax rate) and put its id
+// (txr_...) in the STRIPE_GST_RATE_ID env var. We then apply that
+// rate to every line item via `tax_rates: [...]` and remove
+// `automatic_tax`. No registration required.
+//
+// If the env var is missing, we fall back to `automatic_tax` so the
+// production setup continues to work whenever Alex eventually adds
+// the CRA registration.
+const STRIPE_GST_RATE_ID = process.env.STRIPE_GST_RATE_ID || null;
+
+function taxFields() {
+  return STRIPE_GST_RATE_ID
+    ? { tax_rates: [STRIPE_GST_RATE_ID] }
+    : {};
+}
+
+function sessionTaxConfig(): { automatic_tax?: { enabled: true } } {
+  return STRIPE_GST_RATE_ID ? {} : { automatic_tax: { enabled: true } };
+}
+
 // Steve 5/4 / Milestone 4: validate an admin-defined promo code from the
 // promotions table and return either an error message or a discount
 // amount in cents to subtract from the line item.
@@ -168,7 +194,7 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
-          automatic_tax: { enabled: true },
+          ...sessionTaxConfig(),
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },
           // Steve 5/27 Milestone 4 (#7/#8 May 26 docx):
@@ -201,6 +227,7 @@ export async function POST(request: Request) {
                 tax_behavior: "exclusive",
               },
               quantity: 1,
+              ...taxFields(),
             },
           ],
           success_url: `${APP_URL}/dashboard/payments/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -286,7 +313,7 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
-          automatic_tax: { enabled: true },
+          ...sessionTaxConfig(),
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },
           consent_collection: {
@@ -310,6 +337,7 @@ export async function POST(request: Request) {
                 tax_behavior: "exclusive",
               },
               quantity: 1,
+              ...taxFields(),
             },
           ],
           success_url: `${APP_URL}/dashboard/payments/success?session_id={CHECKOUT_SESSION_ID}&plan=${plan.plan_type}`,
