@@ -50,11 +50,17 @@ export async function GET() {
     new Set(rows.map((r) => r.property_id as string | null).filter((v): v is string => !!v)),
   );
 
-  let propertyMap: Record<string, { id: string; address: string; city: string; owner_id: string | null }> = {};
+  // Steve 6/10 (6-2.md #47): widened the property select so the
+  // Image Library search bar can match by province, postal code,
+  // and property type too — Alex June 4 list point 6 said the
+  // owner-name search was broken; the actual data wasn't in the
+  // payload for those fields. Including everything sales might
+  // type into the box.
+  let propertyMap: Record<string, { id: string; address: string; city: string; province: string; postal_code: string; property_type: string; owner_id: string | null }> = {};
   if (propertyIds.length > 0) {
     const { data: propsData, error: propsErr } = await supabaseAdmin
       .from("properties")
-      .select("id, address, city, owner_id")
+      .select("id, address, city, province, postal_code, property_type, owner_id")
       .in("id", propertyIds);
     if (propsErr) {
       return NextResponse.json(
@@ -69,6 +75,9 @@ export async function GET() {
           id: p.id as string,
           address: (p.address as string) || "",
           city: (p.city as string) || "",
+          province: (p.province as string) || "",
+          postal_code: (p.postal_code as string) || "",
+          property_type: (p.property_type as string) || "",
           owner_id: (p.owner_id as string | null) ?? null,
         },
       ]),
@@ -83,11 +92,11 @@ export async function GET() {
     ),
   );
 
-  let ownerMap: Record<string, { full_name: string | null; email: string | null }> = {};
+  let ownerMap: Record<string, { full_name: string | null; email: string | null; phone: string | null }> = {};
   if (ownerIds.length > 0) {
     const { data: ownersData, error: ownersErr } = await supabaseAdmin
       .from("profiles")
-      .select("id, full_name, email")
+      .select("id, full_name, email, phone")
       .in("id", ownerIds);
     if (ownersErr) {
       return NextResponse.json(
@@ -101,6 +110,7 @@ export async function GET() {
         {
           full_name: (p.full_name as string | null) ?? null,
           email: (p.email as string | null) ?? null,
+          phone: (p.phone as string | null) ?? null,
         },
       ]),
     );
@@ -121,6 +131,9 @@ export async function GET() {
             id: prop.id,
             address: prop.address,
             city: prop.city,
+            province: prop.province,
+            postal_code: prop.postal_code,
+            property_type: prop.property_type,
             owner_id: prop.owner_id,
           }
         : null,
@@ -128,6 +141,7 @@ export async function GET() {
         ? {
             full_name: owner.full_name ?? "",
             email: owner.email ?? "",
+            phone: owner.phone ?? "",
           }
         : null,
     };

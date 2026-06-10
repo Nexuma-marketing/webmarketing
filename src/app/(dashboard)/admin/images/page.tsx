@@ -27,15 +27,21 @@ interface ImageRow {
   room_category: string;
   status: string;
   uploaded_at: string;
+  // Steve 6/10 (6-2.md #47): widened property / owner payloads to
+  // cover every field sales might type in the search bar.
   property?: {
     id: string;
     address: string;
     city: string;
+    province?: string;
+    postal_code?: string;
+    property_type?: string;
     owner_id: string | null;
   } | null;
   owner?: {
     full_name: string;
     email: string;
+    phone?: string;
   } | null;
 }
 
@@ -108,13 +114,21 @@ export default function AdminImagesPage() {
     if (statusFilter !== "all" && img.status !== statusFilter) return false;
     if (roomFilter !== "all" && canonicalRoom(img.room_category) !== roomFilter) return false;
     if (search) {
+      // Steve 6/10 (6-2.md #47): widened the haystack to every field
+      // sales might type — owner phone, province, postal code, and
+      // property type joined the existing address/city/owner-name/
+      // owner-email mix.
       const q = search.toLowerCase();
       const haystack = [
         img.property?.address,
         img.property?.city,
+        img.property?.province,
+        img.property?.postal_code,
+        img.property?.property_type,
         img.room_category,
         img.owner?.full_name,
         img.owner?.email,
+        img.owner?.phone,
       ]
         .filter(Boolean)
         .join(" ")
@@ -148,7 +162,7 @@ export default function AdminImagesPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Address, city, owner, room..."
+              placeholder="Owner name, email, phone, address, city, province, type, room..."
               className="pl-9"
             />
           </div>
