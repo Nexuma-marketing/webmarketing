@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getStripeServer } from "@/lib/stripe";
+import { Resend } from "resend";
 
 // Steve 6/10 (6-2.md #49): Alex docx 2026-06-07 pending list,
 // last bullet — sales report says CA$490 but Stripe ledger says
@@ -119,6 +120,20 @@ export async function POST(request: Request) {
 
   let inserted = 0;
   let missingUser = 0;
+  // Steve 6/10 (6-2.md #50): collect the rows we insert so we can
+  // send a "here are the payments that were missed" digest to the
+  // commercial team. Alex complained "no llegan los e-mail ni a
+  // comercial ni al cliente cuando se paga" — when the webhook
+  // fails to fire originally, the customer receipt was already
+  // missed and we can't recover that, but at least sales should
+  // see a consolidated list of what was reconciled.
+  const insertedRows: Array<{
+    session_id: string;
+    email: string | null;
+    amount: number;
+    currency: string;
+    created_at: string;
+  }> = [];
   for (const s of missing) {
     // Steve 6/10: v36 changed payments.user_id to ON DELETE SET
     // NULL, but the column was originally NOT NULL until the same
@@ -147,7 +162,69 @@ export async function POST(request: Request) {
       status: "completed",
       created_at: new Date(s.created * 1000).toISOString(),
     });
-    if (!error) inserted++;
+    if (!error) {
+      inserted++;
+      insertedRows.push({
+        session_id: s.id,
+        email: s.customer_email,
+        amount: ((s.amount_total ?? 0) as number) / 100,
+        currency: (s.currency || "cad").toUpperCase(),
+        created_at: new Date(s.created * 1000).toISOString(),
+      });
+    }
+  }
+
+  // Steve 6/10: digest email to the commercial team listing the
+  // recovered payments. Best-effort — failures don't block the
+  // reconciliation response.
+  if (insertedRows.length > 0 && process.env.RESEND_API_KEY) {
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const total = insertedRows.reduce((sum, r) => sum + r.amount, 0);
+      const commercial =
+        (process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      const fromEmail =
+        process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
+      const rowsHtml = insertedRows
+        .map(
+          (r) => `
+            <tr>
+              <td style="padding:6px;border-bottom:1px solid #eee">${r.email || "(unknown)"}</td>
+              <td style="padding:6px;border-bottom:1px solid #eee;text-align:right">${r.amount.toLocaleString()} ${r.currency}</td>
+              <td style="padding:6px;border-bottom:1px solid #eee">${new Date(r.created_at).toLocaleDateString("en-CA")}</td>
+            </tr>`,
+        )
+        .join("");
+      await resend.emails.send({
+        from: fromEmail,
+        to: commercial,
+        subject: `Recovered ${insertedRows.length} missed Stripe payment(s) — ${total.toLocaleString()} CAD`,
+        html: `
+<div style="font-family:Arial,sans-serif;max-width:600px">
+  <h2 style="color:#0B38D9">Stripe reconciliation report</h2>
+  <p>The admin just ran a Stripe sync. The following <b>${insertedRows.length}</b> paid Stripe sessions were missing from our payments table and have now been inserted:</p>
+  <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px">
+    <thead>
+      <tr style="background:#f5f5f5">
+        <th style="padding:6px;text-align:left">Customer</th>
+        <th style="padding:6px;text-align:right">Amount</th>
+        <th style="padding:6px;text-align:left">Date</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot>
+      <tr><td style="padding:8px;font-weight:bold">Total recovered</td><td style="padding:8px;text-align:right;font-weight:bold">${total.toLocaleString()} CAD</td><td></td></tr>
+    </tfoot>
+  </table>
+  <p style="font-size:12px;color:#666">These are payments that completed on Stripe but never reached our admin reports — usually because the webhook missed or a profile was deleted. They now appear in /admin/reports and /admin/payments as expected. Customer-side payment receipts for these were already sent at the time of payment if the webhook fired then.</p>
+</div>`,
+      });
+    } catch (err) {
+      console.error("commercial digest email failed:", err);
+    }
   }
 
   return NextResponse.json({
