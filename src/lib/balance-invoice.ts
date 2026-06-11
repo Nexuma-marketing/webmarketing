@@ -150,6 +150,11 @@ export async function generateBalanceInvoice(
   }
 
   // 5. InvoiceItem + Invoice + finalize + send
+  // Steve 6/11: STRIPE_GST_RATE_ID must match the Stripe key mode
+  // (test_mode rate with test_mode key, live with live). If they
+  // mismatch Stripe will reject the lookup at invoice creation —
+  // we catch that case below in the try/catch and surface the
+  // error so the caller knows to update the env var.
   const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
   const balanceDescription = `Balance for ${planName} — ${(percentage * 100).toFixed(0)}% of first month's rent on ${property.address}, ${property.city} (minus $${PLAN_UPFRONT_AMOUNT_CAD} upfront)`;
   const dueDate = plusBusinessDays(3);
