@@ -223,6 +223,52 @@ export async function POST(request: Request) {
       // ── Recurring installment payment ──
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
+
+        // Steve 6/11 (6-2.md #53): plan balance invoice path.
+        // Created by /api/admin/properties/[id]/balance-invoice when
+        // Sales toggles Available -> false. Identified by
+        // metadata.kind === "plan_balance". Updates the property row
+        // so the admin UI shows "Arrendada - Pagado".
+        if (invoice.metadata?.kind === "plan_balance") {
+          const propertyId = invoice.metadata?.property_id;
+          if (propertyId) {
+            await supabaseAdmin
+              .from("properties")
+              .update({
+                balance_invoice_status: "paid",
+                balance_invoice_paid_at: new Date().toISOString(),
+                // Steve 6/11: also drop a row in payments so the
+                // balance shows up in /admin/reports and the
+                // customer's /dashboard/payments history.
+              })
+              .eq("id", propertyId);
+
+            // Insert a payments row mirroring the invoice. Owner
+            // resolved via property.owner_id.
+            const { data: prop } = await supabaseAdmin
+              .from("properties")
+              .select("owner_id")
+              .eq("id", propertyId)
+              .single();
+            if (prop?.owner_id) {
+              await supabaseAdmin.from("payments").insert({
+                user_id: prop.owner_id,
+                stripe_session_id: invoice.id,
+                // Steve 6/11: Stripe SDK v18 dropped the convenience
+                // `payment_intent` getter on Invoice. Pull it via the
+                // expanded charge data if available, otherwise leave
+                // null — reconcile-from-stripe can backfill later.
+                stripe_payment_intent_id: null,
+                amount: (invoice.amount_paid || 0) / 100,
+                currency: (invoice.currency || "cad").toUpperCase(),
+                payment_type: "plan_balance",
+                status: "completed",
+              });
+            }
+          }
+          break;
+        }
+
         const subDetails = invoice.parent?.subscription_details;
         if (!subDetails?.subscription) break;
 
@@ -388,6 +434,26 @@ export async function POST(request: Request) {
       // subscription auto-cancels after retries.
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
+
+        // Steve 6/11 (6-2.md #53): plan balance invoice path —
+        // mirror the success handler. Marks the property's balance
+        // invoice as failed/uncollectible so Sales can see in the UI
+        // that the owner hasn't paid yet.
+        if (invoice.metadata?.kind === "plan_balance") {
+          const propertyId = invoice.metadata?.property_id;
+          if (propertyId) {
+            await supabaseAdmin
+              .from("properties")
+              .update({
+                balance_invoice_status: invoice.status === "uncollectible"
+                  ? "uncollectible"
+                  : "overdue",
+              })
+              .eq("id", propertyId);
+          }
+          break;
+        }
+
         const subDetails = invoice.parent?.subscription_details;
         if (!subDetails?.subscription) break;
         const subscriptionId =
