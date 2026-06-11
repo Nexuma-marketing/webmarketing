@@ -1,4 +1,5 @@
-import { requireAdmin } from "@/lib/admin-server";
+import { requireInternal } from "@/lib/admin-server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { formatCurrency, formatDateTime } from "@/lib/admin";
 import {
   Card,
@@ -13,9 +14,21 @@ import { ROLE_LABELS, LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "@/lib/const
 import Link from "next/link";
 
 export default async function AdminDashboardPage() {
-  const { supabase } = await requireAdmin();
+  // Steve 6/11 (6-2.md #54): used to call requireAdmin() which
+  // bounced marketing/sales/support to /dashboard. Their sidebar
+  // points at "Admin Dashboard" though, so they were landing on the
+  // customer dashboard and seeing Available Services 18 — Alex's
+  // "no trae las metricas" complaint. Read-only KPIs are fine for
+  // every internal role; mutation endpoints still gate on admin.
+  await requireInternal();
 
-  // ── KPI queries in parallel ──
+  // Steve 6/11 (6-2.md #54): every count/list on this page was
+  // running under the admin's cookie-context client. Same RLS quirk
+  // that broke every other admin surface this week (Total Users
+  // showed 1, Total Leads showed 0, Revenue showed only the admin's
+  // own payments, etc.). Switched the lot to supabaseAdmin so the
+  // dashboard reflects the real platform totals. requireAdmin()
+  // still runs first so non-admins get bounced.
   const [
     { count: totalUsers },
     { count: totalProperties },
@@ -27,26 +40,26 @@ export default async function AdminDashboardPage() {
     { data: recentUsers },
     { data: recentPayments },
   ] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }),
-    supabase.from("properties").select("*", { count: "exact", head: true }),
-    supabase.from("leads").select("*", { count: "exact", head: true }),
-    supabase
+    supabaseAdmin.from("profiles").select("*", { count: "exact", head: true }),
+    supabaseAdmin.from("properties").select("*", { count: "exact", head: true }),
+    supabaseAdmin.from("leads").select("*", { count: "exact", head: true }),
+    supabaseAdmin
       .from("payments")
       .select("amount")
       .eq("status", "completed"),
-    supabase.rpc("count_by_role") as unknown as Promise<{ data: { role: string; count: number }[] | null }>,
-    supabase.rpc("count_by_lead_status") as unknown as Promise<{ data: { status: string; count: number }[] | null }>,
-    supabase
+    supabaseAdmin.rpc("count_by_role") as unknown as Promise<{ data: { role: string; count: number }[] | null }>,
+    supabaseAdmin.rpc("count_by_lead_status") as unknown as Promise<{ data: { status: string; count: number }[] | null }>,
+    supabaseAdmin
       .from("leads")
       .select("id, full_name, email, status, created_at")
       .order("created_at", { ascending: false })
       .limit(10),
-    supabase
+    supabaseAdmin
       .from("profiles")
       .select("id, full_name, email, role, created_at")
       .order("created_at", { ascending: false })
       .limit(10),
-    supabase
+    supabaseAdmin
       .from("payments")
       .select("id, amount, status, created_at, profiles:user_id(full_name)")
       .order("created_at", { ascending: false })
