@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { generateBalanceInvoice } from "@/lib/balance-invoice";
 
 // Steve 6/5 (6-2.md #23): Property Management at /admin/properties was
 // showing "Unknown" for every Owner column because the PostgREST embed
@@ -201,27 +202,16 @@ export async function PATCH(request: Request) {
   // % balance invoice flow on a best-effort basis — failure here
   // doesn't roll back the toggle, but the response carries the
   // invoice result so Sales sees what happened.
+  // Steve 6/11: call the logic in-process via the shared lib. The
+  // previous server-to-server fetch was returning null because
+  // cookie / internal-routing didn't survive the round-trip.
   let balanceInvoice: unknown = null;
   if (is_available === false) {
     try {
-      const url = new URL(request.url);
-      const invoiceRes = await fetch(
-        `${url.protocol}//${url.host}/api/admin/properties/${id}/balance-invoice`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            // Forward the caller's cookies so the auth gate on the
-            // child route resolves to the same Sales / admin user.
-            cookie: request.headers.get("cookie") || "",
-          },
-        },
-      );
-      const body = await invoiceRes.json().catch(() => null);
-      balanceInvoice = body;
+      balanceInvoice = await generateBalanceInvoice(id);
     } catch (err) {
       console.error("balance invoice trigger failed:", err);
-      balanceInvoice = { error: err instanceof Error ? err.message : "unknown" };
+      balanceInvoice = { success: false, error: err instanceof Error ? err.message : "unknown" };
     }
   }
 
