@@ -524,6 +524,15 @@ export default function OwnerFormPage() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [handlePopState]);
 
+  function redirectToDashboard() {
+    if (typeof window !== "undefined") {
+      window.location.assign("/dashboard");
+      return;
+    }
+
+    router.push("/dashboard");
+  }
+
   async function onSubmit(data: OwnerFormData) {
     setLoading(true);
     setError(null);
@@ -771,7 +780,7 @@ export default function OwnerFormPage() {
         body: JSON.stringify({ source: "owner_form" }),
       });
 
-      router.push("/dashboard/properties");
+      redirectToDashboard();
     } catch (err) {
       setError("Failed to save. Please try again.");
       console.error(err);
