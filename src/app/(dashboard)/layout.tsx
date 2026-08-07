@@ -17,7 +17,7 @@ export default async function DashboardLayout({
 
   if (!user) redirect("/login");
 
-  const [{ data: profile, error: profileError }, { data: brandRows }] = await Promise.all([
+  const [{ data: profile }, { data: brandRows }] = await Promise.all([
     supabase
       .from("profiles")
       .select("full_name, role")
@@ -29,12 +29,12 @@ export default async function DashboardLayout({
       .eq("section", "branding"),
   ]);
 
-  if (profileError || !profile?.role) {
-    throw new Error("Unable to load the authenticated user's profile role");
-  }
+  const metadataRole = user.user_metadata?.role as UserRole | undefined;
+  const role = (profile?.role as UserRole | undefined) ?? metadataRole;
+
+  if (!role) redirect("/");
 
   const userName = profile?.full_name || user.email || "User";
-  const role = profile.role as UserRole;
   const branding = buildBranding(brandRows);
 
   return (

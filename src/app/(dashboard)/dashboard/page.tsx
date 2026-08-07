@@ -22,13 +22,21 @@ export default async function DashboardPage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
+  const { data: storedProfile } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
 
-  if (!profile) redirect("/login");
+  const metadataRole = user.user_metadata?.role as string | undefined;
+  const profile = storedProfile ?? (metadataRole
+    ? {
+        role: metadataRole,
+        full_name: user.user_metadata?.full_name || user.email || "User",
+      }
+    : null);
+
+  if (!profile) redirect("/");
 
   const isOwnerRole =
     profile.role === "propietario" ||

@@ -137,15 +137,7 @@ function RegisterPageContent() {
       return;
     }
 
-    const { data: registeredProfile, error: roleError } = await supabase
-      .from("profiles")
-      .update({ role })
-      .eq("id", authenticatedUser.id)
-      .select("role")
-      .single();
-
-    if (roleError || registeredProfile?.role !== role) {
-      console.error("Registration role persistence failed:", roleError);
+    if (authenticatedUser.user_metadata?.role !== role) {
       setError("Your account was created, but your selected profile type could not be saved. Please try again.");
       setLoading(false);
       return;
