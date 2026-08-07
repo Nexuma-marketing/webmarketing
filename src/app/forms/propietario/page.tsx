@@ -752,17 +752,31 @@ export default function OwnerFormPage() {
         selectedRole = data.property_count >= 2 ? "propietario_preferido" : "propietario";
       }
 
-      await supabase
+      const { data: updatedProfile, error: profileUpdateError } = await supabase
         .from("profiles")
         .update({ property_count: data.property_count, role: selectedRole })
-        .eq("id", user.id);
+        .eq("id", user.id)
+        .select("role")
+        .single();
+
+      if (profileUpdateError || updatedProfile?.role !== selectedRole) {
+        console.error("Owner role update failed:", profileUpdateError);
+        setError("We couldn't confirm your Property Owner role. Please try again.");
+        return;
+      }
 
       // Run profiling (classifies tier, CFP, etc. — respects existing role)
-      await fetch("/api/profiling", {
+      const profilingResponse = await fetch("/api/profiling", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "owner" }),
       });
+
+      if (!profilingResponse.ok) {
+        console.error("Owner profiling failed:", await profilingResponse.text());
+        setError("We couldn't finish setting up your Property Owner profile. Please try again.");
+        return;
+      }
 
       // Create lead
       await fetch("/api/leads", {
@@ -770,6 +784,17 @@ export default function OwnerFormPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: "owner_form" }),
       });
+
+      const {
+        data: { session },
+        error: refreshError,
+      } = await supabase.auth.refreshSession();
+
+      if (refreshError || !session?.user) {
+        console.error("Owner session refresh failed:", refreshError);
+        setError("Your information was saved, but we couldn't confirm your session. Please try again.");
+        return;
+      }
 
       router.push("/dashboard/properties");
     } catch (err) {

@@ -172,11 +172,13 @@ export async function profileOwner(userId: string) {
   // 1b. Get current user profile to respect their initial user_type selection (Steve 4/19)
   // A user who signed up as "Property Owner" should NOT be auto-promoted to Investor
   // just because they added 4+ properties.
-  const { data: existingProfile } = await supabase
+  const { data: existingProfile, error: profileReadError } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", userId)
     .single();
+
+  if (profileReadError) throw profileReadError;
 
   const currentRole = existingProfile?.role;
   const isCurrentlyInvestor = currentRole === "inversionista";
@@ -238,13 +240,15 @@ export async function profileOwner(userId: string) {
   }
 
   // 4. Update profile: role, property_count
-  await supabase
+  const { error: profileUpdateError } = await supabase
     .from("profiles")
     .update({
       role,
       property_count: propertyCount,
     })
     .eq("id", userId);
+
+  if (profileUpdateError) throw profileUpdateError;
 
   return {
     role,
