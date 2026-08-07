@@ -741,42 +741,12 @@ export default function OwnerFormPage() {
         }
       }
 
-      // Steve 4/20: ALWAYS set role based on user's Step 1 selection.
-      // - user_type=investor → role=inversionista (stays investor regardless of count)
-      // - user_type=owner    → role=propietario or propietario_preferido (never auto-promoted to investor)
-      let selectedRole: string;
-      if (data.user_type === "investor") {
-        selectedRole = "inversionista";
-      } else {
-        // owner: set based on count but within owner tier range
-        selectedRole = data.property_count >= 2 ? "propietario_preferido" : "propietario";
-      }
-
-      const { data: updatedProfile, error: profileUpdateError } = await supabase
-        .from("profiles")
-        .update({ property_count: data.property_count, role: selectedRole })
-        .eq("id", user.id)
-        .select("role")
-        .single();
-
-      if (profileUpdateError || updatedProfile?.role !== selectedRole) {
-        console.error("Owner role update failed:", profileUpdateError);
-        setError("We couldn't confirm your Property Owner role. Please try again.");
-        return;
-      }
-
       // Run profiling (classifies tier, CFP, etc. — respects existing role)
-      const profilingResponse = await fetch("/api/profiling", {
+      await fetch("/api/profiling", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "owner" }),
       });
-
-      if (!profilingResponse.ok) {
-        console.error("Owner profiling failed:", await profilingResponse.text());
-        setError("We couldn't finish setting up your Property Owner profile. Please try again.");
-        return;
-      }
 
       // Create lead
       await fetch("/api/leads", {
@@ -786,13 +756,12 @@ export default function OwnerFormPage() {
       });
 
       const {
-        data: { session },
-        error: refreshError,
-      } = await supabase.auth.refreshSession();
+        data: { user: currentUser },
+        error: currentUserError,
+      } = await supabase.auth.getUser();
 
-      if (refreshError || !session?.user) {
-        console.error("Owner session refresh failed:", refreshError);
-        setError("Your information was saved, but we couldn't confirm your session. Please try again.");
+      if (currentUserError || !currentUser) {
+        setError("Your information was saved, but your session could not be verified. Please sign in and try again.");
         return;
       }
 

@@ -120,10 +120,41 @@ function RegisterPageContent() {
       return;
     }
 
+    if (!signUpData.session?.user) {
+      setError("Your account was created, but an authenticated session was not established. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    const {
+      data: { user: authenticatedUser },
+      error: authenticatedUserError,
+    } = await supabase.auth.getUser();
+
+    if (authenticatedUserError || !authenticatedUser) {
+      setError("Your account was created, but your session could not be verified. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: registeredProfile, error: roleError } = await supabase
+      .from("profiles")
+      .update({ role })
+      .eq("id", authenticatedUser.id)
+      .select("role")
+      .single();
+
+    if (roleError || registeredProfile?.role !== role) {
+      console.error("Registration role persistence failed:", roleError);
+      setError("Your account was created, but your selected profile type could not be saved. Please try again.");
+      setLoading(false);
+      return;
+    }
+
     // Log Terms + Privacy acceptance with IP + UA. Non-blocking — if
     // the user already exists or the insert fails, we still proceed to
     // the form so onboarding is not stuck behind logging.
-    const userId = signUpData.user?.id;
+    const userId = authenticatedUser.id;
     if (userId) {
       logConsents(userId, [
         { type: "terms_of_service", granted: true },
