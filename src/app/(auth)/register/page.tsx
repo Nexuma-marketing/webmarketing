@@ -143,6 +143,25 @@ function RegisterPageContent() {
       return;
     }
 
+    const { error: profileInsertError } = await supabase
+      .from("profiles")
+      .insert({
+        id: authenticatedUser.id,
+        email: authenticatedUser.email || email,
+        full_name: fullName,
+        phone: phone || null,
+        role,
+      });
+
+    // The auth trigger may already have created this row. A duplicate means
+    // the canonical profile exists; any other error blocks role-specific flow.
+    if (profileInsertError && profileInsertError.code !== "23505") {
+      console.error("Registration profile insert failed:", profileInsertError);
+      setError("Your account was created, but your selected profile type could not be saved. Please try again.");
+      setLoading(false);
+      return;
+    }
+
     // Log Terms + Privacy acceptance with IP + UA. Non-blocking — if
     // the user already exists or the insert fails, we still proceed to
     // the form so onboarding is not stuck behind logging.

@@ -537,6 +537,30 @@ export default function OwnerFormPage() {
         return;
       }
 
+      const registeredRole = user.user_metadata?.role as string | undefined;
+      if (!registeredRole || !["propietario", "propietario_preferido", "inversionista"].includes(registeredRole)) {
+        setError("Your Property Owner profile is missing. Please return to registration and try again.");
+        return;
+      }
+
+      // Repair preview accounts created while the registration path did not
+      // persist the trigger-backed profiles row. Never derive role from Form 2.
+      const { error: profileInsertError } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          email: user.email || "",
+          full_name: user.user_metadata?.full_name || user.email || "Property Owner",
+          phone: user.user_metadata?.phone || null,
+          role: registeredRole,
+        });
+
+      if (profileInsertError && profileInsertError.code !== "23505") {
+        console.error("Owner submit profile insert failed:", profileInsertError);
+        setError("We couldn't save your Property Owner profile. Please try again.");
+        return;
+      }
+
       const tier = propertyCount >= 4 ? "elite" : propertyCount >= 2 ? "preferred_owners" : "basic";
       const isInvestorSubmit = data.user_type === "investor" && propertyCount >= 4;
 
@@ -563,7 +587,11 @@ export default function OwnerFormPage() {
           consent_third_party: data.consent_third_party,
         });
 
-      if (briefError) throw briefError;
+      if (briefError) {
+        console.error("Owner discovery brief insert failed:", briefError);
+        setError("We couldn't save your owner discovery brief. Please try again.");
+        return;
+      }
 
       // Steve 5/4 #7: every consent the user ticks must produce a
       // consent_logs row with IP + user-agent so /admin/legal can audit.
@@ -705,7 +733,11 @@ export default function OwnerFormPage() {
           is_available: data.occupancy_status === "vacant",
         }).select().single();
 
-        if (propError) throw propError;
+        if (propError) {
+          console.error("Owner property insert failed:", propError);
+          setError("We couldn't save your property. Please try again.");
+          return;
+        }
 
         // Upload property images to Supabase Storage
         if (propData && propertyImages.length > 0) {
