@@ -543,24 +543,6 @@ export default function OwnerFormPage() {
         return;
       }
 
-      // Repair preview accounts created while the registration path did not
-      // persist the trigger-backed profiles row. Never derive role from Form 2.
-      const { error: profileInsertError } = await supabase
-        .from("profiles")
-        .insert({
-          id: user.id,
-          email: user.email || "",
-          full_name: user.user_metadata?.full_name || user.email || "Property Owner",
-          phone: user.user_metadata?.phone || null,
-          role: registeredRole,
-        });
-
-      if (profileInsertError && profileInsertError.code !== "23505") {
-        console.error("Owner submit profile insert failed:", profileInsertError);
-        setError("We couldn't save your Property Owner profile. Please try again.");
-        return;
-      }
-
       const tier = propertyCount >= 4 ? "elite" : propertyCount >= 2 ? "preferred_owners" : "basic";
       const isInvestorSubmit = data.user_type === "investor" && propertyCount >= 4;
 
@@ -774,18 +756,30 @@ export default function OwnerFormPage() {
       }
 
       // Run profiling (classifies tier, CFP, etc. — respects existing role)
-      await fetch("/api/profiling", {
+      const profilingResponse = await fetch("/api/profiling", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "owner" }),
       });
 
+      if (!profilingResponse.ok) {
+        console.error("Owner profiling failed:", await profilingResponse.text());
+        setError("Your property was saved, but we couldn't complete owner profiling. Please try again.");
+        return;
+      }
+
       // Create lead
-      await fetch("/api/leads", {
+      const leadResponse = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: "owner_form" }),
       });
+
+      if (!leadResponse.ok) {
+        console.error("Owner lead creation failed:", await leadResponse.text());
+        setError("Your property was saved, but we couldn't complete your owner registration. Please try again.");
+        return;
+      }
 
       const {
         data: { user: currentUser },

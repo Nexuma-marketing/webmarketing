@@ -5,6 +5,7 @@ import {
   profileTenant,
   matchPropertiesForTenant,
 } from "@/lib/profiling";
+import type { UserRole } from "@/types/database";
 
 export async function POST(request: Request) {
   try {
@@ -21,7 +22,10 @@ export async function POST(request: Request) {
 
     switch (type) {
       case "owner": {
-        const result = await profileOwner(user.id);
+        const result = await profileOwner(
+          user.id,
+          user.user_metadata?.role as UserRole | undefined,
+        );
         if (!result) {
           return NextResponse.json(
             { error: "No properties found" },

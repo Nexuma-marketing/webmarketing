@@ -157,7 +157,7 @@ export const PORTFOLIO_FEES: Record<EliteTier, number> = {
  * Updates profiles + all properties for the given user.
  * Each property gets its own elite_tier based on its individual rent.
  */
-export async function profileOwner(userId: string) {
+export async function profileOwner(userId: string, registeredRole?: UserRole) {
   const supabase = await createClient();
 
   // 1. Count properties
@@ -178,9 +178,9 @@ export async function profileOwner(userId: string) {
     .eq("id", userId)
     .single();
 
-  if (profileReadError) throw profileReadError;
+  if (profileReadError && !registeredRole) throw profileReadError;
 
-  const currentRole = existingProfile?.role;
+  const currentRole = (existingProfile?.role as UserRole | undefined) ?? registeredRole;
   const isCurrentlyInvestor = currentRole === "inversionista";
   const isCurrentlyOwner = currentRole === "propietario" || currentRole === "propietario_preferido";
 
@@ -205,10 +205,9 @@ export async function profileOwner(userId: string) {
       serviceTier = "basic";
     }
   } else {
-    // New user with no role yet — use count-based classification
-    const classified = classifyOwner(propertyCount);
-    role = classified.role;
-    serviceTier = classified.serviceTier;
+    // The base customer role is selected and persisted during registration.
+    // Never turn a Tenant, Business, or missing role into an owner here.
+    throw new Error("Owner profiling requires an existing owner profile role");
   }
 
   // 3. Update each property: service_tier, elite_tier (per property), cfp, payback
@@ -240,15 +239,13 @@ export async function profileOwner(userId: string) {
   }
 
   // 4. Update profile: role, property_count
-  const { error: profileUpdateError } = await supabase
+  await supabase
     .from("profiles")
     .update({
       role,
       property_count: propertyCount,
     })
     .eq("id", userId);
-
-  if (profileUpdateError) throw profileUpdateError;
 
   return {
     role,
