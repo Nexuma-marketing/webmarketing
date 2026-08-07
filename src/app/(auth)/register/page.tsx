@@ -137,26 +137,8 @@ function RegisterPageContent() {
       return;
     }
 
-    if (authenticatedUser.user_metadata?.role !== role) {
-      setError("Your account was created, but your selected profile type could not be saved. Please try again.");
-      setLoading(false);
-      return;
-    }
-
-    const { error: profileInsertError } = await supabase
-      .from("profiles")
-      .insert({
-        id: authenticatedUser.id,
-        email: authenticatedUser.email || email,
-        full_name: fullName,
-        phone: phone || null,
-        role,
-      });
-
-    // The auth trigger may already have created this row. A duplicate means
-    // the canonical profile exists; any other error blocks role-specific flow.
-    if (profileInsertError && profileInsertError.code !== "23505") {
-      console.error("Registration profile insert failed:", profileInsertError);
+    const authenticatedRole = authenticatedUser.user_metadata?.role as UserRole | undefined;
+    if (!authenticatedRole || authenticatedRole !== role) {
       setError("Your account was created, but your selected profile type could not be saved. Please try again.");
       setLoading(false);
       return;
@@ -179,7 +161,14 @@ function RegisterPageContent() {
       inquilino: "/forms/inquilino",
       pymes: "/forms/pymes",
     };
-    router.push(formRoutes[role] || "/dashboard");
+    const destination = formRoutes[authenticatedRole];
+    if (!destination) {
+      setError("Your account was created, but your selected profile type could not be determined. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    router.push(destination);
   }
 
   return (
