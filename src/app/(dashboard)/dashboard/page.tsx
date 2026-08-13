@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, FileText, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTriangle } from "lucide-react";
+import { Building2, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { ROLE_LABELS, OWNER_TIERS, PYMES_PLANS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/admin";
@@ -54,7 +54,6 @@ export default async function DashboardPage() {
   let ownerTier: string | null = null;
   let pymesPlan: string | null = null;
   let totalCFP = 0;
-  let leadCount = 0;
   let matchedCount = 0;
   let pymesScore: number | null = null;
   let pymesUrgency: string | null = null;
@@ -113,13 +112,6 @@ export default async function DashboardPage() {
     pymesUrgency = diagnosis?.urgency_level ?? null;
     pymesLoss = diagnosis?.estimated_loss ? Number(diagnosis.estimated_loss) : null;
   }
-
-  // Lead count (if user is an owner/pymes)
-  const { count: lCount } = await supabase
-    .from("leads")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id);
-  leadCount = lCount || 0;
 
   const { count: svcCount } = await supabase
     .from("services")
@@ -226,19 +218,6 @@ export default async function DashboardPage() {
             <p className="text-xs text-muted-foreground">Active services</p>
           </CardContent>
         </Card>
-
-        {leadCount > 0 && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Active Leads</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{leadCount}</div>
-              <p className="text-xs text-muted-foreground">Your lead requests</p>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* ═══ Assigned Plan / Tier ═══ */}

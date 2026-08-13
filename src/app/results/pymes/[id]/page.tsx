@@ -168,14 +168,27 @@ export default async function PymesResultsPage({
 
   if (!diagnosis) redirect("/forms/pymes");
 
-  // Fetch the pymes_plans record for checkout
-  const { data: pymesPlanRecord } = await supabase
-    .from("pymes_plans")
-    .select("id")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+  // Fetch the shared plan definition that matches the diagnosis score.
+  const totalScore = Number(diagnosis.total_score);
+  const scorePlanType =
+    totalScore >= 7 && totalScore <= 14
+      ? "rescue"
+      : totalScore >= 15 && totalScore <= 24
+        ? "growth"
+        : totalScore >= 25 && totalScore <= 35
+          ? "scale"
+          : null;
+
+  const { data: pymesPlanRecord } = scorePlanType
+    ? await supabase
+        .from("pymes_plans")
+        .select("id")
+        .eq("plan_type", scorePlanType)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single()
+    : { data: null };
 
   const recommendedKey = diagnosis.recommended_plan ?? "growth";
   const plan = PLAN_DETAILS[recommendedKey];
