@@ -15,14 +15,21 @@ export async function POST(request: Request) {
   const { source } = await request.json();
 
   // Fetch profile
-  const { data: profile } = await supabaseAdmin
+  // This is the caller's own profile, so read it with the authenticated
+  // cookie-context client. Using the service-role client here made this
+  // otherwise ordinary own-row read depend on a separate database role and
+  // caused owner onboarding to fail after the property had already been saved.
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("full_name, email, phone, role")
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  if (profileError || !profile) {
+    return NextResponse.json(
+      { error: profileError?.message || "Profile not found" },
+      { status: profileError ? 500 : 404 }
+    );
   }
 
   // Check if lead already exists
