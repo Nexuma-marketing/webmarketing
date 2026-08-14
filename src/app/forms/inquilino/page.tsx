@@ -90,6 +90,17 @@ const EMPLOYMENT_TYPES = [
   { value: "international_student", label: "International student" },
 ];
 
+// Admin-backed form metadata still contains legacy identifiers for some of
+// these options. Keep the displayed metadata, but store the identifiers the
+// tenant form schema validates and the rest of this component consumes.
+const EMPLOYMENT_TYPE_VALUE_ALIASES: Partial<
+  Record<string, TenantFormData["employment_type"]>
+> = {
+  employed_full: "full_time",
+  employed_part: "part_time",
+  student_international: "international_student",
+};
+
 // ─── Institution types (conditional for students) ───
 const INSTITUTION_TYPES = [
   { value: "university", label: "University" },
@@ -527,7 +538,10 @@ export default function TenantFormPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {fieldOptions(fieldMeta, "employment_type", EMPLOYMENT_TYPES).map((e) => (
-                        <SelectItem key={e.value} value={e.value}>
+                        <SelectItem
+                          key={e.value}
+                          value={EMPLOYMENT_TYPE_VALUE_ALIASES[e.value] ?? e.value}
+                        >
                           {e.label}
                         </SelectItem>
                       ))}

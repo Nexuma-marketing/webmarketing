@@ -174,7 +174,7 @@ export const tenantFormSchema = z.object({
 
   // Style & pet
   style_preference: z
-    .enum(["modern", "classic", "minimalist", "elegant", "other"])
+    .enum(["modern", "classic", "minimalist", "elegant", "other", "luxury", "rustic"])
     .optional(),
   style_other: z.string().optional(),
   pet_friendly: z.boolean().default(false),
