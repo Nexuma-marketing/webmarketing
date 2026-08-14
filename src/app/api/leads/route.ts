@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
   }
 
   // Check if lead already exists
-  const { data: existingLead } = await supabaseAdmin
+  const { data: existingLead } = await supabase
     .from("leads")
     .select("id")
     .eq("user_id", user.id)
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Lead already exists" });
   }
 
-  const { error } = await supabaseAdmin.from("leads").insert({
+  const { error } = await supabase.from("leads").insert({
     user_id: user.id,
     full_name: profile.full_name,
     email: profile.email,
