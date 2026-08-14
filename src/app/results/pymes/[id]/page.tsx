@@ -619,6 +619,12 @@ export default async function PymesResultsPage({
               </Link>
             )}
             <ScheduleRescueButton diagnosisId={diagnosis.id} />
+            <Link
+              href="/dashboard"
+              className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
+            >
+              View My Dashboard
+            </Link>
           </div>
           <p className="max-w-md text-xs text-muted-foreground">
             Book a free 15-minute personalized session where we break down your
