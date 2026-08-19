@@ -86,13 +86,18 @@ export async function POST(request: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const metadata = session.metadata || {};
+        console.log("[webhook-diag] Entered checkout.session.completed", {
+          eventType: event.type,
+          sessionId: session.id,
+          metadata,
+        });
         const userId = metadata.user_id;
         const paymentType = metadata.payment_type || "one_time";
 
         if (!userId) break;
 
         // Record payment
-        await supabaseAdmin.from("payments").insert({
+        console.log("[webhook-diag] About to insert payment", {
           user_id: userId,
           service_id: metadata.service_id || null,
           pymes_plan_id: metadata.pymes_plan_id || null,
@@ -106,6 +111,26 @@ export async function POST(request: Request) {
           payment_type: paymentType,
           status: "completed",
         });
+        const { data: paymentData, error: paymentError } = await supabaseAdmin
+          .from("payments")
+          .insert({
+            user_id: userId,
+            service_id: metadata.service_id || null,
+            pymes_plan_id: metadata.pymes_plan_id || null,
+            stripe_session_id: session.id,
+            stripe_payment_intent_id:
+              typeof session.payment_intent === "string"
+                ? session.payment_intent
+                : null,
+            amount: (session.amount_total || 0) / 100,
+            currency: "CAD",
+            payment_type: paymentType,
+            status: "completed",
+          });
+        console.log("[webhook-diag] Payment insert completed", {
+          data: paymentData,
+          error: paymentError,
+        });
 
         // Steve 5/22 Milestone 4 (#7 docx): when an owner buys the
         // Founders Package, increment the `founders_plan.taken` counter
@@ -113,24 +138,49 @@ export async function POST(request: Request) {
         // /dashboard/services + the public landing reflects reality.
         // Match by service name so we don't have to hard-code the UUID.
         if (metadata.service_id) {
-          const { data: svc } = await supabaseAdmin
+          console.log("[webhook-diag] About to look up Founders-counter service", {
+            serviceId: metadata.service_id,
+          });
+          const { data: svc, error: svcError } = await supabaseAdmin
             .from("services")
             .select("name")
             .eq("id", metadata.service_id)
             .single();
+          console.log("[webhook-diag] Founders-counter service lookup completed", {
+            data: svc,
+            error: svcError,
+          });
           if (svc?.name && /Founder.+Package/i.test(svc.name as string)) {
-            const { data: counter } = await supabaseAdmin
+            console.log("[webhook-diag] About to read Founders counter");
+            const { data: counter, error: counterError } = await supabaseAdmin
               .from("app_config")
               .select("value")
               .eq("category", "founders_plan")
               .eq("key", "taken")
               .single();
+            console.log("[webhook-diag] Founders counter read completed", {
+              currentValue: counter?.value,
+              error: counterError,
+            });
             const current = Number((counter?.value as string | undefined) ?? "0") || 0;
-            await supabaseAdmin
+            console.log("[webhook-diag] About to update Founders counter", {
+              currentValue: counter?.value,
+              newValue: String(current + 1),
+            });
+            const {
+              data: counterUpdateData,
+              error: counterUpdateError,
+            } = await supabaseAdmin
               .from("app_config")
               .update({ value: String(current + 1) })
               .eq("category", "founders_plan")
               .eq("key", "taken");
+            console.log("[webhook-diag] Founders counter update completed", {
+              currentValue: counter?.value,
+              newValue: String(current + 1),
+              data: counterUpdateData,
+              error: counterUpdateError,
+            });
           }
         }
 
@@ -217,6 +267,9 @@ export async function POST(request: Request) {
           });
         }
 
+        console.log(
+          "[webhook-diag] checkout.session.completed case completed successfully"
+        );
         break;
       }
 
