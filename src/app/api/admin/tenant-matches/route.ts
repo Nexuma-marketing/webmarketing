@@ -62,7 +62,7 @@ export async function GET() {
   const { data: prefsRows } = await supabaseAdmin
     .from("tenant_preferences")
     .select(
-      "user_id, preferred_city, preferred_zone, min_budget, max_budget, bedrooms_needed, move_in_date, move_in_flexible, pet_friendly, parking_needed, additional_requirements, number_of_people, property_type_desired, furnished, utilities_included, levels_preferred, size_sqft, size_unit, common_areas, skytrain_lines, near_bus, near_social, near_banks, near_downtown, institution_type, institution_name, is_premium, target_zones, preferred_amenities, created_at"
+      "user_id, preferred_city, preferred_zone, min_budget, max_budget, bedrooms_needed, move_in_date, move_in_flexible, pet_friendly, parking_needed, additional_requirements, number_of_people, property_type_desired, furnished, utilities_included, levels_preferred, size_sqft, size_unit, common_areas, skytrain_lines, near_bus, near_social, near_banks, near_downtown, institution_type, institution_name, is_premium, target_zones:preferred_zones, preferred_amenities, created_at"
     )
     .in("user_id", tenantIds)
     .order("created_at", { ascending: false });
