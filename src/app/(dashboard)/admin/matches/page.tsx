@@ -308,7 +308,7 @@ function PreferenceGrid({ prefs }: { prefs: TenantPreferences }) {
     { label: "Institution name", value: prefs.institution_name || null },
   ];
   const visible = fields.filter((f) => f.value);
-  if (visible.length === 0 && !prefs.additional_requirements) {
+  if (visible.length === 0 && !prefs.additional_requirements?.trim()) {
     return <p className="text-xs text-muted-foreground italic">All preference fields are empty.</p>;
   }
   return (
@@ -321,10 +321,10 @@ function PreferenceGrid({ prefs }: { prefs: TenantPreferences }) {
           </div>
         ))}
       </div>
-      {prefs.additional_requirements && (
+      {prefs.additional_requirements?.trim() && (
         <div className="mt-2 text-xs">
           <p className="text-muted-foreground">Additional requirements:</p>
-          <p className="font-medium italic">{prefs.additional_requirements}</p>
+          <p className="font-medium italic whitespace-pre-wrap">{prefs.additional_requirements.trim()}</p>
         </div>
       )}
     </>

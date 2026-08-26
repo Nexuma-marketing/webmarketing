@@ -275,7 +275,7 @@ export default async function PropertyDetailsPage({
               {Object.entries(imagesByRoom).map(([room, roomImgs]) => (
                 <div key={room}>
                   <p className="text-sm font-medium mb-2">{room} ({roomImgs!.length})</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {roomImgs!.map((img) => (
                       <div key={img.id} className="relative aspect-[4/3] overflow-hidden rounded-md border bg-muted">
                         {/* eslint-disable-next-line @next/next/no-img-element */}

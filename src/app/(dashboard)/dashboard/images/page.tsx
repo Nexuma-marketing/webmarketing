@@ -540,7 +540,7 @@ export default function ImagesPage() {
                   <CardDescription>{catImages.length} image(s)</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {catImages.map((img) => {
                       const colors = IMAGE_STATUS_COLORS[img.status] || IMAGE_STATUS_COLORS.pending;
                       return (

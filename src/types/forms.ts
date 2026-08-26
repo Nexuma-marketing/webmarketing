@@ -153,10 +153,10 @@ export type PropertyOnlyFormData = z.infer<typeof propertyOnlySchema>;
 // ===========================================
 export const tenantFormSchema = z.object({
   // Employment & situation
-  employment_type: z.enum(
-    ["full_time", "part_time", "contract", "self_employed", "international_student"],
-    { message: "Please select your current situation" }
-  ),
+  employment_types: z.array(z.enum([
+    "full_time", "part_time", "contract", "self_employed", "local_student",
+    "international_student", "retired", "unemployed",
+  ])).min(1, "Please select at least one current situation"),
   institution_type: z.string().optional(),
   institution_name: z.string().optional(),
   employment_verifiable: z.boolean().default(false),

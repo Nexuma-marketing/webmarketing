@@ -46,7 +46,8 @@ export function calculatePayback(
 // ═══════════════════════════════════════════════════════
 
 export interface TenantCriteriaInput {
-  employment_type: string | null;
+  employment_type: string | string[] | null;
+  institution_type?: string | null;
   employment_verifiable: boolean;
   max_budget: number | null;
   preferred_amenities: string[];
@@ -56,6 +57,26 @@ export interface TenantCriteriaInput {
   style_preference: string | null;
   furnished: boolean;
   contract_duration: string | null;
+}
+
+export function normalizeTenantSituations(value: string | string[] | null): string[] {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return parsed;
+    }
+  } catch {
+    // Legacy rows are plain scalar values, not JSON.
+  }
+  const legacyAliases: Record<string, string> = {
+    employed_full: "full_time",
+    employed_part: "part_time",
+    student_local: "local_student",
+    student_international: "international_student",
+  };
+  return [legacyAliases[value] ?? value];
 }
 
 type RuleMap = Record<string, { weight: number; is_active: boolean }>;
@@ -73,8 +94,13 @@ export function countPremiumCriteria(
   };
 
   // 1. Stable employment
-  if (data.employment_type === "full_time" || data.employment_type === "self_employed") {
+  const situations = normalizeTenantSituations(data.employment_type);
+  if (situations.includes("full_time") || situations.includes("self_employed")) {
     count += w("tenant_premium.stable_employment", 1);
+  }
+
+  if (situations.includes("international_student") && data.institution_type === "university") {
+    count += w("tenant_premium.qualifying_student", 1);
   }
 
   // 2. Budget >= $2,500 CAD/month
@@ -288,6 +314,7 @@ export async function profileTenant(userId: string) {
   // 2. Count premium criteria
   const criteriaCount = countPremiumCriteria({
     employment_type: prefs.employment_type,
+    institution_type: prefs.institution_type,
     employment_verifiable: prefs.employment_verifiable,
     max_budget: prefs.max_budget ? Number(prefs.max_budget) : null,
     preferred_amenities: prefs.preferred_amenities || [],

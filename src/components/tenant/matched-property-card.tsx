@@ -110,7 +110,7 @@ export function MatchedPropertyCard({
               <p className="text-xs font-medium text-muted-foreground mb-1.5">
                 {room} ({roomImgs.length})
               </p>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {roomImgs.map((img, i) => (
                   <div key={i} className="aspect-[4/3] overflow-hidden rounded-md bg-background">
                     <img

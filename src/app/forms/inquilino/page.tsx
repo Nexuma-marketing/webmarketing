@@ -83,23 +83,15 @@ const BC_ZONES = [
 
 // ─── Employment types (PDF 5.3.1) ───────────────────
 const EMPLOYMENT_TYPES = [
-  { value: "full_time", label: "Full-time employment" },
-  { value: "part_time", label: "Part-time employment" },
-  { value: "contract", label: "Temporary contract" },
+  { value: "full_time", label: "Employed full-time" },
+  { value: "part_time", label: "Employed part-time" },
+  { value: "contract", label: "Employed on a temporary contract" },
   { value: "self_employed", label: "Self-employed / Business owner" },
+  { value: "local_student", label: "Local student" },
   { value: "international_student", label: "International student" },
-];
-
-// Admin-backed form metadata still contains legacy identifiers for some of
-// these options. Keep the displayed metadata, but store the identifiers the
-// tenant form schema validates and the rest of this component consumes.
-const EMPLOYMENT_TYPE_VALUE_ALIASES: Partial<
-  Record<string, TenantFormData["employment_type"]>
-> = {
-  employed_full: "full_time",
-  employed_part: "part_time",
-  student_international: "international_student",
-};
+  { value: "retired", label: "Retired" },
+  { value: "unemployed", label: "Currently unemployed" },
+] as const;
 
 // ─── Institution types (conditional for students) ───
 const INSTITUTION_TYPES = [
@@ -200,8 +192,8 @@ const SMART_HOME_FEATURES = ["Smart locks", "Keyless entry card", "Other"];
 function countPremiumCriteria(data: TenantFormData): number {
   let count = 0;
   // 1. Employment: full_time, self_employed, or student at qualifying uni
-  if (data.employment_type === "full_time" || data.employment_type === "self_employed") count++;
-  if (data.employment_type === "international_student" && data.institution_type === "university") count++;
+  if (data.employment_types.includes("full_time") || data.employment_types.includes("self_employed")) count++;
+  if (data.employment_types.includes("international_student") && data.institution_type === "university") count++;
   // 2. Budget >= $2500
   if (data.max_budget >= 2500) count++;
   // 3. Premium amenities (gym, rooftop, coworking, jacuzzi, private parking)
@@ -262,6 +254,7 @@ export default function TenantFormPage() {
     resolver: zodResolver(tenantFormSchema) as any,
     defaultValues: {
       preferred_zones: [],
+      employment_types: [],
       preferred_amenities: [],
       property_type_desired: [],
       common_areas: [],
@@ -295,7 +288,7 @@ export default function TenantFormPage() {
   const commonAreas = watch("common_areas") as string[];
   const skytrainLines = watch("skytrain_lines") as string[];
   const smartHomeFeatures = watch("smart_home_features") as string[];
-  const employmentType = watch("employment_type") as string | undefined;
+  const employmentTypes = watch("employment_types") || [];
   const numberOfPeople = watch("number_of_people") as string | undefined;
   const bedroomsNeeded = watch("bedrooms_needed") as string | undefined;
   const bathroomsNeeded = watch("bathrooms_needed") as string | undefined;
@@ -324,7 +317,7 @@ export default function TenantFormPage() {
 
   async function nextStep() {
     let fieldsToValidate: (keyof TenantFormData)[] = [];
-    if (step === 1) fieldsToValidate = ["employment_type", "number_of_people", "property_type_desired"];
+    if (step === 1) fieldsToValidate = ["employment_types", "number_of_people", "property_type_desired"];
     if (step === 2) fieldsToValidate = ["preferred_zones", "bedrooms_needed", "bathrooms_needed"];
     if (step === 3) fieldsToValidate = ["min_budget", "max_budget", "move_in_date", "contract_duration"];
 
@@ -385,7 +378,9 @@ export default function TenantFormPage() {
         bathrooms_needed: Math.floor(parseFloat(data.bathrooms_needed.replace(" Bath", ""))),
         move_in_date: data.move_in_date,
         move_in_flexible: data.move_in_flexible,
-        employment_type: data.employment_type,
+        // Store genuine multi-select data as JSON in the existing TEXT column.
+        // Legacy scalar rows remain readable by the classification normalizer.
+        employment_type: JSON.stringify(data.employment_types),
         // Steve Old#1 (4/19 expanded): employment_verifiable removed for ALL tenants (legal)
         employment_verifiable: false,
         institution_type: data.institution_type || null,
@@ -518,50 +513,50 @@ export default function TenantFormPage() {
             {/* ═══ Step 1: Personal & Employment ═══ */}
             {step === 1 && (
               <>
-                <DynamicField
-                  meta={fieldMeta}
-                  fieldKey="employment_type"
-                  fallbackLabel="What is your current situation?"
-                >
-                  <Select
-                    value={employmentType}
-                    onValueChange={(val: string | null) => {
-                      if (!val) return;
-                      setValue("employment_type", val as TenantFormData["employment_type"]);
-                      if (val === "international_student") {
-                        setValue("employment_verifiable", false);
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select your situation" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fieldOptions(fieldMeta, "employment_type", EMPLOYMENT_TYPES).map((e) => (
-                        <SelectItem
-                          key={e.value}
-                          value={EMPLOYMENT_TYPE_VALUE_ALIASES[e.value] ?? e.value}
-                        >
-                          {e.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.employment_type && (
-                    <p className="text-sm text-destructive">{errors.employment_type.message}</p>
+                <div className="space-y-3">
+                  <Label>What is your current situation?</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {EMPLOYMENT_TYPES.map((situation) => (
+                      <div key={situation.value} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`situation-${situation.value}`}
+                          checked={employmentTypes.includes(situation.value)}
+                          onCheckedChange={() => {
+                            const removingInternationalStudent =
+                              situation.value === "international_student" &&
+                              employmentTypes.includes("international_student");
+                            toggleArrayField("employment_types", situation.value, employmentTypes);
+                            if (removingInternationalStudent) {
+                              setValue("institution_type", undefined);
+                              setValue("institution_name", undefined);
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`situation-${situation.value}`} className="text-sm font-normal">
+                          {situation.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.employment_types && (
+                    <p className="text-sm text-destructive">{errors.employment_types.message}</p>
                   )}
-                </DynamicField>
+                </div>
 
                 {/* Student sub-questions */}
-                {employmentType === "international_student" && (
+                {employmentTypes.includes("international_student") && (
                   <div className="space-y-3 rounded-md border p-4">
                     <DynamicField meta={fieldMeta} fieldKey="institution_type" fallbackLabel="Type of institution">
-                      <Select value={watch("institution_type") as string | undefined} onValueChange={(val: string | null) => val && setValue("institution_type", val)}>
+                      <Select value={watch("institution_type") as string | undefined} onValueChange={(val: string | null) => {
+                        if (!val) return;
+                        setValue("institution_type", val);
+                        if (val !== "university") setValue("institution_name", undefined);
+                      }}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select institution type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {fieldOptions(fieldMeta, "institution_type", INSTITUTION_TYPES).map((t) => (
+                          {INSTITUTION_TYPES.map((t) => (
                             <SelectItem key={t.value} value={t.value}>
                               {t.label}
                             </SelectItem>
@@ -569,13 +564,11 @@ export default function TenantFormPage() {
                         </SelectContent>
                       </Select>
                     </DynamicField>
-                    <DynamicField meta={fieldMeta} fieldKey="institution_name" fallbackLabel="Name of institution (optional)" htmlFor="institution_name">
-                      <Input
-                        id="institution_name"
-                        placeholder="e.g. University of British Columbia"
-                        {...register("institution_name")}
-                      />
-                    </DynamicField>
+                    {watch("institution_type") === "university" && (
+                      <DynamicField meta={fieldMeta} fieldKey="institution_name" fallbackLabel="University name (optional)" htmlFor="institution_name">
+                        <Input id="institution_name" placeholder="e.g. University of British Columbia" {...register("institution_name")} />
+                      </DynamicField>
+                    )}
                   </div>
                 )}
 
