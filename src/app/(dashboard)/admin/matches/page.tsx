@@ -11,7 +11,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link2, Search, Home, AlertCircle } from "lucide-react";
+import { PropertyDetailModal } from "@/components/admin/property-detail-modal";
+import { Link2, Search, Home, AlertCircle, Eye } from "lucide-react";
 
 // Steve 6/9 (6-2.md #38): Alex screenshot 2 of the 2026-06-07 docx
 // — "Donde ve si un inquilino tuvo match o no, con una propiedad?"
@@ -81,6 +82,7 @@ export default function AdminMatchesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -251,6 +253,10 @@ export default function AdminMatchesPage() {
                             </div>
                             <Badge variant="outline">${m.monthly_rent.toLocaleString()}/mo</Badge>
                             <Badge variant="outline">{m.bedrooms} bd</Badge>
+                            <Button variant="outline" size="sm" onClick={() => setSelectedPropertyId(m.id)}>
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              View
+                            </Button>
                           </div>
                         ))}
                       </div>
@@ -262,6 +268,10 @@ export default function AdminMatchesPage() {
           );
         })}
       </div>
+      <PropertyDetailModal
+        propertyId={selectedPropertyId}
+        onClose={() => setSelectedPropertyId(null)}
+      />
     </div>
   );
 }

@@ -40,7 +40,7 @@ export async function GET(
     .eq("property_id", id)
     .order("uploaded_at", { ascending: false });
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: `property_images fetch failed: ${error.message}` }, { status: 500 });
   }
 
   return NextResponse.json({ photos: data ?? [] });

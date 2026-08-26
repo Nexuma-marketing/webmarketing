@@ -42,7 +42,7 @@ export async function GET() {
   const { data: propertyRows, error: propErr } = await supabaseAdmin
     .from("properties")
     .select(
-      "id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, vacancy_date, availability_date, cfp_monthly, payback_months, balance_invoice_id, balance_invoice_status, balance_invoice_amount, balance_invoice_sent_at, balance_invoice_paid_at, created_at",
+      "id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, vacancy_date, availability_date, near_parks, near_churches, near_skytrain, skytrain_lines, near_bus, near_mall, social_life, nearby_supermarkets, cfp_monthly, payback_months, balance_invoice_id, balance_invoice_status, balance_invoice_amount, balance_invoice_sent_at, balance_invoice_paid_at, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -88,10 +88,16 @@ export async function GET() {
   const propertyIds = rows.map((r) => r.id as string);
   let photoCountByProp: Record<string, { total: number; pending: number; approved: number; rejected: number }> = {};
   if (propertyIds.length > 0) {
-    const { data: photoRows } = await supabaseAdmin
+    const { data: photoRows, error: photosErr } = await supabaseAdmin
       .from("property_images")
       .select("property_id, status")
       .in("property_id", propertyIds);
+    if (photosErr) {
+      return NextResponse.json(
+        { error: `property_images fetch failed: ${photosErr.message}` },
+        { status: 500 },
+      );
+    }
     photoCountByProp = (photoRows ?? []).reduce<typeof photoCountByProp>((acc, r) => {
       const pid = r.property_id as string;
       const status = (r.status as string) || "pending";
@@ -132,6 +138,14 @@ export async function GET() {
       occupancy_status: (p.occupancy_status as string | null) ?? null,
       vacancy_date: (p.vacancy_date as string | null) ?? null,
       availability_date: (p.availability_date as string | null) ?? null,
+      near_parks: (p.near_parks as boolean | null) ?? false,
+      near_churches: (p.near_churches as boolean | null) ?? false,
+      near_skytrain: (p.near_skytrain as boolean | null) ?? false,
+      skytrain_lines: (p.skytrain_lines as string[] | null) ?? [],
+      near_bus: (p.near_bus as boolean | null) ?? false,
+      near_mall: (p.near_mall as boolean | null) ?? false,
+      social_life: (p.social_life as string | null) ?? null,
+      nearby_supermarkets: (p.nearby_supermarkets as string[] | null) ?? [],
       cfp_monthly: (p.cfp_monthly as number | null) ?? null,
       payback_months: (p.payback_months as number | null) ?? null,
       balance_invoice_id: (p.balance_invoice_id as string | null) ?? null,
