@@ -285,21 +285,6 @@ export default function ImagesPage() {
     }
   };
 
-  // Steve 5/5: registration form (image-upload.tsx) saves room_category as
-  // "living_room" lowercase, but constants.ts ROOM_CATEGORIES is Title Case
-  // ("Living Room"). Strict-equality grouping never matched, so the gallery
-  // appeared empty for owners who registered through the form. Group by the
-  // raw DB value so every image shows up under the casing the DB has.
-  const groupedImages = images.reduce<Record<string, PropertyImage[]>>(
-    (acc, img) => {
-      const key = img.room_category || "Other";
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(img);
-      return acc;
-    },
-    {}
-  );
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -522,8 +507,8 @@ export default function ImagesPage() {
             </Card>
           )}
 
-          {/* Image grid grouped by room */}
-          {Object.keys(groupedImages).length === 0 ? (
+          {/* Image grid */}
+          {images.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center py-8 text-center">
                 <ImageIcon className="mb-3 h-8 w-8 text-muted-foreground" />
@@ -533,53 +518,50 @@ export default function ImagesPage() {
               </CardContent>
             </Card>
           ) : (
-            Object.entries(groupedImages).map(([category, catImages]) => (
-              <Card key={category}>
-                <CardHeader>
-                  <CardTitle className="text-base">{category}</CardTitle>
-                  <CardDescription>{catImages.length} image(s)</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {catImages.map((img) => {
-                      const colors = IMAGE_STATUS_COLORS[img.status] || IMAGE_STATUS_COLORS.pending;
-                      return (
-                        <div key={img.id} className="group relative rounded-md border overflow-hidden">
-                          <div className="aspect-video bg-muted">
-                            <img
-                              src={img.image_url}
-                              alt={`${category} photo`}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
-                          <div className="p-2 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              {statusIcon(img.status)}
-                              <Badge className={`${colors.bg} ${colors.text} text-xs`}>
-                                {img.status}
-                              </Badge>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
-                              onClick={() => handleDelete(img.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                            </Button>
-                          </div>
-                          {img.validation_notes && (
-                            <p className="px-2 pb-2 text-xs text-muted-foreground">
-                              {img.validation_notes}
-                            </p>
-                          )}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  {images.map((img) => {
+                    const colors = IMAGE_STATUS_COLORS[img.status] || IMAGE_STATUS_COLORS.pending;
+                    return (
+                      <div key={img.id} className="group relative overflow-hidden rounded-md border">
+                        <div className="relative aspect-video bg-muted">
+                          <img
+                            src={img.image_url}
+                            alt={`${img.room_category} photo`}
+                            className="h-full w-full object-cover"
+                          />
+                          <span className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-xs font-medium text-white">
+                            {img.room_category || "Other"}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                        <div className="flex items-center justify-between p-2">
+                          <div className="flex items-center gap-1.5">
+                            {statusIcon(img.status)}
+                            <Badge className={`${colors.bg} ${colors.text} text-xs`}>
+                              {img.status}
+                            </Badge>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
+                            onClick={() => handleDelete(img.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </div>
+                        {img.validation_notes && (
+                          <p className="px-2 pb-2 text-xs text-muted-foreground">
+                            {img.validation_notes}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           )}
         </>
       )}

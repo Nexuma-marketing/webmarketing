@@ -53,7 +53,7 @@ export default async function PropertyDetailsPage({
 
   if (!property) notFound();
 
-  // Load images grouped by room
+  // Load images
   const { data: images } = await supabase
     .from("property_images")
     .select("id, room_category, image_url, status, sort_order")
@@ -61,11 +61,7 @@ export default async function PropertyDetailsPage({
     .order("room_category")
     .order("sort_order", { ascending: true });
 
-  const imagesByRoom: Record<string, typeof images> = {};
-  for (const img of images || []) {
-    if (!imagesByRoom[img.room_category]) imagesByRoom[img.room_category] = [];
-    imagesByRoom[img.room_category]!.push(img);
-  }
+  const roomCount = new Set((images || []).map((img) => img.room_category)).size;
 
   return (
     <div className="space-y-6">
@@ -265,39 +261,35 @@ export default async function PropertyDetailsPage({
           <CardTitle className="text-base">Property Images</CardTitle>
           <CardDescription>
             {images && images.length > 0
-              ? `${images.length} image${images.length !== 1 ? "s" : ""} across ${Object.keys(imagesByRoom).length} room${Object.keys(imagesByRoom).length !== 1 ? "s" : ""}`
+              ? `${images.length} image${images.length !== 1 ? "s" : ""} across ${roomCount} room${roomCount !== 1 ? "s" : ""}`
               : "No images uploaded yet"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {images && images.length > 0 ? (
-            <div className="space-y-4">
-              {Object.entries(imagesByRoom).map(([room, roomImgs]) => (
-                <div key={room}>
-                  <p className="text-sm font-medium mb-2">{room} ({roomImgs!.length})</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {roomImgs!.map((img) => (
-                      <div key={img.id} className="relative aspect-[4/3] overflow-hidden rounded-md border bg-muted">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.image_url}
-                          alt={room}
-                          className="h-full w-full object-cover"
-                        />
-                        <Badge
-                          className={`absolute top-1 right-1 text-xs ${
-                            img.status === "approved"
-                              ? "bg-green-100 text-green-700"
-                              : img.status === "rejected"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {img.status}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {images.map((img) => (
+                <div key={img.id} className="relative aspect-[4/3] overflow-hidden rounded-md border bg-muted">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.image_url}
+                    alt={img.room_category}
+                    className="h-full w-full object-cover"
+                  />
+                  <span className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-xs font-medium text-white">
+                    {img.room_category}
+                  </span>
+                  <Badge
+                    className={`absolute top-1 right-1 text-xs ${
+                      img.status === "approved"
+                        ? "bg-green-100 text-green-700"
+                        : img.status === "rejected"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-yellow-100 text-yellow-700"
+                    }`}
+                  >
+                    {img.status}
+                  </Badge>
                 </div>
               ))}
             </div>
