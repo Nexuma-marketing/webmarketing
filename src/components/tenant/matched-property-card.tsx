@@ -65,13 +65,6 @@ export function MatchedPropertyCard({
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Group images by room category
-  const imagesByRoom: Record<string, PropertyImage[]> = {};
-  for (const img of images) {
-    if (!imagesByRoom[img.room_category]) imagesByRoom[img.room_category] = [];
-    imagesByRoom[img.room_category].push(img);
-  }
-
   async function handleApply() {
     setApplying(true);
     setError(null);
@@ -102,26 +95,20 @@ export function MatchedPropertyCard({
 
   return (
     <Card className="overflow-hidden">
-      {/* Image gallery (all photos by room, smaller aspect) */}
+      {/* Image gallery */}
       {images.length > 0 ? (
-        <div className="space-y-3 p-4 bg-muted/30">
-          {Object.entries(imagesByRoom).map(([room, roomImgs]) => (
-            <div key={room}>
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">
-                {room} ({roomImgs.length})
-              </p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {roomImgs.map((img, i) => (
-                  <div key={i} className="aspect-[4/3] overflow-hidden rounded-md bg-background">
-                    <img
-                      src={img.image_url}
-                      alt={`${room} ${i + 1}`}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                ))}
-              </div>
+        <div className="grid grid-cols-2 gap-2 bg-muted/30 p-4 sm:grid-cols-3">
+          {images.map((img, i) => (
+            <div key={i} className="relative aspect-[4/3] overflow-hidden rounded-md bg-background">
+              <img
+                src={img.image_url}
+                alt={`${img.room_category} ${i + 1}`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+              <span className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-xs font-medium text-white">
+                {img.room_category}
+              </span>
             </div>
           ))}
         </div>
