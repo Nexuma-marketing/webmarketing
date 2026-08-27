@@ -29,13 +29,15 @@ export async function POST(request: Request) {
 
     const resend = new Resend(process.env.RESEND_API_KEY);
     const tenantType = is_premium ? "Premium Tenant" : "Tenant";
+    const recipientForCommercial = COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean);
 
     // 1. Email to commercial team
-    resend.emails.send({
-      from: FROM_EMAIL,
-      to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
-      subject: `New ${tenantType} Registration — ${profile?.full_name || "Unknown"}`,
-      html: `
+    const sends: Promise<unknown>[] = [
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: recipientForCommercial,
+        subject: `New ${tenantType} Registration — ${profile?.full_name || "Unknown"}`,
+        html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto">
   <h2 style="color:#0B38D9">New ${tenantType} Registration</h2>
   <p>A new ${tenantType.toLowerCase()} has completed the preferences form.</p>
@@ -49,7 +51,8 @@ export async function POST(request: Request) {
     <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Move-in date</td><td style="padding:8px">${move_in_date || "N/A"}</td></tr>
   </table>
 </div>`,
-    }).catch((err) => console.error("Commercial email failed:", err));
+      }),
+    ];
 
     // 2. Confirmation email to the tenant
     // Steve 4/23 #6: Use user.email (from auth) as primary, profile.email as backup.
@@ -57,11 +60,12 @@ export async function POST(request: Request) {
     const clientEmail = user.email || profile?.email;
     console.log(`[tenant-submit-email] Sending to client: ${clientEmail}`);
     if (clientEmail) {
-      resend.emails.send({
-        from: FROM_EMAIL,
-        to: [clientEmail],
-        subject: `Your ${tenantType} registration is confirmed — Nexuma`,
-        html: `
+      sends.push(
+        resend.emails.send({
+          from: FROM_EMAIL,
+          to: [clientEmail],
+          subject: `Your ${tenantType} registration is confirmed — Nexuma`,
+          html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:linear-gradient(135deg,#0B38D9 0%,#0FA37F 100%);padding:28px 24px;border-radius:8px 8px 0 0">
     <h1 style="color:#fff;margin:0;font-size:24px">Welcome, ${profile?.full_name || "there"}!</h1>
@@ -77,10 +81,26 @@ export async function POST(request: Request) {
     </p>
   </div>
 </div>`,
-      }).catch((err) => console.error("Tenant client email failed:", err));
+        }),
+      );
     }
 
-    return NextResponse.json({ success: true });
+    console.log(`[tenant-submit-email] Sending commercial -> ${recipientForCommercial.join(", ")}`);
+    console.log(`[tenant-submit-email] Sending tenant confirmation -> ${clientEmail || "(none)"}`);
+
+    const results = await Promise.allSettled(sends);
+    const labels = clientEmail ? ["commercial", "tenant"] : ["commercial"];
+    let anySuccess = false;
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        anySuccess = true;
+        console.log(`[tenant-submit-email] ${labels[index]} email sent`, result.value);
+      } else {
+        console.error(`[tenant-submit-email] ${labels[index]} email failed:`, result.reason);
+      }
+    });
+
+    return NextResponse.json({ success: true, emailSent: anySuccess });
   } catch (err) {
     console.error("Tenant submit email error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
