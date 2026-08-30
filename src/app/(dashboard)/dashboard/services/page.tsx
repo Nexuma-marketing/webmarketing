@@ -29,6 +29,8 @@ import {
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { MatchedPropertyCard } from "@/components/tenant/matched-property-card";
 import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions-banner";
+import { FoundersBanner } from "@/components/dashboard/founders-banner";
+import { getFoundersAvailability } from "@/lib/founders-plan";
 
 // ─── Owner Service Tiers ─────────────────────────────
 const OWNER_TIERS: Record<
@@ -180,6 +182,61 @@ const PLAN_NAME_TO_DB_SERVICE: Record<string, string> = {
   "Premier Tier": "Plan: Owner Preferred — Premier Tier",
 };
 
+type OtherService = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  price?: number | null;
+  currency?: string | null;
+  features?: string[] | null;
+  features_basic?: string[] | null;
+  features_preferred?: string[] | null;
+  features_elite?: string[] | null;
+};
+
+function OtherServiceCard({
+  service,
+  pickFeatures,
+  formatServicePrice,
+}: {
+  service: OtherService;
+  pickFeatures: (service: OtherService) => string[];
+  formatServicePrice: (service: OtherService) => string;
+}) {
+  const features = pickFeatures(service);
+  return (
+    <Card className="opacity-75">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <CardTitle className="text-lg">{service.name}</CardTitle>
+          <Badge variant="outline" className="capitalize">
+            {service.category}
+          </Badge>
+        </div>
+        <CardDescription>{service.description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {features.length > 0 && (
+          <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
+            {features.slice(0, 3).map((feature, index) => (
+              <li key={index} className="flex items-center gap-1.5">
+                <span className="text-primary">&#8226;</span> {feature}
+              </li>
+            ))}
+            {features.length > 3 && (
+              <li className="text-xs text-muted-foreground">
+                +{features.length - 3} more features
+              </li>
+            )}
+          </ul>
+        )}
+        <span className="text-lg font-bold">{formatServicePrice(service)}</span>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Elite Sub-Tiers ────────────────────────────────
 const ELITE_SUB_TIERS: Record<
   string,
@@ -305,23 +362,6 @@ const PYMES_PLANS: Record<
     borderColor: "border-green-200",
   },
 };
-
-function FoundersBanner({ taken, limit }: { taken: number; limit: number }) {
-  const left = Math.max(0, limit - taken);
-  return (
-    <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 text-center">
-      <p className="text-lg font-bold text-amber-900">
-        {taken} owners have already chosen the Founders Package
-      </p>
-      <p className="text-2xl font-extrabold text-red-600 mt-1">
-        Only {left} spots left — Hurry!
-      </p>
-      <p className="text-xs text-amber-700 mt-2">
-        Limited to the first {limit} Visionary Owners at the special lifetime rate.
-      </p>
-    </div>
-  );
-}
 
 export default async function ServicesPage() {
   const supabase = await createClient();
@@ -535,39 +575,7 @@ export default async function ServicesPage() {
   // for SELECT). Limit stays in app_config since that's a config
   // value, not a derived one. After this change the banner is
   // always exact regardless of how the user table drifts.
-  const supabaseSrv = (() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) return null;
-    const { createClient: createSb } = require("@supabase/supabase-js") as {
-      createClient: (u: string, k: string, o: { auth: { persistSession: boolean } }) => typeof supabase;
-    };
-    return createSb(url, key, { auth: { persistSession: false } });
-  })();
-
-  let foundersTaken = 0;
-  let foundersLimit = 20;
-
-  if (supabaseSrv) {
-    const [{ data: foundersConfig }, { data: foundersService }] = await Promise.all([
-      supabaseSrv.from("app_config").select("key, value").eq("category", "founders_plan"),
-      supabaseSrv.from("services").select("id, name").ilike("name", "%Founder%Package%"),
-    ]);
-    const cfg = Object.fromEntries(
-      (foundersConfig || []).map((r: { key: string; value: string }) => [r.key, r.value]),
-    );
-    foundersLimit = Number(cfg.limit ?? "20");
-
-    const foundersIds = (foundersService || []).map((s: { id: string }) => s.id);
-    if (foundersIds.length > 0) {
-      const { count } = await supabaseSrv
-        .from("payments")
-        .select("id", { count: "exact", head: true })
-        .in("service_id", foundersIds)
-        .eq("status", "completed");
-      foundersTaken = count ?? 0;
-    }
-  }
+  const { taken: foundersTaken, limit: foundersLimit } = await getFoundersAvailability();
 
   // ─── Plan tier overrides (admin-editable from /admin/plans) ─────
   // Steve 4/28 round 2: when admin edits the per-tier checklist in
@@ -664,6 +672,29 @@ export default async function ServicesPage() {
     if (!s.target_roles || s.target_roles.length === 0) return false;
     return !s.target_roles.includes(profile.role);
   });
+  const ownerOtherServiceGroups = isOwnerRole
+    ? [
+        {
+          title: "Property add-on services",
+          services: (otherServices || []).filter((service) =>
+            !service.target_roles?.includes("inversionista") &&
+            !service.target_roles?.includes("pymes"),
+          ),
+        },
+        {
+          title: "Investor services",
+          services: (otherServices || []).filter((service) =>
+            service.target_roles?.includes("inversionista"),
+          ),
+        },
+        {
+          title: "Business services",
+          services: (otherServices || []).filter((service) =>
+            service.target_roles?.includes("pymes"),
+          ),
+        },
+      ].filter((group) => group.services.length > 0)
+    : [];
 
   // ─── Owner tier details ────────────────────────
   const baseTier = ownerTier ? OWNER_TIERS[ownerTier] : null;
@@ -756,7 +787,7 @@ export default async function ServicesPage() {
         </p>
       </div>
 
-      <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />
+      {!isOwnerRole && <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />}
 
       {/* ═══ Owner: Service Tier Card ═══ */}
       {isOwnerRole && tierDetails && (
@@ -953,11 +984,21 @@ export default async function ServicesPage() {
               below) never saw the saved counter, making it look like
               the admin save did nothing. Now renders for any basic
               tier — including the no-tier branch via FoundersBanner
-              below. Multi-property tiers (preferred/elite) still skip
-              it because the Founders package only applies to single
-              property owners. */}
-          {ownerTier === "basic" && foundersLimit > 0 && (
-            <FoundersBanner taken={foundersTaken} limit={foundersLimit} />
+              below. It is intentionally available across all Property
+              Owner tiers. */}
+          {foundersLimit > 0 && (
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit}>
+              {(() => {
+                const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+                return foundersService && Number(foundersService.price) > 0 ? (
+                  <CheckoutButton
+                    type="service"
+                    serviceId={foundersService.id}
+                    label={`Trust & earn — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
+                  />
+                ) : null;
+              })()}
+            </FoundersBanner>
           )}
 
           <div className={`grid gap-4 ${tierDetails.plans.length > 1 ? "md:grid-cols-2" : ""}`}>
@@ -1018,7 +1059,18 @@ export default async function ServicesPage() {
               0" during admin tests because the no-tier owner card had
               no banner at all. */}
           {foundersLimit > 0 && (
-            <FoundersBanner taken={foundersTaken} limit={foundersLimit} />
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit}>
+              {(() => {
+                const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+                return foundersService && Number(foundersService.price) > 0 ? (
+                  <CheckoutButton
+                    type="service"
+                    serviceId={foundersService.id}
+                    label={`Trust & earn — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
+                  />
+                ) : null;
+              })()}
+            </FoundersBanner>
           )}
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center py-8 text-center">
@@ -1037,6 +1089,9 @@ export default async function ServicesPage() {
           </Card>
         </div>
       )}
+
+      {/* Keep owner service + pricing decisions above secondary promotions. */}
+      {isOwnerRole && <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />}
 
       {/* ═══ PYMES: Recommended Plan ═══ */}
       {isPymesRole && pymesPlanDetails && (
@@ -1370,48 +1425,38 @@ export default async function ServicesPage() {
         </div>
       )}
 
-      {/* ═══ Other Services ═══ */}
+      {/* ═══ Other Services — secondary to the owner's assigned plan ═══ */}
       {otherServices && otherServices.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Other Available Services</h2>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {otherServices.map((service) => (
-              <Card key={service.id} className="opacity-75">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{service.name}</CardTitle>
-                    <Badge variant="outline" className="capitalize">
-                      {service.category}
-                    </Badge>
+          {isOwnerRole ? (
+            <div className="space-y-3">
+              {ownerOtherServiceGroups.map((group) => (
+                <details key={group.title} className="group rounded-lg border bg-card">
+                  <summary className="cursor-pointer list-none px-4 py-3 font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center justify-between gap-3">
+                      {group.title}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        <span className="group-open:hidden">+ View more</span>
+                        <span className="hidden group-open:inline">− Show less</span>
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="grid gap-4 border-t p-4 md:grid-cols-2 lg:grid-cols-3">
+                    {group.services.map((service) => (
+                      <OtherServiceCard key={service.id} service={service} pickFeatures={pickFeatures} formatServicePrice={formatServicePrice} />
+                    ))}
                   </div>
-                  <CardDescription>{service.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const feats = pickFeatures(service);
-                    return feats.length > 0 ? (
-                      <ul className="mb-3 space-y-1 text-sm text-muted-foreground">
-                        {feats.slice(0, 3).map((feature: string, i: number) => (
-                          <li key={i} className="flex items-center gap-1.5">
-                            <span className="text-primary">&#8226;</span>{" "}
-                            {feature}
-                          </li>
-                        ))}
-                        {feats.length > 3 && (
-                          <li className="text-xs text-muted-foreground">
-                            +{feats.length - 3} more features
-                          </li>
-                        )}
-                      </ul>
-                    ) : null;
-                  })()}
-                  <span className="text-lg font-bold">
-                    {formatServicePrice(service)}
-                  </span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                </details>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {otherServices.map((service) => (
+                <OtherServiceCard key={service.id} service={service} pickFeatures={pickFeatures} formatServicePrice={formatServicePrice} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

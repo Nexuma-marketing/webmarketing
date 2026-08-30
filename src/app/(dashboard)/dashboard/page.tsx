@@ -13,6 +13,33 @@ import { Building2, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTri
 import Link from "next/link";
 import { ROLE_LABELS, OWNER_TIERS, PYMES_PLANS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/admin";
+import { CheckoutButton } from "@/components/checkout/checkout-button";
+import { FoundersBanner } from "@/components/dashboard/founders-banner";
+import { getFoundersAvailability } from "@/lib/founders-plan";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const OWNER_PRIMARY_PLAN: Record<string, { serviceName: string; name: string; pricing: string; cta: string }> = {
+  basic: {
+    serviceName: "Plan: Low Price",
+    name: "Low Price",
+    pricing: "35% of first month's rent (one-time)",
+    cta: "Choose & secure your money",
+  },
+  preferred_owners: {
+    serviceName: "Plan: Owner Preferred — Support Tier",
+    name: "Support Tier",
+    pricing: "30% 1st property / 28% 2nd & 3rd (one-time each)",
+    cta: "Get Support",
+  },
+  elite: {
+    serviceName: "",
+    name: "Asset Management",
+    pricing: "Portfolio-based pricing (Essentials / Signature / Lujo)",
+    cta: "Manage My Assets",
+  },
+};
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -122,6 +149,28 @@ export default async function DashboardPage() {
   // Resolve plan details for display
   const ownerPlan = ownerTier ? OWNER_TIERS[ownerTier] : null;
   const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
+  const primaryPlan = ownerTier ? OWNER_PRIMARY_PLAN[ownerTier] : null;
+  const ownerPlanServiceNames = isOwnerRole
+    ? ([
+        primaryPlan?.serviceName,
+        "Plan: Founder Package — Visionary Owners",
+      ].filter(Boolean) as string[])
+    : [];
+  const { data: ownerPlanServices } = ownerPlanServiceNames.length > 0
+    ? await supabase
+        .from("services")
+        .select("id, name, price, currency, description")
+        .eq("is_active", true)
+        .in("name", ownerPlanServiceNames)
+    : { data: [] };
+  const planServicesByName = Object.fromEntries(
+    (ownerPlanServices || []).map((service) => [service.name, service]),
+  );
+  const primaryPlanService = primaryPlan?.serviceName
+    ? planServicesByName[primaryPlan.serviceName]
+    : null;
+  const foundersPlanService = planServicesByName["Plan: Founder Package — Visionary Owners"];
+  const foundersAvailability = isOwnerRole ? await getFoundersAvailability() : null;
 
   return (
     <div className="space-y-6">
@@ -230,7 +279,7 @@ export default async function DashboardPage() {
             </div>
             <CardDescription>{ownerPlan.tagline}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
               <Badge className={`${ownerPlan.bgColor} ${ownerPlan.color} border ${ownerPlan.borderColor} text-sm px-3 py-1`}>
                 {ownerPlan.name}
@@ -240,26 +289,62 @@ export default async function DashboardPage() {
               </span>
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">Recommendations</p>
+              <p className="text-sm font-medium">Included highlights</p>
               <ul className="space-y-1.5">
-                <li className="flex items-start gap-2 text-sm">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
-                  Professional photography for your listing
-                </li>
-                <li className="flex items-start gap-2 text-sm">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
-                  Listing optimization checklist
-                </li>
+                {ownerPlan.features.slice(0, 3).map((feature) => (
+                  <li key={feature} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
+                    {feature}
+                  </li>
+                ))}
               </ul>
             </div>
-            <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground">
-                See your full plan details and features in the{" "}
-                <Link href="/dashboard/services" className="text-primary underline">Services</Link> section.
-              </p>
-            </div>
+            {primaryPlan && (
+              <div className="rounded-lg border bg-card p-4 space-y-3">
+                <div>
+                  <p className="font-semibold">{primaryPlan.name}</p>
+                  <p className={`text-sm font-medium ${ownerPlan.color}`}>{primaryPlan.pricing}</p>
+                </div>
+                {primaryPlanService?.description && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {primaryPlanService.description}
+                  </p>
+                )}
+                {primaryPlanService && Number(primaryPlanService.price) > 0 ? (
+                  <CheckoutButton
+                    type="service"
+                    serviceId={primaryPlanService.id}
+                    label={`${primaryPlan.cta} — Pay $${Number(primaryPlanService.price)} ${primaryPlanService.currency || "CAD"} upfront`}
+                  />
+                ) : (
+                  <Link href="/dashboard/services#contact" className={buttonVariants({ className: "w-full" })}>
+                    {primaryPlan.cta}
+                  </Link>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Compare all plan options and full features in{" "}
+              <Link href="/dashboard/services" className="text-primary underline">Services</Link>.
+            </p>
           </CardContent>
         </Card>
+      )}
+
+      {isOwnerRole && foundersAvailability && foundersAvailability.limit > 0 && (
+        <FoundersBanner taken={foundersAvailability.taken} limit={foundersAvailability.limit}>
+          {foundersPlanService && Number(foundersPlanService.price) > 0 ? (
+            <CheckoutButton
+              type="service"
+              serviceId={foundersPlanService.id}
+              label={`Trust & earn — Pay $${Number(foundersPlanService.price)} ${foundersPlanService.currency || "CAD"} upfront`}
+            />
+          ) : (
+            <Link href="/dashboard/services" className={buttonVariants({ className: "w-full" })}>
+              View Founders Package
+            </Link>
+          )}
+        </FoundersBanner>
       )}
 
       {pymesPlanDetails && (
