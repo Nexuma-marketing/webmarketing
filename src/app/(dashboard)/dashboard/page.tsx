@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/admin";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { getFoundersAvailability } from "@/lib/founders-plan";
+import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -85,6 +86,7 @@ export default async function DashboardPage() {
   let pymesScore: number | null = null;
   let pymesUrgency: string | null = null;
   let pymesLoss: number | null = null;
+  let ownerProperties: { monthly_rent: number | null }[] = [];
 
   const isInvestor = profile.role === "inversionista";
   // Steve 4/20: respect user's initial user_type selection
@@ -96,9 +98,11 @@ export default async function DashboardPage() {
   if (isOwnerRole) {
     const { data: props } = await supabase
       .from("properties")
-      .select("id, cfp_monthly")
-      .eq("owner_id", user.id);
+      .select("id, monthly_rent, cfp_monthly")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true });
     propertyCount = props?.length || 0;
+    ownerProperties = props || [];
     totalCFP = props?.reduce((sum, p) => sum + (Number(p.cfp_monthly) || 0), 0) || 0;
 
     // Steve #8 + 4/20: investors always Elite; Property Owners stay at Basic/Preferred
@@ -147,7 +151,36 @@ export default async function DashboardPage() {
   serviceCount = svcCount || 0;
 
   // Resolve plan details for display
-  const ownerPlan = ownerTier ? OWNER_TIERS[ownerTier] : null;
+  const baseOwnerPlan = ownerTier ? OWNER_TIERS[ownerTier] : null;
+  const tierToPlanKey: Record<string, string> = {
+    basic: "owner_basic",
+    preferred_owners: "owner_preferred",
+    elite: "owner_elite",
+  };
+  const ownerPlanKey = ownerTier ? tierToPlanKey[ownerTier] : null;
+  const { data: ownerPlanConfig } = ownerPlanKey
+    ? await supabase
+        .from("app_config")
+        .select("category, key, value")
+        .or(`category.eq.plan_features:${ownerPlanKey},category.eq.plan_timing:${ownerPlanKey}`)
+    : { data: [] };
+  const ownerPlanFeatureOverride = ownerPlanConfig?.find(
+    (row) => row.category === `plan_features:${ownerPlanKey}` && row.key === "features",
+  )?.value as string | undefined;
+  const ownerPlanTimingOverride = ownerPlanConfig?.find(
+    (row) => row.category === `plan_timing:${ownerPlanKey}` && row.key === "time_to_tenant",
+  )?.value as string | undefined;
+  const ownerPlan = baseOwnerPlan
+    ? {
+        ...baseOwnerPlan,
+        features: (ownerPlanFeatureOverride
+          ? ownerPlanFeatureOverride.split("\n").map((feature) => feature.trim()).filter(Boolean)
+          : baseOwnerPlan.features
+        ).map((feature) => ownerPlanTimingOverride
+          ? feature.replace(/\(~[^)]+\)/, `(${ownerPlanTimingOverride})`)
+          : feature),
+      }
+    : null;
   const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
   const primaryPlan = ownerTier ? OWNER_PRIMARY_PLAN[ownerTier] : null;
   const ownerPlanServiceNames = isOwnerRole
@@ -196,7 +229,7 @@ export default async function DashboardPage() {
                 <p className="text-xs text-muted-foreground">Registered properties</p>
               </CardContent>
             </Card>
-            {totalCFP > 0 && (
+            {isInvestor && totalCFP > 0 && (
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium">Total CFP</CardTitle>
@@ -289,9 +322,9 @@ export default async function DashboardPage() {
               </span>
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">Included highlights</p>
+              <p className="text-sm font-medium">What&apos;s included in your {ownerPlan.name} service</p>
               <ul className="space-y-1.5">
-                {ownerPlan.features.slice(0, 3).map((feature) => (
+                {ownerPlan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2 text-sm">
                     <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
                     {feature}
@@ -303,7 +336,9 @@ export default async function DashboardPage() {
               <div className="rounded-lg border bg-card p-4 space-y-3">
                 <div>
                   <p className="font-semibold">{primaryPlan.name}</p>
-                  <p className={`text-sm font-medium ${ownerPlan.color}`}>{primaryPlan.pricing}</p>
+                  <p className={`text-sm font-medium ${ownerPlan.color}`}>
+                    {formatOwnerPlanPrice(primaryPlan.pricing, primaryPlan.name, ownerProperties)}
+                  </p>
                 </div>
                 {primaryPlanService?.description && (
                   <p className="text-xs leading-relaxed text-muted-foreground">

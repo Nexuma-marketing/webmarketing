@@ -155,7 +155,7 @@ export default async function PropertiesPage() {
                   )}
 
                   {/* CFP & Payback for Elite properties */}
-                  {cfp > 0 && (
+                  {isInvestor && cfp > 0 && (
                     <div className="rounded-md border p-3 space-y-2">
                       {eliteLabel && (
                         <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">

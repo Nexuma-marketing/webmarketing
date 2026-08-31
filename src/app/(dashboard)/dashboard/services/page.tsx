@@ -31,141 +31,8 @@ import { MatchedPropertyCard } from "@/components/tenant/matched-property-card";
 import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions-banner";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { getFoundersAvailability } from "@/lib/founders-plan";
-
-// ─── Owner Service Tiers ─────────────────────────────
-const OWNER_TIERS: Record<
-  string,
-  {
-    name: string;
-    tagline: string;
-    features: string[];
-    plans: {
-      name: string;
-      pricing: string;
-      details: string[];
-      cta: string;
-    }[];
-    color: string;
-    bgColor: string;
-    borderColor: string;
-  }
-> = {
-  basic: {
-    name: "Basic",
-    tagline: "Marketing that maximizes your profitability — your property, your money",
-    features: [
-      "Marketing campaign per property until tenant found (~16 days avg.)",
-      "Client-uploaded photos with validation",
-      "Visual recommendations prior to listing",
-      "Unit verification (on-site visit)",
-      "Tenant credit screening",
-      "RTB-1 (BC) contract drafting & signing",
-    ],
-    plans: [
-      {
-        name: "Low Price",
-        pricing: "35% of first month's rent (one-time)",
-        details: [
-          "$200 system fee upfront (deducted from the 35%)",
-          "Pay the balance only after tenant signs the lease",
-          "No monthly commissions",
-          "Optional: +$100 for priority listing placement (1 month)",
-        ],
-        cta: "Choose & secure your money",
-      },
-      {
-        name: "Founders Package — Visionary Owners",
-        pricing: "30% of first month's rent (one-time, lifetime rate)",
-        details: [
-          "Exclusive rate for the first 20 owners — limited spots",
-          "$200 system fee upfront (deducted from the 30%)",
-          "Pay the balance only after tenant signs the lease",
-          "No monthly commissions",
-          "Ideal for short-term rentals (weekly, monthly, up to 6 months)",
-        ],
-        cta: "Trust & earn",
-      },
-    ],
-    color: "text-blue-600",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
-  },
-  preferred_owners: {
-    name: "Preferred Owners",
-    tagline: "Enhanced services for growing property portfolios (2–3 properties)",
-    features: [
-      "Marketing campaign per property until tenant found (~15 days avg.)",
-      "Client-uploaded photos",
-      "Weekly interested-parties report",
-      "Priority credit analysis of best applicants",
-      "Full credit screening of tenants",
-      "Unit handover with inventory checklist",
-      "RTB-1 (BC) contract drafting & signing",
-    ],
-    plans: [
-      {
-        name: "Support Tier",
-        pricing: "30% 1st property / 28% 2nd & 3rd (one-time each)",
-        details: [
-          "$200 system fee per property upfront (deducted from %)",
-          "Pay the balance only after tenant signs the lease",
-          "No monthly commissions",
-        ],
-        cta: "Get Support",
-      },
-      {
-        name: "Premier Tier",
-        pricing: "Same rates with flexible installment payments",
-        details: [
-          "For owners committing 1.5+ years",
-          "1st property: 30% — $200 upfront, balance at month 2 after lease signing",
-          "2nd & 3rd: 28% — $200 upfront, 50% at month 1, 30% at month 2, 20% at month 3",
-        ],
-        cta: "Go Premier",
-      },
-    ],
-    color: "text-emerald-600",
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-200",
-  },
-  elite: {
-    name: "Elite Assets & Legacy",
-    tagline: "Full-service management for investment portfolios (4+ properties)",
-    features: [
-      "Targeted marketing campaign per property (~15 days avg.)",
-      "Professional 3D photography & virtual tour",
-      "Interior design recommendations",
-      "360° tenant verification (credit + behavioral references)",
-      "Priority search positioning",
-      "On-site unit verification & showing",
-      "Handover with detailed checklist",
-      "RTB-1 (BC) contract drafting & signing",
-      "Free rent price optimization",
-      "Free event packages (concerts, sports, seasonal)",
-      "KPI performance report per property",
-      "Local vendor alliances for repairs & maintenance",
-      "Premium portal listing + targeted campaigns",
-      "Expansion & wealth growth analysis",
-      "Premium tenant welcome program",
-      "Satisfaction surveys to reduce turnover",
-    ],
-    plans: [
-      {
-        name: "Asset Management",
-        pricing: "Portfolio-based pricing (Essentials / Signature / Lujo)",
-        details: [
-          "Single plan with 3 investment portfolios based on rent level",
-          "Includes CFP (Cash Flow Preserved) calculation per property",
-          "Includes Payback period calculation per property",
-        ],
-        cta: "Manage My Assets",
-      },
-    ],
-    color: "text-amber-600",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
-  },
-};
+import { OWNER_TIERS } from "@/lib/constants";
+import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
 // el enlace esta roto, no hace nada". The plan cards used
@@ -383,6 +250,7 @@ export default async function ServicesPage() {
     profile.role === "propietario" ||
     profile.role === "propietario_preferido" ||
     profile.role === "inversionista";
+  const isInvestor = profile.role === "inversionista";
 
   const isTenantRole =
     profile.role === "inquilino" || profile.role === "inquilino_premium";
@@ -409,11 +277,11 @@ export default async function ServicesPage() {
     const { data: properties } = await supabase
       .from("properties")
       .select("id, property_type, address, city, monthly_rent, service_tier, elite_tier, cfp_monthly, payback_months")
-      .eq("owner_id", user.id);
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true });
 
     propertyCount = properties?.length ?? 0;
 
-    const isInvestor = profile.role === "inversionista";
     // Steve 4/20: Property Owner stays at Basic/Preferred regardless of count
     const isOwnerNotInvestor =
       profile.role === "propietario" || profile.role === "propietario_preferido";
@@ -813,7 +681,7 @@ export default async function ServicesPage() {
                   Based on {propertyCount}{" "}
                   {propertyCount === 1 ? "property" : "properties"}
                 </span>
-                {totalCFP > 0 && (
+                {isInvestor && totalCFP > 0 && (
                   <span className="text-sm text-muted-foreground">
                     &middot; Total CFP: ${totalCFP.toFixed(2)} CAD/mo
                   </span>
@@ -857,7 +725,7 @@ export default async function ServicesPage() {
               </div>
 
               {/* Elite: Per-property Portfolio + CFP/Payback */}
-              {ownerTier === "elite" && ownerProperties.length > 0 && (
+              {isInvestor && ownerTier === "elite" && ownerProperties.length > 0 && (
                 <div className="mt-4 space-y-3">
                   <p className="text-sm font-medium">Property Portfolio Breakdown</p>
                   {ownerProperties.map((prop) => {
@@ -1014,7 +882,7 @@ export default async function ServicesPage() {
                   <CardHeader>
                     <CardTitle className="text-lg">{plan.name}</CardTitle>
                     <CardDescription className={`text-base font-semibold ${tierDetails.color}`}>
-                      {plan.pricing}
+                      {formatOwnerPlanPrice(plan.pricing, plan.name, ownerProperties)}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex-1 space-y-3">

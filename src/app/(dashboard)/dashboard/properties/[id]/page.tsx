@@ -53,6 +53,13 @@ export default async function PropertyDetailsPage({
 
   if (!property) notFound();
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const isInvestor = profile?.role === "inversionista";
+
   // Load images
   const { data: images } = await supabase
     .from("property_images")
@@ -311,7 +318,7 @@ export default async function PropertyDetailsPage({
       </Card>
 
       {/* Financial (if elite/investor) */}
-      {(property.cfp_monthly != null || property.payback_months != null) && (
+      {isInvestor && (property.cfp_monthly != null || property.payback_months != null) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Financial Overview</CardTitle>
