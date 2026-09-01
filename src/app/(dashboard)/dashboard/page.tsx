@@ -183,6 +183,7 @@ export default async function DashboardPage() {
     : null;
   const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
   const primaryPlan = ownerTier ? OWNER_PRIMARY_PLAN[ownerTier] : null;
+  const primaryPlanTerms = ownerPlan?.plans.find((plan) => plan.name === primaryPlan?.name)?.details || [];
   const ownerPlanServiceNames = isOwnerRole
     ? ([
         primaryPlan?.serviceName,
@@ -340,10 +341,15 @@ export default async function DashboardPage() {
                     {formatOwnerPlanPrice(primaryPlan.pricing, primaryPlan.name, ownerProperties)}
                   </p>
                 </div>
-                {primaryPlanService?.description && (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {primaryPlanService.description}
-                  </p>
+                {primaryPlanTerms.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {primaryPlanTerms.map((term) => (
+                      <li key={term} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                        {term}
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {primaryPlanService && Number(primaryPlanService.price) > 0 ? (
                   <CheckoutButton
