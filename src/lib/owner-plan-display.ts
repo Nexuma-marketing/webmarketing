@@ -33,9 +33,9 @@ export function formatOwnerPlanPrice(
 
   if (calculatedPrices.length === 0) return displayPricing;
   if (calculatedPrices.length === 1) {
-    return `${displayPricing} — approximately $${calculatedPrices[0].amount} CAD.`;
+    return `${displayPricing} — you would pay approximately $${calculatedPrices[0].amount} CAD.`;
   }
   return `${displayPricing} — ${calculatedPrices
-    .map(({ index, amount }) => `Property ${index + 1}: approximately $${amount} CAD`)
+    .map(({ index, amount }) => `Property ${index + 1}: you would pay approximately $${amount} CAD`)
     .join("; ")}.`;
 }

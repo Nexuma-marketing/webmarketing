@@ -610,6 +610,13 @@ export default async function ServicesPage() {
         };
       })()
     : null;
+  const foundersPlanTerms = planOverrides.owner_founders?.features && planOverrides.owner_founders.features.length > 0
+    ? planOverrides.owner_founders.features
+    : OWNER_TIERS.basic.plans.find((plan) => plan.name === "Founders Package — Visionary Owners")?.details || [];
+  const availablePlans = tierDetails?.plans.filter(
+    (plan) => plan.name !== "Founders Package — Visionary Owners" && plan.name !== "Premier Tier",
+  ) || [];
+  const premierPlan = tierDetails?.plans.find((plan) => plan.name === "Premier Tier");
 
   // ─── PYMES plan details ────────────────────────
   const basePymesDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
@@ -855,22 +862,27 @@ export default async function ServicesPage() {
               below. It is intentionally available across all Property
               Owner tiers. */}
           {foundersLimit > 0 && (
-            <FoundersBanner taken={foundersTaken} limit={foundersLimit}>
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
                 return foundersService && Number(foundersService.price) > 0 ? (
                   <CheckoutButton
                     type="service"
                     serviceId={foundersService.id}
-                    label={`Trust & earn — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
+                    label={`Upgrade to Founders — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
                   />
-                ) : null;
+                ) : (
+                  <Link href="/dashboard/services#contact" className={cn(buttonVariants(), "w-full gap-2")}>
+                    Upgrade to Founders Package
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                );
               })()}
             </FoundersBanner>
           )}
 
-          <div className={`grid gap-4 ${tierDetails.plans.length > 1 ? "md:grid-cols-2" : ""}`}>
-            {tierDetails.plans.map((plan, i) => {
+          <div className={`grid gap-4 ${availablePlans.length > 1 ? "md:grid-cols-2" : ""}`}>
+            {availablePlans.map((plan, i) => {
               // Steve 5/22 Milestone 4: wire the static plan card to a
               // real services row so the CTA triggers Stripe checkout
               // instead of scrolling to a non-existent #contact anchor.
@@ -916,6 +928,53 @@ export default async function ServicesPage() {
               );
             })}
           </div>
+
+          {premierPlan && (
+            <details id="premier-tier" className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+              <summary className="cursor-pointer font-semibold text-emerald-800">
+                Want to pay in installments? See Premier Tier details.
+              </summary>
+              {(() => {
+                const dbName = PLAN_NAME_TO_DB_SERVICE[premierPlan.name];
+                const svc = dbName ? servicesByDbName[dbName] : undefined;
+                const upfrontPrice = svc ? Number(svc.price) || 0 : 0;
+                return (
+                  <Card className="mt-4 flex flex-col">
+                    <CardHeader>
+                      <CardTitle className="text-lg">{premierPlan.name}</CardTitle>
+                      <CardDescription className={`text-base font-semibold ${tierDetails.color}`}>
+                        {formatOwnerPlanPrice(premierPlan.pricing, premierPlan.name, ownerProperties)}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-1 space-y-3">
+                      <ul className="space-y-1.5">
+                        {premierPlan.details.map((detail, index) => (
+                          <li key={index} className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                            {detail}
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                    <div className="p-6 pt-0">
+                      {svc && upfrontPrice > 0 ? (
+                        <CheckoutButton
+                          type="service"
+                          serviceId={svc.id}
+                          label={`${premierPlan.cta} — Pay $${upfrontPrice} ${svc.currency || "CAD"} upfront`}
+                        />
+                      ) : (
+                        <Link href="/dashboard/services#contact" className={cn(buttonVariants(), "w-full gap-2")}>
+                          {premierPlan.cta}
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })()}
+            </details>
+          )}
         </div>
       )}
 
@@ -927,16 +986,21 @@ export default async function ServicesPage() {
               0" during admin tests because the no-tier owner card had
               no banner at all. */}
           {foundersLimit > 0 && (
-            <FoundersBanner taken={foundersTaken} limit={foundersLimit}>
+            <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
                 return foundersService && Number(foundersService.price) > 0 ? (
                   <CheckoutButton
                     type="service"
                     serviceId={foundersService.id}
-                    label={`Trust & earn — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
+                    label={`Upgrade to Founders — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
                   />
-                ) : null;
+                ) : (
+                  <Link href="/dashboard/services#contact" className={cn(buttonVariants(), "w-full gap-2")}>
+                    Upgrade to Founders Package
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                );
               })()}
             </FoundersBanner>
           )}

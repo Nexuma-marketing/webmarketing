@@ -51,12 +51,15 @@ export async function POST(request: Request) {
   <p style="color:#666;font-size:12px">Please reach out to this ${roleLabel.toLowerCase()} to finalize their service plan and next steps.</p>
 </div>`;
 
-    resend.emails.send({
-      from: FROM_EMAIL,
-      to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
-      subject: `New ${roleLabel} Registration — ${profile?.full_name || "Unknown"}`,
-      html: commercialHtml,
-    }).catch((err) => console.error("Commercial email failed:", err));
+    const recipientForCommercial = COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean);
+    const sends: Promise<unknown>[] = [
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: recipientForCommercial,
+        subject: `New ${roleLabel} Registration — ${profile?.full_name || "Unknown"}`,
+        html: commercialHtml,
+      }),
+    ];
 
     // 2. Confirmation email to the client
     // Steve 4/23: user.email (from auth) is more reliable than profile.email
@@ -85,15 +88,34 @@ export async function POST(request: Request) {
   </div>
 </div>`;
 
-      resend.emails.send({
-        from: FROM_EMAIL,
-        to: [clientEmail],
-        subject: `Your ${roleLabel} registration is confirmed — Nexuma`,
-        html: clientHtml,
-      }).catch((err) => console.error("Client confirmation email failed:", err));
+      sends.push(
+        resend.emails.send({
+          from: FROM_EMAIL,
+          to: [clientEmail],
+          subject: `Your ${roleLabel} registration is confirmed — Nexuma`,
+          html: clientHtml,
+        }),
+      );
     }
 
-    return NextResponse.json({ success: true });
+    // Await sends before responding: serverless runtimes can freeze after a
+    // response, preventing fire-and-forget Resend requests from completing.
+    console.log(`[owner-submit-email] Sending commercial -> ${recipientForCommercial.join(", ")}`);
+    console.log(`[owner-submit-email] Sending owner confirmation -> ${clientEmail || "(none)"}`);
+
+    const results = await Promise.allSettled(sends);
+    const labels = clientEmail ? ["commercial", "owner"] : ["commercial"];
+    let anySuccess = false;
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        anySuccess = true;
+        console.log(`[owner-submit-email] ${labels[index]} email sent`, result.value);
+      } else {
+        console.error(`[owner-submit-email] ${labels[index]} email failed:`, result.reason);
+      }
+    });
+
+    return NextResponse.json({ success: true, emailSent: anySuccess });
   } catch (err) {
     console.error("Owner submit email error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

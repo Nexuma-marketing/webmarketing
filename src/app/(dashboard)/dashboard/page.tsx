@@ -204,6 +204,9 @@ export default async function DashboardPage() {
     ? planServicesByName[primaryPlan.serviceName]
     : null;
   const foundersPlanService = planServicesByName["Plan: Founder Package — Visionary Owners"];
+  const foundersPlanTerms = OWNER_TIERS.basic.plans.find(
+    (plan) => plan.name === "Founders Package — Visionary Owners",
+  )?.details || [];
   const foundersAvailability = isOwnerRole ? await getFoundersAvailability() : null;
 
   return (
@@ -364,6 +367,14 @@ export default async function DashboardPage() {
                 )}
               </div>
             )}
+            {ownerTier === "preferred_owners" && (
+              <Link
+                href="/dashboard/services#premier-tier"
+                className="inline-block text-sm font-medium text-primary underline"
+              >
+                Want to pay in installments? See Premier Tier.
+              </Link>
+            )}
             <p className="text-xs text-muted-foreground">
               Compare all plan options and full features in{" "}
               <Link href="/dashboard/services" className="text-primary underline">Services</Link>.
@@ -373,16 +384,20 @@ export default async function DashboardPage() {
       )}
 
       {isOwnerRole && foundersAvailability && foundersAvailability.limit > 0 && (
-        <FoundersBanner taken={foundersAvailability.taken} limit={foundersAvailability.limit}>
+        <FoundersBanner
+          taken={foundersAvailability.taken}
+          limit={foundersAvailability.limit}
+          terms={foundersPlanTerms}
+        >
           {foundersPlanService && Number(foundersPlanService.price) > 0 ? (
             <CheckoutButton
               type="service"
               serviceId={foundersPlanService.id}
-              label={`Trust & earn — Pay $${Number(foundersPlanService.price)} ${foundersPlanService.currency || "CAD"} upfront`}
+              label={`Upgrade to Founders — Pay $${Number(foundersPlanService.price)} ${foundersPlanService.currency || "CAD"} upfront`}
             />
           ) : (
             <Link href="/dashboard/services" className={buttonVariants({ className: "w-full" })}>
-              View Founders Package
+              Upgrade to Founders Package
             </Link>
           )}
         </FoundersBanner>
