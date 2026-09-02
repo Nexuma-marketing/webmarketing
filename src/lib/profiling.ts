@@ -21,10 +21,11 @@ export function classifyOwner(propertyCount: number): {
   return { role: "propietario", serviceTier: "basic" };
 }
 
-export function classifyEliteTier(avgMonthlyRent: number): EliteTier {
+export function classifyEliteTier(avgMonthlyRent: number): EliteTier | null {
   if (avgMonthlyRent >= 7001) return "lujo";
   if (avgMonthlyRent >= 4000) return "signature";
-  return "essentials"; // $2,500 – $3,999
+  if (avgMonthlyRent >= 2500) return "essentials";
+  return null;
 }
 
 // CFP = Monthly Rent × 10%
@@ -164,13 +165,13 @@ export function isPremiumTenant(criteriaCount: number, threshold = 3): boolean {
 
 // Steve 4/19+4/22: Monthly optimization fee per portfolio (NOT one-time).
 // Payback = monthly_fee / CFP_monthly (per Steve spec):
-//   Essentials: $100/mo shared fee  → PB = 100/CFP
-//   Signature:  $100/mo shared fee  → PB = 100/CFP
+//   Essentials: $200/mo shared fee  → PB = 200/CFP
+//   Signature:  $200/mo shared fee  → PB = 200/CFP
 //   Lujo:       $300/mo shared fee  → PB = 300/CFP
 // (One-time fees $900/$1410/$1650 per unit are separate, stored in Services page constants)
 export const PORTFOLIO_FEES: Record<EliteTier, number> = {
-  essentials: 100,
-  signature: 100,
+  essentials: 200,
+  signature: 200,
   lujo: 300,
 };
 
@@ -195,9 +196,7 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
   const propertyCount = properties?.length ?? 0;
   if (propertyCount === 0) return null;
 
-  // 1b. Get current user profile to respect their initial user_type selection (Steve 4/19)
-  // A user who signed up as "Property Owner" should NOT be auto-promoted to Investor
-  // just because they added 4+ properties.
+  // 1b. Get the current user profile so the 1–3 property Owner path is preserved.
   const { data: existingProfile, error: profileReadError } = await supabase
     .from("profiles")
     .select("role")
@@ -212,17 +211,18 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
 
   // 2. Classify role + tier — RESPECT USER'S INITIAL SELECTION (Steve 4/20)
   //    - Investor stays as investor + elite (regardless of count)
-  //    - Owner stays as owner (basic/preferred_owners based on count, but NEVER promoted to investor)
+  //    - Owners with 4+ properties are promoted to Investor + Elite
+  //    - Owners with 1–3 properties stay on the existing Basic/Preferred path
   //    - New users (no role set): count-based classification
   let role: UserRole;
   let serviceTier: PropertyServiceTier;
 
-  if (isCurrentlyInvestor) {
+  if (isCurrentlyInvestor || propertyCount >= 4) {
     role = "inversionista";
     serviceTier = "elite";
   } else if (isCurrentlyOwner) {
-    // Owner stays owner — only adjust between basic and preferred_owners
-    // Never promote to investor regardless of property count (Steve 4/20)
+    // Owner stays owner — only adjust between basic and preferred_owners.
+    // The 4+ Investor promotion is handled above.
     if (propertyCount >= 2) {
       role = "propietario_preferido";
       serviceTier = "preferred_owners";
@@ -240,16 +240,18 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
   if (properties) {
     for (const prop of properties) {
       const rent = Number(prop.monthly_rent) || 0;
-      const cfp = calculateCFP(rent);
-
       // Each property gets its own elite_tier based on its own rent
       let propEliteTier: EliteTier | null = null;
+      let cfp: number | null = null;
       let paybackMonths: number | null = null;
 
       if (serviceTier === "elite" && rent > 0) {
         propEliteTier = classifyEliteTier(rent);
-        const fee = PORTFOLIO_FEES[propEliteTier];
-        paybackMonths = calculatePayback(fee, cfp);
+        if (propEliteTier) {
+          cfp = calculateCFP(rent);
+          const fee = PORTFOLIO_FEES[propEliteTier];
+          paybackMonths = calculatePayback(fee, cfp);
+        }
       }
 
       await supabase

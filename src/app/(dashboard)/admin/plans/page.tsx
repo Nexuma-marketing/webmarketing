@@ -137,7 +137,7 @@ const PLANS: {
     label: "Investor — Essentials",
     defaultTagline: "Entry-tier portfolio optimization for $2,500–$3,999/mo rents",
     defaultFeatures: [
-      "$100/month shared portfolio fee",
+      "$200/month shared portfolio fee",
       "Portfolio matching across cities",
       "Quarterly performance review",
     ],
@@ -148,7 +148,7 @@ const PLANS: {
     label: "Investor — Signature",
     defaultTagline: "Mid-tier portfolio management for $4,000–$7,000/mo rents",
     defaultFeatures: [
-      "$100/month shared portfolio fee",
+      "$200/month shared portfolio fee",
       "Concierge tenant placement",
       "Monthly portfolio review",
       "Premium tenant priority",

@@ -120,8 +120,8 @@ const ELITE_SUB_TIERS: Record<
     name: "Essentials",
     description: "Avg. rent $2,500 – $3,999 CAD",
     oneTimeFee: 900,
-    monthlyFee: 100,
-    feeDescription: "$900 CAD one-time per unit + $100 CAD/month optimization fee shared across all linked Essentials properties",
+    monthlyFee: 200,
+    feeDescription: "$900 CAD one-time per unit + $200 CAD/month optimization fee shared across all linked Essentials properties",
     extras: [
       "Quarterly portfolio review",
       "Basic revenue optimization",
@@ -131,8 +131,8 @@ const ELITE_SUB_TIERS: Record<
     name: "Signature",
     description: "Avg. rent $4,000 – $7,000 CAD",
     oneTimeFee: 1410,
-    monthlyFee: 100,
-    feeDescription: "$1,410 CAD one-time per unit + $100 CAD/month optimization fee shared across all linked Signature properties",
+    monthlyFee: 200,
+    feeDescription: "$1,410 CAD one-time per unit + $200 CAD/month optimization fee shared across all linked Signature properties",
     extras: [
       "Monthly portfolio review",
       "Advanced revenue optimization",
@@ -737,9 +737,11 @@ export default async function ServicesPage() {
                   <p className="text-sm font-medium">Property Portfolio Breakdown</p>
                   {ownerProperties.map((prop) => {
                     const rent = Number(prop.monthly_rent) || 0;
-                    const cfpMonthly = Number(prop.cfp_monthly) || rent * 0.1;
-                    const cfpAnnual = cfpMonthly * 12;
-                    const cfp5yr = cfpAnnual * 5;
+                    const cfpMonthly = prop.cfp_monthly == null
+                      ? null
+                      : Number(prop.cfp_monthly);
+                    const cfpAnnual = cfpMonthly == null ? null : cfpMonthly * 12;
+                    const cfp5yr = cfpAnnual == null ? null : cfpAnnual * 5;
                     const payback = prop.payback_months ? Number(prop.payback_months) : null;
                     const portfolio = prop.elite_tier
                       ? ELITE_SUB_TIERS[prop.elite_tier]
@@ -767,24 +769,28 @@ export default async function ServicesPage() {
                               ${rent.toLocaleString()} CAD/mo
                             </p>
                           </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">CFP Monthly</p>
-                            <p className="text-sm font-semibold text-emerald-600">
-                              ${cfpMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">CFP Annual</p>
-                            <p className="text-sm font-semibold text-emerald-600">
-                              ${cfpAnnual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">CFP 5 Years</p>
-                            <p className="text-sm font-semibold text-emerald-600">
-                              ${cfp5yr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
+                          {cfpMonthly != null && cfpAnnual != null && cfp5yr != null && (
+                            <>
+                              <div>
+                                <p className="text-xs text-muted-foreground">CFP Monthly</p>
+                                <p className="text-sm font-semibold text-emerald-600">
+                                  ${cfpMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">CFP Annual</p>
+                                <p className="text-sm font-semibold text-emerald-600">
+                                  ${cfpAnnual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">CFP 5 Years</p>
+                                <p className="text-sm font-semibold text-emerald-600">
+                                  ${cfp5yr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            </>
+                          )}
                         </div>
                         {payback != null && (
                           <div className="mt-2 flex items-center gap-2 rounded-md bg-primary/5 px-3 py-1.5">

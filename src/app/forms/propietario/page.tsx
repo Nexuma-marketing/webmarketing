@@ -163,10 +163,11 @@ function getServiceTier(count: number): string {
   return "Basic";
 }
 
-function getPortfolio(rent: number): { name: string; key: string; color: string; bgColor: string } {
+function getPortfolio(rent: number): { name: string; key: string; color: string; bgColor: string } | null {
   if (rent >= 7001) return { name: "Lujo", key: "lujo", color: "text-purple-600", bgColor: "bg-purple-50" };
   if (rent >= 4000) return { name: "Signature", key: "signature", color: "text-amber-600", bgColor: "bg-amber-50" };
-  return { name: "Essentials", key: "essentials", color: "text-blue-600", bgColor: "bg-blue-50" };
+  if (rent >= 2500) return { name: "Essentials", key: "essentials", color: "text-blue-600", bgColor: "bg-blue-50" };
+  return null;
 }
 
 // Portfolio fee structure per MVP (Steve April 16 2026)
@@ -176,8 +177,8 @@ function getPortfolio(rent: number): { name: string; key: string; color: string;
 const CFP_RATE = 0.10; // 10% of rent, fixed
 
 const PORTFOLIO_FEES: Record<string, { oneTime: number; monthlyFee: number }> = {
-  essentials: { oneTime: 900, monthlyFee: 100 },
-  signature: { oneTime: 1410, monthlyFee: 100 },
+  essentials: { oneTime: 900, monthlyFee: 200 },
+  signature: { oneTime: 1410, monthlyFee: 200 },
   lujo: { oneTime: 1650, monthlyFee: 300 },
 };
 
@@ -537,12 +538,6 @@ export default function OwnerFormPage() {
         return;
       }
 
-      const registeredRole = user.user_metadata?.role as string | undefined;
-      if (!registeredRole || !["propietario", "propietario_preferido", "inversionista"].includes(registeredRole)) {
-        setError("Your Property Owner profile is missing. Please return to registration and try again.");
-        return;
-      }
-
       const tier = propertyCount >= 4 ? "elite" : propertyCount >= 2 ? "preferred_owners" : "basic";
       const isInvestorSubmit = data.user_type === "investor" && propertyCount >= 4;
 
@@ -570,7 +565,13 @@ export default function OwnerFormPage() {
         });
 
       if (briefError) {
-        console.error("Owner discovery brief insert failed:", briefError);
+        console.error("Owner discovery brief insert failed:", {
+          message: briefError.message,
+          code: briefError.code,
+          details: briefError.details,
+          hint: briefError.hint,
+          error: briefError,
+        });
         setError("We couldn't save your owner discovery brief. Please try again.");
         return;
       }
@@ -607,9 +608,11 @@ export default function OwnerFormPage() {
           const rent = data.rents[i] || 0;
           const city = data.cities[i] || "";
           const portfolio = getPortfolio(rent);
-          const portfolioFee = PORTFOLIO_FEES[portfolio.key];
-          const cfpMonthly = rent * CFP_RATE;
-          const paybackMonths = cfpMonthly > 0 ? portfolioFee.monthlyFee / cfpMonthly : 0;
+          const portfolioFee = portfolio ? PORTFOLIO_FEES[portfolio.key] : null;
+          const cfpMonthly = portfolio ? rent * CFP_RATE : null;
+          const paybackMonths = cfpMonthly && portfolioFee
+            ? portfolioFee.monthlyFee / cfpMonthly
+            : null;
 
           const { data: propData, error: propError } = await supabase.from("properties").insert({
             owner_id: user.id,
@@ -644,7 +647,7 @@ export default function OwnerFormPage() {
             near_mall: ip.near_mall,
             nearby_supermarkets: ip.nearby_supermarkets,
             service_tier: tier,
-            elite_tier: portfolio.key,
+            elite_tier: portfolio?.key ?? null,
             cfp_monthly: cfpMonthly,
             payback_months: paybackMonths,
             is_available: ip.occupancy_status === "vacant",
@@ -715,11 +718,7 @@ export default function OwnerFormPage() {
           is_available: data.occupancy_status === "vacant",
         }).select().single();
 
-        if (propError) {
-          console.error("Owner property insert failed:", propError);
-          setError("We couldn't save your property. Please try again.");
-          return;
-        }
+        if (propError) throw propError;
 
         // Upload property images to Supabase Storage
         if (propData && propertyImages.length > 0) {
@@ -756,30 +755,18 @@ export default function OwnerFormPage() {
       }
 
       // Run profiling (classifies tier, CFP, etc. — respects existing role)
-      const profilingResponse = await fetch("/api/profiling", {
+      await fetch("/api/profiling", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "owner" }),
       });
 
-      if (!profilingResponse.ok) {
-        console.error("Owner profiling failed:", await profilingResponse.text());
-        setError("Your property was saved, but we couldn't complete owner profiling. Please try again.");
-        return;
-      }
-
       // Create lead
-      const leadResponse = await fetch("/api/leads", {
+      await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: "owner_form" }),
       });
-
-      if (!leadResponse.ok) {
-        console.error("Owner lead creation failed:", await leadResponse.text());
-        setError("Your property was saved, but we couldn't complete your owner registration. Please try again.");
-        return;
-      }
 
       const {
         data: { user: currentUser },
@@ -1341,6 +1328,7 @@ export default function OwnerFormPage() {
                   </div>
                   {rents[propIdx] > 0 && (() => {
                     const portfolio = getPortfolio(rents[propIdx]);
+                    if (!portfolio) return null;
                     return (
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ${portfolio.bgColor} ${portfolio.color}`}>
                         {portfolio.name} Portfolio
@@ -1501,6 +1489,14 @@ export default function OwnerFormPage() {
                 {rents[propIdx] > 0 && (() => {
                   const rent = rents[propIdx];
                   const portfolio = getPortfolio(rent);
+                  if (!portfolio) {
+                    return (
+                      <div className="rounded-lg border bg-muted/30 p-4">
+                        <p className="text-sm font-medium">Property {propIdx + 1} is below the Elite portfolio minimum</p>
+                        <p className="text-xs text-muted-foreground mt-1">Properties below $2,500/month do not receive an Elite portfolio, CFP, or payback calculation.</p>
+                      </div>
+                    );
+                  }
                   const portfolioFee = PORTFOLIO_FEES[portfolio.key];
                   const cfp = rent * CFP_RATE;
                   const payback = cfp > 0 ? portfolioFee.monthlyFee / cfp : 0;
@@ -1651,6 +1647,7 @@ export default function OwnerFormPage() {
                   </div>
                   {rents[propIdx] > 0 && (() => {
                     const portfolio = getPortfolio(rents[propIdx]);
+                    if (!portfolio) return null;
                     return (
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ${portfolio.bgColor} ${portfolio.color}`}>
                         {portfolio.name}
@@ -1956,7 +1953,7 @@ export default function OwnerFormPage() {
                       {investorProps.slice(0, propertyCount).map((ip, i) => {
                         const rent = rents[i] || 0;
                         const portfolio = getPortfolio(rent);
-                        const cfp = rent * CFP_RATE;
+                        const cfp = portfolio ? rent * CFP_RATE : null;
                         return (
                           <div key={i} className="flex items-center justify-between rounded-md border p-2 text-sm">
                             <div>
@@ -1964,10 +1961,16 @@ export default function OwnerFormPage() {
                               <span className="text-muted-foreground">{cities[i]} &mdash; ${rent.toLocaleString()}/mo</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${portfolio.bgColor} ${portfolio.color}`}>
-                                {portfolio.name}
-                              </span>
-                              <span className="text-xs text-emerald-600 font-medium">CFP ${cfp.toFixed(0)}/mo</span>
+                              {portfolio ? (
+                                <>
+                                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${portfolio.bgColor} ${portfolio.color}`}>
+                                    {portfolio.name}
+                                  </span>
+                                  <span className="text-xs text-emerald-600 font-medium">CFP ${cfp?.toFixed(0)}/mo</span>
+                                </>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Below Elite portfolio minimum</span>
+                              )}
                             </div>
                           </div>
                         );
@@ -1975,7 +1978,7 @@ export default function OwnerFormPage() {
                       <div className="rounded-md bg-emerald-50 border border-emerald-200 p-2 text-sm text-emerald-700 font-medium">
                         Total Portfolio CFP: ${investorProps.slice(0, propertyCount).reduce((sum, _, i) => {
                           const rent = rents[i] || 0;
-                          return sum + (rent * CFP_RATE);
+                          return getPortfolio(rent) ? sum + (rent * CFP_RATE) : sum;
                         }, 0).toFixed(2)} CAD/mo
                       </div>
                     </div>
