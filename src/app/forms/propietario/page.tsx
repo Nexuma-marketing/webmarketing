@@ -840,7 +840,7 @@ export default function OwnerFormPage() {
         return;
       }
 
-      router.push("/dashboard/properties");
+      router.push("/dashboard");
     } catch (err) {
       setError("Failed to save. Please try again.");
       console.error(err);
