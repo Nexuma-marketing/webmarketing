@@ -37,7 +37,7 @@ const OWNER_PRIMARY_PLAN: Record<string, { serviceName: string; name: string; pr
   elite: {
     serviceName: "",
     name: "Asset Management",
-    pricing: "Portfolio-based pricing (Essentials / Signature / Lujo)",
+    pricing: "Portfolio-based pricing (Essentials / Signature / Luxury)",
     cta: "Manage My Assets",
   },
 };
@@ -519,7 +519,7 @@ export default async function DashboardPage() {
         <CardContent className="flex flex-wrap gap-3">
           {isOwnerRole && (
             <Link href="/forms/propietario" className={buttonVariants()}>
-              Discovery Brief
+              Update Preferences
             </Link>
           )}
           {isTenantRole && (

@@ -28,6 +28,7 @@ import {
   ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ELITE_TIERS } from "@/lib/constants";
 
 export default async function PropertyDetailsPage({
   params,
@@ -328,7 +329,7 @@ export default async function PropertyDetailsPage({
               {property.elite_tier && (
                 <div>
                   <p className="text-xs text-muted-foreground">Portfolio</p>
-                  <p className="text-sm font-medium capitalize">{property.elite_tier}</p>
+                  <p className="text-sm font-medium">{ELITE_TIERS[property.elite_tier] || property.elite_tier}</p>
                 </div>
               )}
               {property.cfp_monthly != null && (

@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Crown, Save } from "lucide-react";
 
 // The plan tiers Steve refers to in his 4/28 PDF item #9 — Basic / Preferred Owners /
-// Elite Assets / Investor portfolios (Essentials / Signature / Lujo) / PYMES Rescue /
+// Elite Assets / Investor portfolios (Essentials / Signature / Luxury) / PYMES Rescue /
 // Growth / Scale. Stored as app_config rows with category="plan_features:<key>" so
 // admin can edit them without redeploying.
 //
@@ -157,7 +157,7 @@ const PLANS: {
   },
   {
     key: "investor_lujo",
-    label: "Investor — Lujo",
+    label: "Investor — Luxury",
     defaultTagline: "Top-tier portfolio management for $7,001+/mo rents",
     defaultFeatures: [
       "$300/month shared portfolio fee",

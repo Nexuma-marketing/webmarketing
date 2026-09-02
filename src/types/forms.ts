@@ -11,7 +11,7 @@ export const ownerFormSchema = z.object({
   objectives: z.array(z.string()).min(1, "Select at least one objective"),
   // Per-property: city and rent (arrays matching property_count)
   cities: z.array(z.string()).min(1, "Enter city for each property"),
-  rents: z.array(z.coerce.number().min(300).max(8000)).min(1, "Enter rent for each property"),
+  rents: z.array(z.coerce.number().min(300)).min(1, "Enter rent for each property"),
 
   // ─── Property Details (PDF 5.2.1.1) ─── first property
   property_type: z.string({ message: "Select property type" }).min(1, "Select property type"),
@@ -90,7 +90,7 @@ export type OwnerFormData = z.infer<typeof ownerFormSchema>;
 export const propertyOnlySchema = z.object({
   // ─── Property Details (PDF 5.2.1.1) ───
   property_type: z.string({ message: "Select property type" }).min(1, "Select property type"),
-  monthly_rent: z.coerce.number().min(300, "Minimum $300").max(8000, "Maximum $8000"),
+  monthly_rent: z.coerce.number().min(300, "Minimum $300"),
   area_sqft: z.coerce.number().positive().optional().or(z.literal("")),
   area_unit: z.enum(["sqft", "m2"]).default("sqft"),
   occupancy_status: z.enum(["vacant", "occupied", "renovation", "new_construction"]).default("vacant"),

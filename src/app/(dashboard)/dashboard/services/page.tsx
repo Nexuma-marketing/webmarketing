@@ -140,11 +140,11 @@ const ELITE_SUB_TIERS: Record<
     ],
   },
   lujo: {
-    name: "Lujo",
+    name: "Luxury",
     description: "Avg. rent $7,001+ CAD",
     oneTimeFee: 1650,
     monthlyFee: 300,
-    feeDescription: "$1,650 CAD one-time per unit + $300 CAD/month optimization and maintenance fee shared across all linked Lujo properties",
+    feeDescription: "$1,650 CAD one-time per unit + $300 CAD/month optimization and maintenance fee shared across all linked Luxury properties",
     extras: [
       "Weekly portfolio review",
       "White-glove concierge service",

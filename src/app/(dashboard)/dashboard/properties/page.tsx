@@ -90,11 +90,11 @@ export default async function PropertiesPage() {
             const rent = Number(property.monthly_rent) || 0;
             const cfp = Number(property.cfp_monthly) || 0;
             const payback = property.payback_months ? Number(property.payback_months) : null;
-            // Steve #8: investors see portfolio name (Essentials/Signature/Lujo), NOT "Basic"
+            // Steve #8: investors see portfolio name (Essentials/Signature/Luxury), NOT "Basic"
             const tierLabel = isInvestor
               ? (property.elite_tier ? (ELITE_TIERS[property.elite_tier] || property.elite_tier) : "Elite")
               : (property.service_tier ? (SERVICE_TIERS[property.service_tier] || property.service_tier) : null);
-            // Steve 4/21 #10: only investors see portfolio label (Essentials/Signature/Lujo)
+            // Steve 4/21 #10: only investors see portfolio label (Essentials/Signature/Luxury)
             const eliteLabel = isInvestor && property.elite_tier
               ? ELITE_TIERS[property.elite_tier] || property.elite_tier
               : null;

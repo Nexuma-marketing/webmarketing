@@ -439,7 +439,6 @@ export default function AddPropertyPage() {
                     id="monthly_rent"
                     type="number"
                     min={300}
-                    max={8000}
                     placeholder="e.g. 2000"
                     {...register("monthly_rent")}
                   />

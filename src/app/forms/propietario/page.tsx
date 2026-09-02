@@ -164,7 +164,7 @@ function getServiceTier(count: number): string {
 }
 
 function getPortfolio(rent: number): { name: string; key: string; color: string; bgColor: string } | null {
-  if (rent >= 7001) return { name: "Lujo", key: "lujo", color: "text-purple-600", bgColor: "bg-purple-50" };
+  if (rent >= 7001) return { name: "Luxury", key: "lujo", color: "text-purple-600", bgColor: "bg-purple-50" };
   if (rent >= 4000) return { name: "Signature", key: "signature", color: "text-amber-600", bgColor: "bg-amber-50" };
   if (rent >= 2500) return { name: "Essentials", key: "essentials", color: "text-blue-600", bgColor: "bg-blue-50" };
   return null;
@@ -173,7 +173,7 @@ function getPortfolio(rent: number): { name: string; key: string; color: string;
 // Portfolio fee structure per MVP (Steve April 16 2026)
 // CFP = rent × 10% (fixed for all portfolios)
 // Monthly fee = fixed amount per portfolio (for all linked properties)
-// Payback = monthly fee / CFP
+// Payback = one-time fee / CFP
 const CFP_RATE = 0.10; // 10% of rent, fixed
 
 const PORTFOLIO_FEES: Record<string, { oneTime: number; monthlyFee: number }> = {
@@ -541,28 +541,41 @@ export default function OwnerFormPage() {
       const tier = propertyCount >= 4 ? "elite" : propertyCount >= 2 ? "preferred_owners" : "basic";
       const isInvestorSubmit = data.user_type === "investor" && propertyCount >= 4;
 
-      // Save owner profile to discovery_briefs
-      const { error: briefError } = await supabase
+      const briefPayload = {
+        user_id: user.id,
+        property_objective: "rent",
+        property_type: isInvestorSubmit ? investorProps[0]?.property_type || data.property_type : data.property_type,
+        current_state: isInvestorSubmit ? investorProps[0]?.occupancy_status || "vacant" : data.occupancy_status,
+        monthly_rent: data.rents[0] || null,
+        main_challenge: "find_tenants",
+        property_count: data.property_count,
+        has_professional_photos: false,
+        current_listings: isInvestorSubmit ? investorProps[0]?.listing_platforms || [] : data.listing_platforms,
+        objectives: data.objectives,
+        cities: data.cities,
+        rents: data.rents,
+        assigned_path: tier,
+        consent_data_processing: data.consent_data_processing,
+        consent_image_usage: data.consent_image_usage,
+        consent_marketing: data.consent_marketing,
+        consent_third_party: data.consent_third_party,
+      };
+
+      // This form is also the owner/investor preference-update flow. Update the
+      // current brief instead of creating a duplicate brief every time it is submitted.
+      const { data: existingBrief, error: existingBriefError } = await supabase
         .from("discovery_briefs")
-        .insert({
-          user_id: user.id,
-          property_objective: "rent",
-          property_type: isInvestorSubmit ? investorProps[0]?.property_type || data.property_type : data.property_type,
-          current_state: isInvestorSubmit ? investorProps[0]?.occupancy_status || "vacant" : data.occupancy_status,
-          monthly_rent: data.rents[0] || null,
-          main_challenge: "find_tenants",
-          property_count: data.property_count,
-          has_professional_photos: false,
-          current_listings: isInvestorSubmit ? investorProps[0]?.listing_platforms || [] : data.listing_platforms,
-          objectives: data.objectives,
-          cities: data.cities,
-          rents: data.rents,
-          assigned_path: tier,
-          consent_data_processing: data.consent_data_processing,
-          consent_image_usage: data.consent_image_usage,
-          consent_marketing: data.consent_marketing,
-          consent_third_party: data.consent_third_party,
-        });
+        .select("id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingBriefError) throw existingBriefError;
+
+      const { error: briefError } = existingBrief
+        ? await supabase.from("discovery_briefs").update(briefPayload).eq("id", existingBrief.id)
+        : await supabase.from("discovery_briefs").insert(briefPayload);
 
       if (briefError) {
         console.error("Owner discovery brief insert failed:", {
@@ -575,6 +588,18 @@ export default function OwnerFormPage() {
         setError("We couldn't save your owner discovery brief. Please try again.");
         return;
       }
+
+      // The dashboard routes existing owners here to update preferences. Match
+      // submitted properties to the user's existing rows in a stable order so a
+      // re-submission updates the portfolio instead of appending duplicates.
+      const { data: existingProperties, error: existingPropertiesError } = await supabase
+        .from("properties")
+        .select("id")
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: true });
+
+      if (existingPropertiesError) throw existingPropertiesError;
+      const currentProperties = existingProperties || [];
 
       // Steve 5/4 #7: every consent the user ticks must produce a
       // consent_logs row with IP + user-agent so /admin/legal can audit.
@@ -611,11 +636,10 @@ export default function OwnerFormPage() {
           const portfolioFee = portfolio ? PORTFOLIO_FEES[portfolio.key] : null;
           const cfpMonthly = portfolio ? rent * CFP_RATE : null;
           const paybackMonths = cfpMonthly && portfolioFee
-            ? portfolioFee.monthlyFee / cfpMonthly
+            ? portfolioFee.oneTime / cfpMonthly
             : null;
 
-          const { data: propData, error: propError } = await supabase.from("properties").insert({
-            owner_id: user.id,
+          const propertyPayload = {
             title: `${ip.property_type} in ${city}`,
             property_type: ip.property_type,
             address: ip.address,
@@ -651,10 +675,23 @@ export default function OwnerFormPage() {
             cfp_monthly: cfpMonthly,
             payback_months: paybackMonths,
             is_available: ip.occupancy_status === "vacant",
-          }).select().single();
+          };
+
+          const { data: propData, error: propError } = currentProperties[i]
+            ? await supabase
+              .from("properties")
+              .update(propertyPayload)
+              .eq("id", currentProperties[i].id)
+              .select()
+              .single()
+            : await supabase
+              .from("properties")
+              .insert({ owner_id: user.id, ...propertyPayload })
+              .select()
+              .single();
 
           if (propError) {
-            console.error(`Failed to create property ${i + 1}:`, propError);
+            throw new Error(`Failed to save property ${i + 1}: ${propError.message}`);
           }
 
           // Steve #11: upload photos specifically for THIS property (per-property)
@@ -680,10 +717,22 @@ export default function OwnerFormPage() {
             }
           }
         }
+
+        // A smaller re-submitted investor portfolio replaces the excess rows.
+        // Property-image rows are removed through their ON DELETE CASCADE key.
+        const surplusPropertyIds = currentProperties
+          .slice(propertyCount)
+          .map((property) => property.id);
+        if (surplusPropertyIds.length > 0) {
+          const { error: deletePropertiesError } = await supabase
+            .from("properties")
+            .delete()
+            .in("id", surplusPropertyIds);
+          if (deletePropertiesError) throw deletePropertiesError;
+        }
       } else {
-        // ─── Owner: save single property (existing logic) ───
-        const { data: propData, error: propError } = await supabase.from("properties").insert({
-          owner_id: user.id,
+        // ─── Owner: update the primary property, or create it for a new owner ───
+        const propertyPayload = {
           title: `${data.property_type} in ${data.zone_city}`,
           property_type: data.property_type,
           address: data.address,
@@ -716,7 +765,20 @@ export default function OwnerFormPage() {
           nearby_supermarkets: data.nearby_supermarkets,
           service_tier: tier,
           is_available: data.occupancy_status === "vacant",
-        }).select().single();
+        };
+
+        const { data: propData, error: propError } = currentProperties[0]
+          ? await supabase
+            .from("properties")
+            .update(propertyPayload)
+            .eq("id", currentProperties[0].id)
+            .select()
+            .single()
+          : await supabase
+            .from("properties")
+            .insert({ owner_id: user.id, ...propertyPayload })
+            .select()
+            .single();
 
         if (propError) throw propError;
 
@@ -1032,12 +1094,11 @@ export default function OwnerFormPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">
-                          Monthly rent (CAD {userType === "investor" ? "$2,500-$8,000" : "$300-$8,000"})
+                          Monthly rent (CAD {userType === "investor" ? "$2,500+" : "$300+"})
                         </Label>
                         <Input
                           type="number"
                           min={userType === "investor" ? 2500 : 300}
-                          max={8000}
                           placeholder={userType === "investor" ? "e.g. 3500" : "e.g. 2500"}
                           value={rents[i] || ""}
                           onChange={(e) => {
@@ -1051,9 +1112,6 @@ export default function OwnerFormPage() {
                         )}
                         {userType !== "investor" && rents[i] > 0 && rents[i] < 300 && (
                           <p className="text-sm text-destructive">Minimum rent is $300 CAD</p>
-                        )}
-                        {rents[i] > 8000 && (
-                          <p className="text-sm text-destructive">Maximum rent is $8,000 CAD</p>
                         )}
                       </div>
                     </div>
@@ -1499,7 +1557,7 @@ export default function OwnerFormPage() {
                   }
                   const portfolioFee = PORTFOLIO_FEES[portfolio.key];
                   const cfp = rent * CFP_RATE;
-                  const payback = cfp > 0 ? portfolioFee.monthlyFee / cfp : 0;
+                  const payback = cfp > 0 ? portfolioFee.oneTime / cfp : 0;
                   return (
                     <div className="rounded-lg border bg-emerald-50 p-4 space-y-2">
                       <p className="text-sm font-medium text-emerald-700">Financial Preview — Property {propIdx + 1} ({portfolio.name})</p>
@@ -1517,7 +1575,7 @@ export default function OwnerFormPage() {
                           <p className="text-sm font-semibold">${portfolioFee.oneTime.toLocaleString()}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Payback ({`$${portfolioFee.monthlyFee}/CFP`})</p>
+                          <p className="text-xs text-muted-foreground">Payback ({`$${portfolioFee.oneTime}/CFP`})</p>
                           <p className="text-sm font-semibold">{payback.toFixed(1)} months</p>
                         </div>
                       </div>

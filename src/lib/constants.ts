@@ -131,7 +131,7 @@ export const OWNER_TIERS: Record<
     plans: [
       {
         name: "Asset Management",
-        pricing: "Portfolio-based pricing (Essentials / Signature / Lujo)",
+        pricing: "Portfolio-based pricing (Essentials / Signature / Luxury)",
         details: [
           "Single plan with 3 investment portfolios based on rent level",
           "Includes CFP (Cash Flow Preserved) calculation per property",
@@ -272,7 +272,7 @@ export const SERVICE_TIERS: Record<string, string> = {
 export const ELITE_TIERS: Record<string, string> = {
   essentials: "Essentials ($2,500–$3,999)",
   signature: "Signature ($4,000–$7,000)",
-  lujo: "Lujo ($7,001+)",
+  lujo: "Luxury ($7,001+)",
 };
 
 export const IMAGE_STATUS_COLORS: Record<

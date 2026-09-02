@@ -163,16 +163,13 @@ export function isPremiumTenant(criteriaCount: number, threshold = 3): boolean {
 // Portfolio Fees (used for Payback calculation)
 // ═══════════════════════════════════════════════════════
 
-// Steve 4/19+4/22: Monthly optimization fee per portfolio (NOT one-time).
-// Payback = monthly_fee / CFP_monthly (per Steve spec):
-//   Essentials: $200/mo shared fee  → PB = 200/CFP
-//   Signature:  $200/mo shared fee  → PB = 200/CFP
-//   Lujo:       $300/mo shared fee  → PB = 300/CFP
-// (One-time fees $900/$1410/$1650 per unit are separate, stored in Services page constants)
-export const PORTFOLIO_FEES: Record<EliteTier, number> = {
-  essentials: 200,
-  signature: 200,
-  lujo: 300,
+// Payback is the one-time portfolio fee divided by CFP per month.
+// Recurring monthly optimization fees are displayed separately and are not
+// part of the payback calculation.
+export const PORTFOLIO_ONE_TIME_FEES: Record<EliteTier, number> = {
+  essentials: 900,
+  signature: 1410,
+  lujo: 1650,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -249,7 +246,7 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
         propEliteTier = classifyEliteTier(rent);
         if (propEliteTier) {
           cfp = calculateCFP(rent);
-          const fee = PORTFOLIO_FEES[propEliteTier];
+          const fee = PORTFOLIO_ONE_TIME_FEES[propEliteTier];
           paybackMonths = calculatePayback(fee, cfp);
         }
       }
