@@ -11,10 +11,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Building2, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import { ROLE_LABELS, OWNER_TIERS, PYMES_PLANS } from "@/lib/constants";
+import { ROLE_LABELS, OWNER_TIERS, PYMES_PLANS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/admin";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
+import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 
@@ -34,12 +35,10 @@ const OWNER_PRIMARY_PLAN: Record<string, { serviceName: string; name: string; pr
     pricing: "30% 1st property / 28% 2nd & 3rd (one-time each)",
     cta: "Get Support",
   },
-  elite: {
-    serviceName: "",
-    name: "Asset Management",
-    pricing: "Portfolio-based pricing (Essentials / Signature / Luxury)",
-    cta: "Manage My Assets",
-  },
+  // Steve: Elite/investor has no single "Asset Management" purchase —
+  // pricing is per property (Essentials/Signature/Luxury), so it's
+  // rendered as its own per-property breakdown below (see
+  // ElitePortfolioBreakdown) instead of a generic plan card here.
 };
 
 export default async function DashboardPage() {
@@ -86,7 +85,17 @@ export default async function DashboardPage() {
   let pymesScore: number | null = null;
   let pymesUrgency: string | null = null;
   let pymesLoss: number | null = null;
-  let ownerProperties: { monthly_rent: number | null }[] = [];
+  let ownerProperties: {
+    id: string;
+    property_type: string;
+    address: string;
+    city: string;
+    monthly_rent: number | null;
+    elite_tier: string | null;
+    cfp_monthly: number | null;
+    payback_months: number | null;
+  }[] = [];
+  let eliteServices: Partial<Record<string, EliteServiceInfo>> = {};
 
   const isInvestor = profile.role === "inversionista";
   // Steve 4/20: respect user's initial user_type selection
@@ -98,7 +107,7 @@ export default async function DashboardPage() {
   if (isOwnerRole) {
     const { data: props } = await supabase
       .from("properties")
-      .select("id, monthly_rent, cfp_monthly")
+      .select("id, property_type, address, city, monthly_rent, elite_tier, cfp_monthly, payback_months")
       .eq("owner_id", user.id)
       .order("created_at", { ascending: true });
     propertyCount = props?.length || 0;
@@ -188,6 +197,7 @@ export default async function DashboardPage() {
     ? ([
         primaryPlan?.serviceName,
         "Plan: Founder Package — Visionary Owners",
+        ...(isInvestor ? Object.values(ELITE_SUB_TIERS).map((t) => t.dbServiceName) : []),
       ].filter(Boolean) as string[])
     : [];
   const { data: ownerPlanServices } = ownerPlanServiceNames.length > 0
@@ -203,6 +213,14 @@ export default async function DashboardPage() {
   const primaryPlanService = primaryPlan?.serviceName
     ? planServicesByName[primaryPlan.serviceName]
     : null;
+  if (isInvestor) {
+    eliteServices = Object.fromEntries(
+      Object.entries(ELITE_SUB_TIERS).flatMap(([key, tier]) => {
+        const svc = planServicesByName[tier.dbServiceName];
+        return svc ? [[key, { id: svc.id, price: Number(svc.price), currency: svc.currency }]] : [];
+      }),
+    );
+  }
   const foundersPlanService = planServicesByName["Plan: Founder Package — Visionary Owners"];
   const foundersPlanTerms = OWNER_TIERS.basic.plans.find(
     (plan) => plan.name === "Founders Package — Visionary Owners",
@@ -379,6 +397,25 @@ export default async function DashboardPage() {
               Compare all plan options and full features in{" "}
               <Link href="/dashboard/services" className="text-primary underline">Services</Link>.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ═══ Elite/Investor: per-property portfolio breakdown ═══ */}
+      {isInvestor && ownerTier === "elite" && ownerProperties.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Your Portfolio</CardTitle>
+            <CardDescription>
+              Each property is billed individually — one-time portfolio fee + monthly maintenance fee.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ElitePortfolioBreakdown
+              properties={ownerProperties}
+              eliteServices={eliteServices}
+              totalCFP={totalCFP}
+            />
           </CardContent>
         </Card>
       )}

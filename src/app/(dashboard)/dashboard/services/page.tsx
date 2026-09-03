@@ -30,8 +30,9 @@ import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { MatchedPropertyCard } from "@/components/tenant/matched-property-card";
 import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions-banner";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
+import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { getFoundersAvailability } from "@/lib/founders-plan";
-import { OWNER_TIERS } from "@/lib/constants";
+import { OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
@@ -103,56 +104,6 @@ function OtherServiceCard({
     </Card>
   );
 }
-
-// ─── Elite Sub-Tiers ────────────────────────────────
-const ELITE_SUB_TIERS: Record<
-  string,
-  {
-    name: string;
-    description: string;
-    oneTimeFee: number;
-    monthlyFee: number;
-    feeDescription: string;
-    extras: string[];
-  }
-> = {
-  essentials: {
-    name: "Essentials",
-    description: "Avg. rent $2,500 – $3,999 CAD",
-    oneTimeFee: 900,
-    monthlyFee: 200,
-    feeDescription: "$900 CAD one-time per unit + $200 CAD/month optimization fee shared across all linked Essentials properties",
-    extras: [
-      "Quarterly portfolio review",
-      "Basic revenue optimization",
-    ],
-  },
-  signature: {
-    name: "Signature",
-    description: "Avg. rent $4,000 – $7,000 CAD",
-    oneTimeFee: 1410,
-    monthlyFee: 200,
-    feeDescription: "$1,410 CAD one-time per unit + $200 CAD/month optimization fee shared across all linked Signature properties",
-    extras: [
-      "Monthly portfolio review",
-      "Advanced revenue optimization",
-      "Premium market positioning",
-    ],
-  },
-  lujo: {
-    name: "Luxury",
-    description: "Avg. rent $7,001+ CAD",
-    oneTimeFee: 1650,
-    monthlyFee: 300,
-    feeDescription: "$1,650 CAD one-time per unit + $300 CAD/month optimization and maintenance fee shared across all linked Luxury properties",
-    extras: [
-      "Weekly portfolio review",
-      "White-glove concierge service",
-      "Luxury market positioning",
-      "International investor network",
-    ],
-  },
-};
 
 // ─── PYMES Plans ─────────────────────────────────────
 const PYMES_PLANS: Record<
@@ -412,6 +363,17 @@ export default async function ServicesPage() {
   // render a working CheckoutButton.
   const servicesByDbName = Object.fromEntries(
     (allServices || []).map((s) => [s.name as string, s as { id: string; name: string; price: number; currency: string }]),
+  );
+
+  // Elite portfolio fees (Essentials/Signature/Luxury) live as rows in
+  // `services` (migration v11) keyed by ELITE_SUB_TIERS[key].dbServiceName —
+  // resolve them here so the per-property breakdown can render a real
+  // CheckoutButton scoped to each property's one-time fee.
+  const eliteServices: Partial<Record<string, EliteServiceInfo>> = Object.fromEntries(
+    Object.entries(ELITE_SUB_TIERS).flatMap(([key, tier]) => {
+      const svc = servicesByDbName[tier.dbServiceName];
+      return svc ? [[key, { id: svc.id, price: Number(svc.price), currency: svc.currency }]] : [];
+    }),
   );
 
   // ─── Admin-assigned service recommendations (Steve 5/4 #2) ─────
@@ -733,120 +695,12 @@ export default async function ServicesPage() {
 
               {/* Elite: Per-property Portfolio + CFP/Payback */}
               {isInvestor && ownerTier === "elite" && ownerProperties.length > 0 && (
-                <div className="mt-4 space-y-3">
-                  <p className="text-sm font-medium">Property Portfolio Breakdown</p>
-                  {ownerProperties.map((prop) => {
-                    const rent = Number(prop.monthly_rent) || 0;
-                    const cfpMonthly = prop.cfp_monthly == null
-                      ? null
-                      : Number(prop.cfp_monthly);
-                    const cfpAnnual = cfpMonthly == null ? null : cfpMonthly * 12;
-                    const cfp5yr = cfpAnnual == null ? null : cfpAnnual * 5;
-                    const payback = prop.payback_months ? Number(prop.payback_months) : null;
-                    const portfolio = prop.elite_tier
-                      ? ELITE_SUB_TIERS[prop.elite_tier]
-                      : null;
-
-                    return (
-                      <div key={prop.id} className="rounded-lg border bg-card p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="text-sm font-medium">
-                              {prop.property_type} — {prop.city}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{prop.address}</p>
-                          </div>
-                          {portfolio && (
-                            <Badge className="bg-amber-50 text-amber-600 border border-amber-200">
-                              {portfolio.name}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Rent</p>
-                            <p className="text-sm font-semibold">
-                              ${rent.toLocaleString()} CAD/mo
-                            </p>
-                          </div>
-                          {cfpMonthly != null && cfpAnnual != null && cfp5yr != null && (
-                            <>
-                              <div>
-                                <p className="text-xs text-muted-foreground">CFP Monthly</p>
-                                <p className="text-sm font-semibold text-emerald-600">
-                                  ${cfpMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">CFP Annual</p>
-                                <p className="text-sm font-semibold text-emerald-600">
-                                  ${cfpAnnual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">CFP 5 Years</p>
-                                <p className="text-sm font-semibold text-emerald-600">
-                                  ${cfp5yr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        {payback != null && (
-                          <div className="mt-2 flex items-center gap-2 rounded-md bg-primary/5 px-3 py-1.5">
-                            <Zap className="h-4 w-4 text-primary" />
-                            <p className="text-sm">
-                              <span className="font-medium">Payback:</span>{" "}
-                              {payback.toFixed(1)} months
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Steve #8 (4/20) + #11 (4/21): Portfolio pricing — larger readable text */}
-                        {portfolio && (
-                          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3">
-                            <p className="text-base font-semibold text-amber-800">
-                              {portfolio.name} Portfolio Pricing
-                            </p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-sm text-muted-foreground">One-time fee</p>
-                                <p className="text-lg font-bold">${portfolio.oneTimeFee.toLocaleString()} CAD</p>
-                                <p className="text-sm text-muted-foreground">per unit</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Monthly fee</p>
-                                <p className="text-lg font-bold">${portfolio.monthlyFee} CAD/mo</p>
-                                <p className="text-sm text-muted-foreground">
-                                  shared across all {portfolio.name} properties
-                                </p>
-                              </div>
-                            </div>
-                            <p className="text-sm text-amber-700 pt-2 border-t border-amber-200">
-                              {portfolio.feeDescription}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              To acquire: contact the commercial team to finalize the portfolio assignment and payment method (e-Transfer, credit card, or bank transfer).
-                            </p>
-                            {/* Steve 4/22 #8: CTA to acquire portfolio */}
-                            <Link
-                              href="/dashboard/services#contact"
-                              className={cn(buttonVariants(), "w-full gap-2 mt-2 bg-amber-600 hover:bg-amber-700")}
-                            >
-                              Acquire {portfolio.name} Portfolio
-                              <ArrowRight className="h-4 w-4" />
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3">
-                    <p className="text-sm font-medium text-emerald-700">
-                      Total Portfolio CFP: ${totalCFP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} CAD/mo
-                      &middot; ${(totalCFP * 12).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} CAD/yr
-                    </p>
-                  </div>
+                <div className="mt-4">
+                  <ElitePortfolioBreakdown
+                    properties={ownerProperties}
+                    eliteServices={eliteServices}
+                    totalCFP={totalCFP}
+                  />
                 </div>
               )}
             </CardContent>

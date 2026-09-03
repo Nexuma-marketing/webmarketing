@@ -43,7 +43,8 @@ export default async function PaymentsPage() {
     .select(`
       *,
       services:service_id (name),
-      pymes_plans:pymes_plan_id (name)
+      pymes_plans:pymes_plan_id (name),
+      properties:property_id (address, city)
     `)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
@@ -81,7 +82,9 @@ export default async function PaymentsPage() {
           planName:
             p.pymes_plans?.name ||
             p.services?.name ||
-            "Installment plan",
+            (p.properties
+              ? `Elite maintenance — ${p.properties.address}, ${p.properties.city}`
+              : "Installment plan"),
           totalInstallments: Number(p.total_installments) || 0,
           completedCount: 0,
           lastAmount: 0,
@@ -225,7 +228,9 @@ export default async function PaymentsPage() {
                     const serviceName =
                       payment.services?.name ||
                       payment.pymes_plans?.name ||
-                      "—";
+                      (payment.properties
+                        ? `Elite maintenance — ${payment.properties.address}, ${payment.properties.city}`
+                        : "—");
                     const badge = STATUS_BADGES[payment.status] || STATUS_BADGES.pending;
 
                     return (

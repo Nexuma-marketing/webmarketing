@@ -275,6 +275,66 @@ export const ELITE_TIERS: Record<string, string> = {
   lujo: "Luxury ($7,001+)",
 };
 
+// Elite Assets & Legacy — per-property portfolio fees. Each property is
+// billed individually (one-time portfolio fee + monthly maintenance fee),
+// never shared/split across properties in the same investor's portfolio.
+// `dbServiceName` ties each sub-tier to its row in the `services` table
+// (seeded in migration v11) so a CheckoutButton can charge the one-time
+// fee via Stripe. Shared by the Dashboard home and Recommended Services
+// per-property breakdown (components/dashboard/elite-portfolio-breakdown.tsx).
+export const ELITE_SUB_TIERS: Record<
+  string,
+  {
+    name: string;
+    dbServiceName: string;
+    description: string;
+    oneTimeFee: number;
+    monthlyFee: number;
+    feeDescription: string;
+    extras: string[];
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }
+> = {
+  essentials: {
+    name: "Essentials",
+    dbServiceName: "Plan: Elite — Essentials",
+    description: "Avg. rent $2,500 – $3,999 CAD",
+    oneTimeFee: 900,
+    monthlyFee: 200,
+    feeDescription: "$900 CAD one-time payment + $200 CAD/month maintenance fee, charged for this property only.",
+    extras: ["Quarterly portfolio review", "Basic revenue optimization"],
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+  },
+  signature: {
+    name: "Signature",
+    dbServiceName: "Plan: Elite — Signature",
+    description: "Avg. rent $4,000 – $7,000 CAD",
+    oneTimeFee: 1410,
+    monthlyFee: 200,
+    feeDescription: "$1,410 CAD one-time payment + $200 CAD/month maintenance fee, charged for this property only.",
+    extras: ["Monthly portfolio review", "Advanced revenue optimization", "Premium market positioning"],
+    color: "text-amber-600",
+    bgColor: "bg-amber-50",
+    borderColor: "border-amber-200",
+  },
+  lujo: {
+    name: "Luxury",
+    dbServiceName: "Plan: Elite — Lujo",
+    description: "Avg. rent $7,001+ CAD",
+    oneTimeFee: 1650,
+    monthlyFee: 300,
+    feeDescription: "$1,650 CAD one-time payment + $300 CAD/month maintenance fee, charged for this property only.",
+    extras: ["Weekly portfolio review", "White-glove concierge service", "Luxury market positioning", "International investor network"],
+    color: "text-purple-600",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200",
+  },
+};
+
 export const IMAGE_STATUS_COLORS: Record<
   string,
   { bg: string; text: string }

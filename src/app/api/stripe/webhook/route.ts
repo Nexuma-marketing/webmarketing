@@ -7,6 +7,7 @@ import {
   sendSubscriptionCanceledEmail,
   sendPaymentFailedEmail,
 } from "@/lib/email";
+import { ELITE_SUB_TIERS } from "@/lib/constants";
 import type Stripe from "stripe";
 
 // Steve 5/20 Milestone 4: helper to load the customer's profile +
@@ -101,6 +102,7 @@ export async function POST(request: Request) {
           user_id: userId,
           service_id: metadata.service_id || null,
           pymes_plan_id: metadata.pymes_plan_id || null,
+          property_id: metadata.property_id || null,
           stripe_session_id: session.id,
           stripe_payment_intent_id:
             typeof session.payment_intent === "string"
@@ -117,6 +119,10 @@ export async function POST(request: Request) {
             user_id: userId,
             service_id: metadata.service_id || null,
             pymes_plan_id: metadata.pymes_plan_id || null,
+            // Steve: attributes the one-time Elite portfolio fee (and
+            // any other property-scoped purchase) to its property;
+            // null/no-op for every existing payment type.
+            property_id: metadata.property_id || null,
             stripe_session_id: session.id,
             stripe_payment_intent_id:
               typeof session.payment_intent === "string"
@@ -237,6 +243,59 @@ export async function POST(request: Request) {
           }
         }
 
+        // Steve: Elite Assets & Legacy — the one-time portfolio fee for
+        // a specific property just succeeded. Start that property's
+        // monthly maintenance-fee subscription. Deliberately a separate
+        // code path from the PYMES installment block above (does not
+        // reuse or modify it) — Elite recurs indefinitely per property
+        // with no fixed installment count, attributed via property_id
+        // instead of pymes_plan_id. `metadata.elite_tier` is only ever
+        // set server-side in /api/stripe/checkout after verifying the
+        // property is actually assigned that tier, so it's safe to
+        // trust here.
+        if (
+          paymentType === "one_time" &&
+          metadata.property_id &&
+          metadata.elite_tier &&
+          ELITE_SUB_TIERS[metadata.elite_tier]
+        ) {
+          const tier = ELITE_SUB_TIERS[metadata.elite_tier];
+          const customerId =
+            typeof session.customer === "string"
+              ? session.customer
+              : session.customer?.id;
+
+          if (customerId) {
+            const monthlyPrice = await stripe.prices.create({
+              currency: "cad",
+              unit_amount: Math.round(tier.monthlyFee * 100),
+              recurring: { interval: "month", interval_count: 1 },
+              tax_behavior: "exclusive",
+              product_data: {
+                name: `Elite ${tier.name} — Monthly Maintenance Fee`,
+              },
+            });
+
+            const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
+            await stripe.subscriptions.create({
+              customer: customerId,
+              items: [
+                {
+                  price: monthlyPrice.id,
+                  ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
+                },
+              ],
+              ...(gstRateId ? {} : { automatic_tax: { enabled: true } }),
+              metadata: {
+                kind: "elite_maintenance",
+                user_id: userId,
+                property_id: metadata.property_id,
+                elite_tier: metadata.elite_tier,
+              },
+            });
+          }
+        }
+
         // Update lead status
         await supabaseAdmin
           .from("leads")
@@ -333,6 +392,28 @@ export async function POST(request: Request) {
         const subscription =
           await stripe.subscriptions.retrieve(subscriptionId);
         const metadata = subscription.metadata || {};
+
+        // Steve: Elite Assets & Legacy monthly maintenance-fee invoice.
+        // Separate path from the PYMES installment logic below (which
+        // is untouched) — Elite subscriptions recur indefinitely per
+        // property (no fixed installment count, no auto-cancel here;
+        // the customer/admin cancels via the existing
+        // /api/stripe/cancel-my-subscription route when desired), and
+        // are attributed by property_id rather than pymes_plan_id.
+        if (metadata.kind === "elite_maintenance" && metadata.property_id) {
+          await supabaseAdmin.from("payments").insert({
+            user_id: metadata.user_id || null,
+            property_id: metadata.property_id,
+            stripe_session_id: invoice.id,
+            stripe_subscription_id: subscriptionId,
+            amount: (invoice.amount_paid || 0) / 100,
+            currency: "CAD",
+            payment_type: "elite_maintenance",
+            status: "completed",
+          });
+          break;
+        }
+
         const userId = metadata.user_id;
         const pymesPlanId = metadata.pymes_plan_id;
         const totalInstallments = parseInt(
@@ -457,6 +538,10 @@ export async function POST(request: Request) {
           await supabaseAdmin.from("payments").insert({
             user_id: userId,
             pymes_plan_id: pymesPlanId || null,
+            // Steve: attribute cancellation of an Elite maintenance-fee
+            // subscription back to its property too (null/no-op for
+            // every other subscription type, PYMES included).
+            property_id: metadata.property_id || null,
             stripe_session_id: subscriptionId,
             stripe_subscription_id: subscriptionId,
             amount: 0,
@@ -518,14 +603,18 @@ export async function POST(request: Request) {
         const userId = metadata.user_id;
         const pymesPlanId = metadata.pymes_plan_id;
         if (!userId) break;
+        const isEliteMaintenance = metadata.kind === "elite_maintenance";
         await supabaseAdmin.from("payments").insert({
           user_id: userId,
           pymes_plan_id: pymesPlanId || null,
+          // Steve: attribute a failed Elite maintenance-fee charge to
+          // its property; null/no-op for every other subscription type.
+          property_id: isEliteMaintenance ? metadata.property_id || null : null,
           stripe_session_id: invoice.id,
           stripe_subscription_id: subscriptionId,
           amount: (invoice.amount_due || 0) / 100,
           currency: "CAD",
-          payment_type: "installment",
+          payment_type: isEliteMaintenance ? "elite_maintenance" : "installment",
           status: "failed",
         });
 

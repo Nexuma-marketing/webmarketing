@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
+import { ELITE_SUB_TIERS } from "@/lib/constants";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { type, serviceId, pymesPlanId, promoCode } = await request.json();
+    const { type, serviceId, pymesPlanId, propertyId, promoCode } = await request.json();
 
     // Get or create Stripe customer
     const { data: profile } = await supabase
@@ -172,10 +173,60 @@ export async function POST(request: Request) {
           );
         }
 
+        // Steve: Elite portfolio fees (Essentials/Signature/Luxury) are
+        // charged per property, never shared across an investor's
+        // portfolio. When the caller scopes the purchase to one
+        // property, verify it belongs to the requesting user (ownership
+        // check, same pattern as every other properties query in this
+        // app) and stamp the session so the specific property is
+        // identifiable from the Stripe dashboard/webhook metadata.
+        let propertyLabel = "";
+        // Set only when this "service" purchase is the Elite one-time
+        // portfolio fee for a property that is actually assigned that
+        // tier (derived server-side from the property row, never from
+        // client input) — the webhook uses this to start the matching
+        // monthly maintenance-fee subscription. Left undefined for
+        // every other checkout (owner plans, add-ons, etc.), which are
+        // unaffected.
+        let eliteTierForSubscription: string | undefined;
+        if (propertyId) {
+          const { data: property } = await supabase
+            .from("properties")
+            .select("id, address, city, elite_tier")
+            .eq("id", propertyId)
+            .eq("owner_id", user.id)
+            .single();
+
+          if (!property) {
+            return NextResponse.json(
+              { error: "Property not found" },
+              { status: 404 }
+            );
+          }
+          propertyLabel = `${property.address}, ${property.city}`;
+
+          const assignedTier = property.elite_tier
+            ? ELITE_SUB_TIERS[property.elite_tier as string]
+            : null;
+          if (assignedTier && assignedTier.dbServiceName === service.name) {
+            eliteTierForSubscription = property.elite_tier as string;
+          }
+        }
+        const eliteTierInfo = eliteTierForSubscription
+          ? ELITE_SUB_TIERS[eliteTierForSubscription]
+          : null;
+
         const baseCents = Math.round(service.price * 100);
         let unitAmount = baseCents;
         let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
-        let descriptionSuffix = "";
+        // Steve: full disclosure before checkout — when this purchase
+        // will also enroll the property in a recurring monthly
+        // maintenance-fee subscription, say so plainly in the Stripe
+        // Checkout line-item description the customer sees before
+        // paying, not just in our own UI copy.
+        let descriptionSuffix = eliteTierInfo
+          ? `\nBy completing this one-time payment of $${service.price} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically each month until canceled.`
+          : "";
         if (promoCode) {
           const v = await validatePromoCode(
             String(promoCode),
@@ -187,7 +238,10 @@ export async function POST(request: Request) {
           }
           unitAmount = Math.max(0, baseCents - v.discountCents);
           promoMeta = { promotionId: v.promotionId, appliedLabel: v.appliedLabel };
-          descriptionSuffix = `\nPromo applied: ${v.appliedLabel}`;
+          // Append rather than overwrite so the Elite recurring-fee
+          // disclosure above (when present) still reaches the customer
+          // even when a promo code is also applied.
+          descriptionSuffix += `\nPromo applied: ${v.appliedLabel}`;
         }
 
         const session = await stripe.checkout.sessions.create({
@@ -219,7 +273,7 @@ export async function POST(request: Request) {
               price_data: {
                 currency: (service.currency || "cad").toLowerCase(),
                 product_data: {
-                  name: service.name,
+                  name: propertyLabel ? `${service.name} — ${propertyLabel}` : service.name,
                   description:
                     (service.description || "") + descriptionSuffix || undefined,
                 },
@@ -236,6 +290,14 @@ export async function POST(request: Request) {
             user_id: user.id,
             service_id: serviceId,
             payment_type: "one_time",
+            ...(propertyId ? { property_id: propertyId } : {}),
+            // Read by the webhook's checkout.session.completed handler
+            // to start the property's monthly maintenance-fee
+            // subscription once this one-time fee succeeds. Only ever
+            // set when the property is actually assigned this Elite
+            // tier (validated above) — never trusted from raw client
+            // input.
+            ...(eliteTierForSubscription ? { elite_tier: eliteTierForSubscription } : {}),
             ...(promoMeta
               ? {
                   promotion_id: promoMeta.promotionId,

@@ -9,6 +9,10 @@ interface CheckoutButtonProps {
   type: "service" | "pymes_upfront";
   serviceId?: string;
   pymesPlanId?: string;
+  // Scopes a "service" checkout (e.g. an Elite portfolio fee) to one
+  // specific property, so per-property purchases aren't conflated when
+  // an investor owns several properties on the same service/tier.
+  propertyId?: string;
   label?: string;
   variant?: "default" | "outline" | "secondary";
   size?: "default" | "sm" | "lg";
@@ -19,6 +23,7 @@ export function CheckoutButton({
   type,
   serviceId,
   pymesPlanId,
+  propertyId,
   label = "Purchase",
   variant = "default",
   size = "default",
@@ -44,6 +49,7 @@ export function CheckoutButton({
           type,
           serviceId,
           pymesPlanId,
+          propertyId,
           promoCode: promoCode.trim() || undefined,
         }),
       });
