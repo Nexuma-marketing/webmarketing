@@ -149,11 +149,17 @@ export async function POST(request: Request) {
     const payment_type = (s.metadata?.payment_type as string) || "one_time";
     const service_id = (s.metadata?.service_id as string) || null;
     const pymes_plan_id = (s.metadata?.pymes_plan_id as string) || null;
+    // Steve: carry property_id through reconciliation too, so a
+    // recovered Elite (or any other property-scoped) payment still
+    // shows the property's address in Payment History instead of
+    // losing that attribution on recovery.
+    const property_id = (s.metadata?.property_id as string) || null;
 
     const { error } = await supabaseAdmin.from("payments").insert({
       user_id: userId,
       service_id,
       pymes_plan_id,
+      property_id,
       stripe_session_id: s.id,
       stripe_payment_intent_id: s.payment_intent,
       amount: ((s.amount_total ?? 0) as number) / 100,

@@ -38,16 +38,53 @@ export default async function PaymentsPage() {
   if (!user) redirect("/login");
 
   // Fetch payments with service/plan names
-  const { data: payments } = await supabase
+  const { data: payments, error: paymentsError } = await supabase
     .from("payments")
     .select(`
       *,
       services:service_id (name),
-      pymes_plans:pymes_plan_id (name),
-      properties:property_id (address, city)
+      pymes_plans:pymes_plan_id (name)
     `)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
+
+  if (paymentsError) {
+    console.error("[payments-page] Failed to load payments", paymentsError);
+  }
+
+  // Steve: property address/city is resolved with a separate lookup
+  // instead of an embedded `properties:property_id (...)` join. An
+  // embedded relation query fails (and silently returns no rows at
+  // all, for every payment — not just the property-scoped ones) if
+  // PostgREST hasn't picked up the new payments.property_id foreign
+  // key yet after the migration that added it, e.g. before its schema
+  // cache reloads. Fetching separately (same pattern already used for
+  // property_images in dashboard/services/page.tsx) means a stale
+  // schema cache or a not-yet-applied migration only hides the
+  // property's address/city label, never the whole payment history.
+  const propertyIds = Array.from(
+    new Set(
+      (payments || [])
+        .map((p) => p.property_id as string | null)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const propertiesById: Record<string, { address: string; city: string }> = {};
+  if (propertyIds.length > 0) {
+    const { data: props, error: propsError } = await supabase
+      .from("properties")
+      .select("id, address, city")
+      .in("id", propertyIds);
+    if (propsError) {
+      console.error("[payments-page] Failed to load property labels", propsError);
+    }
+    for (const prop of props || []) {
+      propertiesById[prop.id as string] = {
+        address: prop.address as string,
+        city: prop.city as string,
+      };
+    }
+  }
 
   const totalPaid = payments
     ?.filter((p) => p.status === "completed")
@@ -82,8 +119,8 @@ export default async function PaymentsPage() {
           planName:
             p.pymes_plans?.name ||
             p.services?.name ||
-            (p.properties
-              ? `Elite maintenance — ${p.properties.address}, ${p.properties.city}`
+            (p.property_id && propertiesById[p.property_id]
+              ? `Elite maintenance — ${propertiesById[p.property_id].address}, ${propertiesById[p.property_id].city}`
               : "Installment plan"),
           totalInstallments: Number(p.total_installments) || 0,
           completedCount: 0,
@@ -225,11 +262,14 @@ export default async function PaymentsPage() {
                 </TableHeader>
                 <TableBody>
                   {payments.map((payment) => {
+                    const paymentProperty = payment.property_id
+                      ? propertiesById[payment.property_id]
+                      : undefined;
                     const serviceName =
                       payment.services?.name ||
                       payment.pymes_plans?.name ||
-                      (payment.properties
-                        ? `Elite maintenance — ${payment.properties.address}, ${payment.properties.city}`
+                      (paymentProperty
+                        ? `Elite maintenance — ${paymentProperty.address}, ${paymentProperty.city}`
                         : "—");
                     const badge = STATUS_BADGES[payment.status] || STATUS_BADGES.pending;
 

@@ -163,6 +163,26 @@ function getServiceTier(count: number): string {
   return "Basic";
 }
 
+// Steve: this form doubles as the update-preferences flow for existing
+// owners, but re-submitting always ran a plain INSERT for every staged
+// photo — unlike `properties`, which explicitly updates the existing
+// row instead of re-inserting. A returning owner who reopens this form
+// (required-rooms validation forces them to re-add a photo per room
+// even though the DB copy is untouched) ended up with the same photo
+// duplicated once per resubmission. This fingerprint — same property +
+// room + original filename + file size — identifies "this is the same
+// file as one already on file for this room", so the submit handler
+// can skip re-inserting it without touching any existing row. Uses the
+// same normalize-to-alphanumeric comparison already used for room
+// matching in dashboard/images/page.tsx so casing/spacing differences
+// in room_category don't defeat the check.
+function normalizeRoomForDedup(room: string): string {
+  return (room || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function imageFingerprint(room: string, filename: string, sizeBytes: number): string {
+  return `${normalizeRoomForDedup(room)}|${filename}|${sizeBytes}`;
+}
+
 function getPortfolio(rent: number): { name: string; key: string; color: string; bgColor: string } | null {
   if (rent >= 7001) return { name: "Luxury", key: "lujo", color: "text-purple-600", bgColor: "bg-purple-50" };
   if (rent >= 4000) return { name: "Signature", key: "signature", color: "text-amber-600", bgColor: "bg-amber-50" };
@@ -697,7 +717,31 @@ export default function OwnerFormPage() {
           // Steve #11: upload photos specifically for THIS property (per-property)
           const thisPropertyImages = investorPropertyImages[i] || [];
           if (propData && thisPropertyImages.length > 0) {
+            // Steve: dedup guard — a resubmission of this form (e.g. the
+            // owner reopening it to edit an unrelated field) re-stages
+            // the same photos client-side and, without this check,
+            // re-inserted them as brand-new rows on top of the ones
+            // already saved from the first submission. Fetch what's
+            // already on file for this property once, and skip
+            // re-inserting (and re-uploading to storage) anything that
+            // matches an existing row's room + original filename + size.
+            const { data: existingPropertyImages } = await supabase
+              .from("property_images")
+              .select("room_category, original_filename, file_size_bytes")
+              .eq("property_id", propData.id);
+            const existingImageFingerprints = new Set(
+              (existingPropertyImages || []).map((e) =>
+                imageFingerprint(e.room_category, e.original_filename, e.file_size_bytes),
+              ),
+            );
             for (const img of thisPropertyImages) {
+              if (
+                existingImageFingerprints.has(
+                  imageFingerprint(img.room, img.file.name, img.file.size),
+                )
+              ) {
+                continue;
+              }
               const ext = img.file.name.split(".").pop();
               const path = `properties/${propData.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
               const { error: uploadErr } = await supabase.storage.from("property-images").upload(path, img.file);
@@ -784,7 +828,27 @@ export default function OwnerFormPage() {
 
         // Upload property images to Supabase Storage
         if (propData && propertyImages.length > 0) {
+          // Steve: same dedup guard as the investor path above — a
+          // resubmission of this form (also used as the update-
+          // preferences flow) must not re-insert photos already saved
+          // for this property.
+          const { data: existingPropertyImages } = await supabase
+            .from("property_images")
+            .select("room_category, original_filename, file_size_bytes")
+            .eq("property_id", propData.id);
+          const existingImageFingerprints = new Set(
+            (existingPropertyImages || []).map((e) =>
+              imageFingerprint(e.room_category, e.original_filename, e.file_size_bytes),
+            ),
+          );
           for (const img of propertyImages) {
+            if (
+              existingImageFingerprints.has(
+                imageFingerprint(img.room, img.file.name, img.file.size),
+              )
+            ) {
+              continue;
+            }
             const ext = img.file.name.split(".").pop();
             const path = `properties/${propData.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 

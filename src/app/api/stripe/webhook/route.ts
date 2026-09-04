@@ -137,6 +137,24 @@ export async function POST(request: Request) {
           data: paymentData,
           error: paymentError,
         });
+        // Steve: this insert previously failed silently on schema
+        // mismatches (e.g. a column referenced in code but not yet
+        // added by migration) — it was only ever passed to
+        // console.log, at the same level as the success case, so nothing
+        // surfaced it as an actionable error. Escalate to console.error
+        // with the full Supabase error (code/message/hint) so a broken
+        // payment record is loud in the logs instead of silently
+        // vanishing from Payment History.
+        if (paymentError) {
+          console.error(
+            "[webhook-diag] CRITICAL: payments insert failed for checkout.session.completed",
+            {
+              sessionId: session.id,
+              metadata,
+              error: paymentError,
+            },
+          );
+        }
 
         // Steve 5/22 Milestone 4 (#7 docx): when an owner buys the
         // Founders Package, increment the `founders_plan.taken` counter
@@ -401,16 +419,24 @@ export async function POST(request: Request) {
         // /api/stripe/cancel-my-subscription route when desired), and
         // are attributed by property_id rather than pymes_plan_id.
         if (metadata.kind === "elite_maintenance" && metadata.property_id) {
-          await supabaseAdmin.from("payments").insert({
-            user_id: metadata.user_id || null,
-            property_id: metadata.property_id,
-            stripe_session_id: invoice.id,
-            stripe_subscription_id: subscriptionId,
-            amount: (invoice.amount_paid || 0) / 100,
-            currency: "CAD",
-            payment_type: "elite_maintenance",
-            status: "completed",
-          });
+          const { error: eliteInsertError } = await supabaseAdmin
+            .from("payments")
+            .insert({
+              user_id: metadata.user_id || null,
+              property_id: metadata.property_id,
+              stripe_session_id: invoice.id,
+              stripe_subscription_id: subscriptionId,
+              amount: (invoice.amount_paid || 0) / 100,
+              currency: "CAD",
+              payment_type: "elite_maintenance",
+              status: "completed",
+            });
+          if (eliteInsertError) {
+            console.error(
+              "[webhook-diag] CRITICAL: elite_maintenance payments insert failed",
+              { subscriptionId, metadata, error: eliteInsertError },
+            );
+          }
           break;
         }
 
