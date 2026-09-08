@@ -555,7 +555,7 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           {isOwnerRole && (
-            <Link href="/forms/propietario" className={buttonVariants()}>
+            <Link href="/dashboard/preferences" className={buttonVariants()}>
               Update Preferences
             </Link>
           )}

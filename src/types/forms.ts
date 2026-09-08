@@ -148,6 +148,20 @@ export const propertyOnlySchema = z.object({
 export type PropertyOnlyFormData = z.infer<typeof propertyOnlySchema>;
 
 // ===========================================
+// Property Edit Form (for editing one existing property by id)
+// Same fields as propertyOnlySchema minus the one-time legal
+// consents, which were already captured at registration.
+// ===========================================
+export const propertyEditSchema = propertyOnlySchema.omit({
+  consent_image_usage: true,
+  consent_data_processing: true,
+  consent_marketing: true,
+  consent_third_party: true,
+});
+
+export type PropertyEditFormData = z.infer<typeof propertyEditSchema>;
+
+// ===========================================
 // Tenant Form (with 8 premium criteria)
 // British Columbia focused
 // ===========================================
