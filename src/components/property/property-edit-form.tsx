@@ -190,6 +190,7 @@ export function PropertyEditForm({
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
 
   const fieldMeta = useFormFieldMeta("owner_property");
@@ -243,16 +244,22 @@ export function PropertyEditForm({
       scrollToFirstError();
       return;
     }
+    // Stepping away from a just-saved state means the customer is back to
+    // editing — clear the success banner so "Save Changes" reappears
+    // instead of the "Done" button once they return to the final step.
+    setSaved(false);
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
     window.history.pushState({ step: step + 1 }, "");
   }
 
   function prevStep() {
+    setSaved(false);
     if (step > 1) setStep((s) => s - 1);
     else router.push("/dashboard/preferences");
   }
 
   const handlePopState = useCallback(() => {
+    setSaved(false);
     setStep((s) => {
       if (s > 1) return s - 1;
       router.push("/dashboard/preferences");
@@ -268,6 +275,7 @@ export function PropertyEditForm({
   async function onSubmit(data: PropertyEditFormData) {
     setLoading(true);
     setError(null);
+    setSaved(false);
 
     try {
       const supabase = createClient();
@@ -333,8 +341,12 @@ export function PropertyEditForm({
         body: JSON.stringify({ type: "owner" }),
       }).catch(() => null);
 
-      router.push("/dashboard/preferences");
+      // Refresh cached server data for this route in the background, but
+      // do NOT navigate away — the customer stays on this page and sees
+      // the success confirmation below until they deliberately choose to
+      // leave (see the "Done" button in the footer).
       router.refresh();
+      setSaved(true);
     } catch (err) {
       setError("Failed to save. Please try again.");
       console.error(err);
@@ -382,6 +394,12 @@ export function PropertyEditForm({
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
+              </div>
+            )}
+
+            {saved && (
+              <div className="rounded-md bg-green-100 p-3 text-sm text-green-800" role="status">
+                Property updated successfully.
               </div>
             )}
 
@@ -787,6 +805,10 @@ export function PropertyEditForm({
               <Button type="button" onClick={nextStep}>
                 Next
                 <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            ) : saved ? (
+              <Button type="button" onClick={() => router.push("/dashboard/preferences")}>
+                Done &mdash; Back to My Properties
               </Button>
             ) : (
               <Button type="submit" disabled={loading}>
