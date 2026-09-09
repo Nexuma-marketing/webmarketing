@@ -105,6 +105,7 @@ interface PropertyRow {
   bathrooms: number | null;
   area_sqft: number | null;
   amenities: string[] | null;
+  objectives: string[] | null;
   common_areas: string[] | null;
   availability_date: string | null;
   dishwasher: boolean | null;
@@ -151,6 +152,7 @@ function toDefaultValues(property: PropertyRow): PropertyEditFormData {
     bedrooms: BEDROOMS.includes(bedroomsLabel) ? bedroomsLabel : "",
     bathrooms: BATHROOMS.includes(bathroomsLabel) ? bathroomsLabel : "",
     amenities: property.amenities || [],
+    objectives: property.objectives || [],
     common_areas: property.common_areas || [],
     dishwasher: !!property.dishwasher,
     pet_friendly: !!property.pet_friendly,
