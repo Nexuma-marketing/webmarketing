@@ -51,6 +51,7 @@ export interface Property {
   bathrooms: number | null;
   area_sqft: number | null;
   amenities: string[];
+  objectives: string[];
   is_available: boolean;
   service_tier: PropertyServiceTier | null;
   elite_tier: EliteTier | null;

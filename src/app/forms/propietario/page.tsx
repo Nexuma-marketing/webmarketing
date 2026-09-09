@@ -306,9 +306,9 @@ export default function OwnerFormPage() {
     resolver: zodResolver(ownerFormSchema) as any,
     defaultValues: {
       property_count: 1,
-      objectives: [],
       cities: [""],
       rents: [0],
+      objectives: [[]],
       amenities: [],
       common_areas: [],
       smart_home_features: [],
@@ -339,7 +339,9 @@ export default function OwnerFormPage() {
     },
   });
 
-  const objectives = watch("objectives") as string[];
+  // Per-property: objectives[i] is the objectives array for property i,
+  // same indexing as cities[i] / rents[i].
+  const objectives = watch("objectives") as string[][];
   const amenities = watch("amenities") as string[];
   const commonAreas = watch("common_areas") as string[];
   const smartHomeFeatures = watch("smart_home_features") as string[];
@@ -364,14 +366,29 @@ export default function OwnerFormPage() {
     setValue(field, next as never);
   }
 
-  // Keep cities/rents arrays in sync with property_count
+  // Toggle one objective for property `index` — objectives are per-property,
+  // same shape as toggleArray but indexed into the objectives[][] array.
+  function toggleObjective(index: number, value: string) {
+    const current = objectives[index] || [];
+    const next = current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+    const newObjectives = [...objectives];
+    newObjectives[index] = next;
+    setValue("objectives", newObjectives);
+  }
+
+  // Keep cities/rents/objectives arrays in sync with property_count
   function syncPropertyArrays(count: number) {
     const newCities = [...cities];
     const newRents = [...rents];
+    const newObjectives = [...objectives];
     while (newCities.length < count) newCities.push("");
     while (newRents.length < count) newRents.push(0);
+    while (newObjectives.length < count) newObjectives.push([]);
     setValue("cities", newCities.slice(0, count));
     setValue("rents", newRents.slice(0, count));
+    setValue("objectives", newObjectives.slice(0, count));
     syncInvestorProps(count);
   }
 
@@ -430,7 +447,7 @@ export default function OwnerFormPage() {
     // Clear any previous error when starting a step transition
     setError(null);
     if (step === 1) {
-      valid = await trigger(["user_type", "property_count", "objectives"]);
+      valid = await trigger(["user_type", "property_count"]);
       if (valid) syncInvestorProps(propertyCount);
     }
     if (step === 2) {
@@ -571,7 +588,9 @@ export default function OwnerFormPage() {
         property_count: data.property_count,
         has_professional_photos: false,
         current_listings: isInvestorSubmit ? investorProps[0]?.listing_platforms || [] : data.listing_platforms,
-        objectives: data.objectives,
+        // objectives is now collected and stored per-property on `properties`
+        // (see propertyPayload below) — discovery_briefs.objectives is legacy
+        // and no longer written here.
         cities: data.cities,
         rents: data.rents,
         assigned_path: tier,
@@ -690,6 +709,7 @@ export default function OwnerFormPage() {
             social_life: ip.social_life || null,
             near_mall: ip.near_mall,
             nearby_supermarkets: ip.nearby_supermarkets,
+            objectives: data.objectives[i] || [],
             service_tier: tier,
             elite_tier: portfolio?.key ?? null,
             cfp_monthly: cfpMonthly,
@@ -807,6 +827,7 @@ export default function OwnerFormPage() {
           social_life: data.social_life || null,
           near_mall: data.near_mall,
           nearby_supermarkets: data.nearby_supermarkets,
+          objectives: data.objectives[0] || [],
           service_tier: tier,
           is_available: data.occupancy_status === "vacant",
         };
@@ -964,8 +985,8 @@ export default function OwnerFormPage() {
               {step === 6 && "Legal Consents"}
             </CardTitle>
             <CardDescription>
-              {step === 1 && "Tell us about yourself and your property objectives."}
-              {step === 2 && "Enter the city and desired rent for each property."}
+              {step === 1 && "Tell us about yourself."}
+              {step === 2 && "Enter the city, desired rent, and objectives for each property."}
               {step === 3 && (isInvestor
                 ? `Describe property ${propIdx + 1} of ${propertyCount}. Each property is assigned a portfolio based on rent.`
                 : "Describe your first property. You can add more from your dashboard.")}
@@ -1096,31 +1117,6 @@ export default function OwnerFormPage() {
                     Your service tier: <strong>{getServiceTier(propertyCount)}</strong>
                   </p>
                 </DynamicField>
-
-                <DynamicField
-                  meta={fieldMeta}
-                  fieldKey="objectives"
-                  fallbackLabel="What are your objectives? (select all that apply)"
-                  className="space-y-3"
-                >
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {fieldOptions(fieldMeta, "objectives", OBJECTIVES).map((opt) => (
-                      <div key={opt.value} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`obj-${opt.value}`}
-                          checked={objectives.includes(opt.value)}
-                          onCheckedChange={() => toggleArray("objectives", opt.value, objectives)}
-                        />
-                        <Label htmlFor={`obj-${opt.value}`} className="text-sm font-normal">
-                          {opt.label}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                  {errors.objectives && (
-                    <p className="text-sm text-destructive" data-error="true">{errors.objectives.message}</p>
-                  )}
-                </DynamicField>
               </>
             )}
 
@@ -1128,7 +1124,7 @@ export default function OwnerFormPage() {
             {step === 2 && (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Enter the city and desired monthly rent for each of your {propertyCount} {propertyCount === 1 ? "property" : "properties"}.
+                  Enter the city, desired monthly rent, and objectives for each of your {propertyCount} {propertyCount === 1 ? "property" : "properties"} — objectives can be different for each property.
                   Limited to British Columbia.
                 </p>
                 {Array.from({ length: Math.min(propertyCount, 10) }, (_, i) => (
@@ -1177,6 +1173,26 @@ export default function OwnerFormPage() {
                         {userType !== "investor" && rents[i] > 0 && rents[i] < 300 && (
                           <p className="text-sm text-destructive">Minimum rent is $300 CAD</p>
                         )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        Objectives for this property (select all that apply)
+                      </Label>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {fieldOptions(fieldMeta, "objectives", OBJECTIVES).map((opt) => (
+                          <div key={opt.value} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`obj-${i}-${opt.value}`}
+                              checked={(objectives[i] || []).includes(opt.value)}
+                              onCheckedChange={() => toggleObjective(i, opt.value)}
+                            />
+                            <Label htmlFor={`obj-${i}-${opt.value}`} className="text-sm font-normal">
+                              {opt.label}
+                            </Label>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>

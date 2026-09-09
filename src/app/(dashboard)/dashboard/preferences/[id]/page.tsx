@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PropertyEditForm } from "@/components/property/property-edit-form";
+import { ObjectivesEditor } from "@/components/property/objectives-editor";
 
 export default async function EditPropertyPreferencesPage({
   params,
@@ -35,5 +36,14 @@ export default async function EditPropertyPreferencesPage({
     .order("room_category")
     .order("sort_order", { ascending: true });
 
-  return <PropertyEditForm property={property} existingImages={images || []} />;
+  return (
+    <>
+      <div className="flex justify-center px-4 pt-8">
+        <div className="w-full max-w-2xl">
+          <ObjectivesEditor propertyId={property.id} initialObjectives={property.objectives || []} />
+        </div>
+      </div>
+      <PropertyEditForm property={property} existingImages={images || []} />
+    </>
+  );
 }

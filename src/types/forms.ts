@@ -8,10 +8,12 @@ export const ownerFormSchema = z.object({
   // ─── Owner Profile (PDF 5.2.1) ───
   user_type: z.enum(["owner", "investor"], { message: "Please select if you are an owner or investor" }),
   property_count: z.coerce.number().int().min(1, "Must own at least 1 property"),
-  objectives: z.array(z.string()).min(1, "Select at least one objective"),
-  // Per-property: city and rent (arrays matching property_count)
+  // Per-property: city, rent, and objectives (arrays matching property_count —
+  // each investment can have different objectives, e.g. "cover mortgage" for
+  // one property and "maximize as an asset" for another).
   cities: z.array(z.string()).min(1, "Enter city for each property"),
   rents: z.array(z.coerce.number().min(300)).min(1, "Enter rent for each property"),
+  objectives: z.array(z.array(z.string())).default([]),
 
   // ─── Property Details (PDF 5.2.1.1) ─── first property
   property_type: z.string({ message: "Select property type" }).min(1, "Select property type"),
@@ -91,6 +93,10 @@ export const propertyOnlySchema = z.object({
   // ─── Property Details (PDF 5.2.1.1) ───
   property_type: z.string({ message: "Select property type" }).min(1, "Select property type"),
   monthly_rent: z.coerce.number().min(300, "Minimum $300"),
+  // This property's own investment objectives — objectives are per-property,
+  // not account-wide (a single owner can want one property to just cover its
+  // mortgage while another is meant to maximize return as an asset).
+  objectives: z.array(z.string()).default([]),
   area_sqft: z.coerce.number().positive().optional().or(z.literal("")),
   area_unit: z.enum(["sqft", "m2"]).default("sqft"),
   occupancy_status: z.enum(["vacant", "occupied", "renovation", "new_construction"]).default("vacant"),

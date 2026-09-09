@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card";
 import { MapPin, Pencil } from "lucide-react";
 import { formatCurrency } from "@/lib/admin";
-import { ObjectivesEditor } from "@/components/property/objectives-editor";
 
 export default async function PreferencesPage() {
   const supabase = await createClient();
@@ -47,30 +46,14 @@ export default async function PreferencesPage() {
     }
   }
 
-  // Non-property preferences ("objectives") captured on the original
-  // registration form live on discovery_briefs, keyed one-per-user —
-  // safe to edit directly here since there is no per-property array
-  // to misalign.
-  const { data: brief } = await supabase
-    .from("discovery_briefs")
-    .select("id, objectives")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold md:text-3xl">Update Preferences</h1>
         <p className="text-muted-foreground">
-          Select a property to edit its details, or update your investment objectives below.
+          Select a property to edit its details and investment objectives.
         </p>
       </div>
-
-      {brief && (
-        <ObjectivesEditor briefId={brief.id} initialObjectives={brief.objectives || []} />
-      )}
 
       {!properties || properties.length === 0 ? (
         <Card>

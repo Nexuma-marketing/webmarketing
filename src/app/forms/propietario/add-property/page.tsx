@@ -29,6 +29,22 @@ import { ImageUpload, type ImageWithMeta } from "@/components/forms/image-upload
 import { useFormFieldMeta, fieldOptions } from "@/lib/form-meta";
 import { DynamicField } from "@/components/forms/dynamic-field";
 
+// ─── Objectives (PDF 5.2.1 - 8 options) ─────────────
+// This property's own investment objectives — same list as the original
+// 6-step form's Owner Profile step, but collected per-property here since
+// a new property added from the dashboard can have different objectives
+// from the owner's other properties.
+const OBJECTIVES = [
+  "Rent extra spaces (rooms, den)",
+  "Rent a full unit (basement, suite, house, apartment, penthouse)",
+  "Cover mortgage payments",
+  "Increase income",
+  "Get return on property investment",
+  "Short-term rentals",
+  "Long-term rentals",
+  "Optimize assets",
+];
+
 // ─── Property types (PDF 5.2.1.1) ───────────────────
 const PROPERTY_TYPES = [
   { value: "house", label: "House" },
@@ -146,6 +162,7 @@ export default function AddPropertyPage() {
       province: "British Columbia",
       occupancy_status: "vacant",
       area_unit: "sqft",
+      objectives: [],
       amenities: [],
       common_areas: [],
       smart_home_features: [],
@@ -175,6 +192,7 @@ export default function AddPropertyPage() {
   const selectedLevels = watch("levels") as string | undefined;
   const smartHome = watch("smart_home") as boolean;
   const smartHomeFeatures = watch("smart_home_features") as string[];
+  const objectives = watch("objectives") as string[];
   const amenities = watch("amenities") as string[];
   const commonAreas = watch("common_areas") as string[];
   const listingPlatforms = watch("listing_platforms") as string[];
@@ -264,6 +282,7 @@ export default function AddPropertyPage() {
         bedrooms: parseInt(data.bedrooms),
         bathrooms: Math.floor(parseFloat(data.bathrooms.replace(" Bath", ""))),
         area_sqft: typeof data.area_sqft === "number" ? data.area_sqft : null,
+        objectives: data.objectives,
         amenities: data.amenities,
         common_areas: data.common_areas,
         availability_date: data.availability_date || null,
@@ -445,6 +464,27 @@ export default function AddPropertyPage() {
                   {errors.monthly_rent && (
                     <p className="text-sm text-destructive" data-error="true">{errors.monthly_rent.message}</p>
                   )}
+                </DynamicField>
+
+                <DynamicField
+                  meta={fieldMeta}
+                  fieldKey="objectives"
+                  fallbackLabel="Objectives for this property (select all that apply)"
+                >
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {fieldOptions(fieldMeta, "objectives", OBJECTIVES).map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`obj-${opt.value}`}
+                          checked={objectives.includes(opt.value)}
+                          onCheckedChange={() => toggleArray("objectives", opt.value, objectives)}
+                        />
+                        <Label htmlFor={`obj-${opt.value}`} className="text-sm font-normal">
+                          {opt.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
                 </DynamicField>
 
                 {/* Occupancy Status (#18) */}

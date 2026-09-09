@@ -27,10 +27,10 @@ const OBJECTIVES = [
 ];
 
 export function ObjectivesEditor({
-  briefId,
+  propertyId,
   initialObjectives,
 }: {
-  briefId: string;
+  propertyId: string;
   initialObjectives: string[];
 }) {
   const [objectives, setObjectives] = useState<string[]>(initialObjectives);
@@ -48,9 +48,9 @@ export function ObjectivesEditor({
     setMessage(null);
     const supabase = createClient();
     const { error } = await supabase
-      .from("discovery_briefs")
+      .from("properties")
       .update({ objectives })
-      .eq("id", briefId);
+      .eq("id", propertyId);
 
     setMessage(error ? "Failed to save. Please try again." : "Objectives saved.");
     setSaving(false);
@@ -61,7 +61,7 @@ export function ObjectivesEditor({
       <CardHeader>
         <CardTitle>Investment Objectives</CardTitle>
         <CardDescription>
-          These preferences apply to your account, not any single property.
+          These objectives apply to this property only.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
