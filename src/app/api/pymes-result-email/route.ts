@@ -160,13 +160,36 @@ export async function POST(request: Request) {
 
     const resend = new Resend(process.env.RESEND_API_KEY);
 
+    const emailResults: { customer: string; commercial: string } = {
+      customer: "skipped",
+      commercial: "skipped",
+    };
+
     // Send to user (with Steve's template)
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: [recipientEmail],
-      subject: `Your Sales Leak Diagnosis Results — Save $${annualLoss.toLocaleString()}/year`,
-      html,
-    });
+    // Fix: resend.emails.send() resolves with { data, error } instead of
+    // throwing on delivery failure (unverified domain, invalid recipient,
+    // rate limit, etc). The previous code awaited the call but never
+    // checked `.error`, so a failed customer send was silently treated as
+    // success while the commercial email below still went out — matching
+    // the exact symptom reported (commercial receives it, customer doesn't).
+    try {
+      const result = await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [recipientEmail],
+        subject: `Your Sales Leak Diagnosis Results — Save $${annualLoss.toLocaleString()}/year`,
+        html,
+      });
+      if (result.error) {
+        console.error("[pymes-result-email] customer email Resend error:", result.error);
+        emailResults.customer = `error: ${result.error.message || result.error.name || "unknown"}`;
+      } else {
+        emailResults.customer = `sent (id=${result.data?.id || "?"})`;
+        console.log("[pymes-result-email] customer email sent:", result.data?.id);
+      }
+    } catch (err) {
+      console.error("[pymes-result-email] customer email exception:", err);
+      emailResults.customer = `exception: ${err instanceof Error ? err.message : "unknown"}`;
+    }
 
     // Steve 4/24 #6: Commercial email with FULL diagnostic — 4 blocks, 7 questions, all scores
     const score = (v: unknown) => Number(v) || 0;
@@ -250,14 +273,26 @@ export async function POST(request: Request) {
   <p style="color:#666;font-size:12px;margin-top:24px">Contact this lead within 24 hours to offer a rescue session.</p>
 </div>`;
 
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
-      subject: `New PYMES Lead — ${profile?.full_name || "Unknown"} (Score ${diagnosis.total_score}/35)`,
-      html: commercialHtml,
-    }).catch((err) => console.error("PYMES commercial email failed:", err));
+    try {
+      const result = await resend.emails.send({
+        from: FROM_EMAIL,
+        to: COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean),
+        subject: `New PYMES Lead — ${profile?.full_name || "Unknown"} (Score ${diagnosis.total_score}/35)`,
+        html: commercialHtml,
+      });
+      if (result.error) {
+        console.error("[pymes-result-email] commercial email Resend error:", result.error);
+        emailResults.commercial = `error: ${result.error.message || result.error.name || "unknown"}`;
+      } else {
+        emailResults.commercial = `sent (id=${result.data?.id || "?"})`;
+        console.log("[pymes-result-email] commercial email sent:", result.data?.id);
+      }
+    } catch (err) {
+      console.error("[pymes-result-email] commercial email exception:", err);
+      emailResults.commercial = `exception: ${err instanceof Error ? err.message : "unknown"}`;
+    }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, emails: emailResults });
   } catch (err) {
     console.error("PYMES result email error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
