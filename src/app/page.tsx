@@ -69,7 +69,7 @@ const DEFAULT_FAQS: FaqItem[] = [
   },
   {
     q: "What is the differential value of this platform?",
-    a: "For property owners, as our motto says \"your property, your money\": you pay us only once, and once tenants move in, the tenant pays you directly — no intermediaries, no rent increases to cover third-party costs and profits.\n\nFor tenants, you not only pay less rent than with real-estate agencies or sub-leasing third parties, but we are also the only ones who show you properties that truly match your preferences.\n\nFor businesses, we target small and medium companies with prices within their reach. We know marketing agencies only care about clients with big budgets — we are truly your allies and we care about your business actually growing.",
+    a: "For property owners, as our motto says \"your property, your money\": you pay us only once, and once tenants move in, the tenant pays you directly — no intermediaries, no rent increases to cover third-party costs and profits.\n\nFor tenants, you not only pay less rent than with traditional rental agencies or sub-leasing third parties, but we are also the only ones who show you properties that truly match your preferences.\n\nFor businesses, we target small and medium companies with prices within their reach. We know marketing agencies only care about clients with big budgets — we are truly your allies and we care about your business actually growing.",
   },
   {
     q: "How do you balance marketing for B2B and B2C audiences?",
@@ -588,7 +588,7 @@ export default async function HomePage({
                 </h3>
                 <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
                   Register your properties, get tailored marketing
-                  recommendations, and maximize your real estate investment.
+                  recommendations, and maximize your property investment.
                 </p>
                 <ul className="space-y-2">
                   {[

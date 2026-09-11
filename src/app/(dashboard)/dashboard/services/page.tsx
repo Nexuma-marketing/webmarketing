@@ -34,6 +34,8 @@ import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/das
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
+import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
 // el enlace esta roto, no hace nada". The plan cards used
@@ -104,82 +106,6 @@ function OtherServiceCard({
     </Card>
   );
 }
-
-// ─── PYMES Plans ─────────────────────────────────────
-const PYMES_PLANS: Record<
-  string,
-  {
-    name: string;
-    price: string;
-    upfront: string;
-    installment: string;
-    duration: string;
-    tagline: string;
-    features: string[];
-    color: string;
-    bgColor: string;
-    borderColor: string;
-  }
-> = {
-  rescue: {
-    name: "Rescue",
-    price: "$1,500 CAD",
-    upfront: "$750 CAD upfront (50%)",
-    installment: "$375 CAD × 2 monthly payments",
-    duration: "Minimum 2.5 months",
-    tagline: "Intensive intervention plan to exit critical mode and move to growth",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Digital presence emergency recovery",
-      "Basic optimization (Google Business, Social Media, SEO)",
-      "Lead capture structure & funnel setup",
-      "Direct 1-on-1 advisory sessions",
-      "Monthly KPI performance report",
-    ],
-    color: "text-red-600",
-    bgColor: "bg-red-50",
-    borderColor: "border-red-200",
-  },
-  growth: {
-    name: "Growth",
-    price: "$2,500 CAD",
-    upfront: "$1,250 CAD upfront (50%)",
-    installment: "$625 CAD × 2 monthly payments",
-    duration: "Minimum 4–5 months",
-    tagline: "Plan to overcome stagnation, correct weaknesses and start growing",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Marketing strategy development & execution",
-      "Conversion rate optimization",
-      "Campaign structure & ad management",
-      "Lead tracking system implementation",
-      "Market positioning analysis",
-      "Bi-weekly KPI performance reports",
-    ],
-    color: "text-orange-600",
-    bgColor: "bg-orange-50",
-    borderColor: "border-orange-200",
-  },
-  scale: {
-    name: "Scale",
-    price: "$3,800 CAD",
-    upfront: "$1,520 CAD upfront (40%)",
-    installment: "$570 CAD × 4 monthly payments",
-    duration: "Minimum 6 months",
-    tagline: "Plan to scale and maximize revenue with advanced strategies",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Advanced multi-channel optimization",
-      "Channel expansion & new market entry",
-      "Growth strategy & scaling roadmap",
-      "Opportunity & competitor analysis",
-      "Weekly KPI performance reports",
-    ],
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-  },
-};
 
 export default async function ServicesPage() {
   const supabase = await createClient();
@@ -264,31 +190,16 @@ export default async function ServicesPage() {
   }
 
   // ─── PYMES data ────────────────────────────────
-  let pymesPlan: string | null = null;
-  let pymesPlanRecord: { id: string; plan_type: string } | null = null;
+  // Steve — PYME dashboard/services UX fix: resolved through the same
+  // getPymesPlanForUser() helper the Dashboard home page now uses, so
+  // both pages show identical plan content/pricing/overrides.
+  let pymesPlanDetails: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanDetails"] = null;
+  let pymesPlanRecord: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanRecord"] = null;
 
   if (isPymesRole) {
-    const { data: diagnosis } = await supabase
-      .from("pymes_diagnosis")
-      .select("recommended_plan")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    pymesPlan = diagnosis?.recommended_plan || null;
-
-    if (pymesPlan) {
-      const { data: planRecord } = await supabase
-        .from("pymes_plans")
-        .select("id, plan_type")
-        .eq("plan_type", pymesPlan)
-        .eq("is_active", true)
-        .limit(1)
-        .single();
-
-      pymesPlanRecord = planRecord;
-    }
+    const pymesInfo = await getPymesPlanForUser(supabase, user.id);
+    pymesPlanDetails = pymesInfo.pymesPlanDetails;
+    pymesPlanRecord = pymesInfo.pymesPlanRecord;
   }
 
   // ─── Tenant data: matched properties (Steve #2: show ALL matches with full info) ────────────
@@ -580,23 +491,6 @@ export default async function ServicesPage() {
   ) || [];
   const premierPlan = tierDetails?.plans.find((plan) => plan.name === "Premier Tier");
 
-  // ─── PYMES plan details ────────────────────────
-  const basePymesDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
-  const pymesPlanDetails = basePymesDetails
-    ? (() => {
-        const override = planOverrides[`pymes_${pymesPlan}`];
-        if (!override) return basePymesDetails;
-        return {
-          ...basePymesDetails,
-          tagline: override.tagline ?? basePymesDetails.tagline,
-          features:
-            override.features && override.features.length > 0
-              ? override.features
-              : basePymesDetails.features,
-        };
-      })()
-    : null;
-
   // Determine the user's primary city for promotion zone targeting.
   // Steve 4/30 #12: zones in /admin/pricing → Promotions used to be ignored
   // because we always passed null. Owners have a city via their property,
@@ -887,79 +781,10 @@ export default async function ServicesPage() {
 
       {/* ═══ PYMES: Recommended Plan ═══ */}
       {isPymesRole && pymesPlanDetails && (
-        <Card
-          className={`${pymesPlanDetails.borderColor} ${pymesPlanDetails.bgColor}`}
-        >
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Zap className={`h-5 w-5 ${pymesPlanDetails.color}`} />
-              <CardTitle className="text-lg">
-                Your Recommended Plan: {pymesPlanDetails.name}
-              </CardTitle>
-            </div>
-            <CardDescription>{pymesPlanDetails.tagline}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <span
-                className={`text-3xl font-bold ${pymesPlanDetails.color}`}
-              >
-                {pymesPlanDetails.price}
-              </span>
-              <p className="text-sm text-muted-foreground">
-                {pymesPlanDetails.duration}
-              </p>
-              <div className="rounded-md border bg-card p-3 space-y-1.5">
-                <p className="text-xs font-medium">Payment Options:</p>
-                <div className="flex items-center gap-2 text-sm">
-                  <Badge variant="outline" className="text-xs shrink-0">Option 1</Badge>
-                  <span className="text-muted-foreground">{pymesPlanDetails.upfront}, then {pymesPlanDetails.installment}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Badge variant="outline" className="text-xs shrink-0">Option 2</Badge>
-                  <span className="text-muted-foreground">Full payment upfront (100%)</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Accepted: e-Transfer, credit card, or bank transfer
-                </p>
-              </div>
-            </div>
-            <ul className="space-y-1.5">
-              {pymesPlanDetails.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <CheckCircle2
-                    className={`mt-0.5 h-4 w-4 shrink-0 ${pymesPlanDetails.color}`}
-                  />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {pymesPlanRecord ? (
-                <CheckoutButton
-                  type="pymes_upfront"
-                  pymesPlanId={pymesPlanRecord.id}
-                  label={`Pay ${pymesPlanDetails.upfront}`}
-                  className="flex-1"
-                />
-              ) : (
-                <Link
-                  href="/dashboard/services#contact"
-                  className={cn(buttonVariants(), "flex-1 gap-2")}
-                >
-                  Start Now
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              )}
-              <Link
-                href="/dashboard/services#contact"
-                className={cn(buttonVariants({ variant: "outline" }), "flex-1 gap-2")}
-              >
-                Schedule a Consultation
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+        <PymesPlanCard
+          planDetails={pymesPlanDetails}
+          pymesPlanRecordId={pymesPlanRecord?.id}
+        />
       )}
 
       {/* ═══ PYMES: No plan ═══ */}
@@ -1242,6 +1067,31 @@ export default async function ServicesPage() {
                 </details>
               ))}
             </div>
+          ) : isPymesRole ? (
+            // Steve — PYME dashboard/services UX fix: none of these
+            // "other" services target the pymes role (they're
+            // property/investor plans and residential add-ons like
+            // Virtual Tour 360 / Portfolio Marketing Strategy — see
+            // PYME_DASHBOARD_SERVICES_UX_FIX.md Fix 2). Collapsing them
+            // behind one opt-in keeps a business owner who also owns
+            // rental property from losing access, without cluttering the
+            // default PYME view with irrelevant plans.
+            <details className="group rounded-lg border bg-card">
+              <summary className="cursor-pointer list-none px-4 py-3 font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center justify-between gap-3">
+                  Own a property? Explore our property marketing plans
+                  <span className="text-sm font-normal text-muted-foreground">
+                    <span className="group-open:hidden">+ View more</span>
+                    <span className="hidden group-open:inline">− Show less</span>
+                  </span>
+                </span>
+              </summary>
+              <div className="grid gap-4 border-t p-4 md:grid-cols-2 lg:grid-cols-3">
+                {otherServices.map((service) => (
+                  <OtherServiceCard key={service.id} service={service} pickFeatures={pickFeatures} formatServicePrice={formatServicePrice} />
+                ))}
+              </div>
+            </details>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {otherServices.map((service) => (

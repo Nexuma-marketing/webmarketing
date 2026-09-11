@@ -11,13 +11,15 @@ import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Building2, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import { ROLE_LABELS, OWNER_TIERS, PYMES_PLANS, ELITE_SUB_TIERS } from "@/lib/constants";
+import { ROLE_LABELS, OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/admin";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
+import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -79,7 +81,8 @@ export default async function DashboardPage() {
   let propertyCount = 0;
   let serviceCount = 0;
   let ownerTier: string | null = null;
-  let pymesPlan: string | null = null;
+  let pymesPlanDetails: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanDetails"] = null;
+  let pymesPlanRecord: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanRecord"] = null;
   let totalCFP = 0;
   let matchedCount = 0;
   let pymesScore: number | null = null;
@@ -139,25 +142,25 @@ export default async function DashboardPage() {
   }
 
   if (isPymesRole) {
-    const { data: diagnosis } = await supabase
-      .from("pymes_diagnosis")
-      .select("recommended_plan, total_score, urgency_level, estimated_loss")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    pymesPlan = diagnosis?.recommended_plan || null;
-    pymesScore = diagnosis?.total_score ?? null;
-    pymesUrgency = diagnosis?.urgency_level ?? null;
-    pymesLoss = diagnosis?.estimated_loss ? Number(diagnosis.estimated_loss) : null;
+    const pymesInfo = await getPymesPlanForUser(supabase, user.id);
+    pymesPlanDetails = pymesInfo.pymesPlanDetails;
+    pymesPlanRecord = pymesInfo.pymesPlanRecord;
+    pymesScore = pymesInfo.pymesScore;
+    pymesUrgency = pymesInfo.pymesUrgency;
+    pymesLoss = pymesInfo.pymesLoss;
   }
 
-  const { count: svcCount } = await supabase
-    .from("services")
-    .select("*", { count: "exact", head: true })
-    .eq("is_active", true);
-  serviceCount = svcCount || 0;
+  // Steve — PYME dashboard UX fix: the platform-wide active-services
+  // count (~19, mostly property/investor plans) is meaningless to a PYME
+  // customer and confusing on their dashboard, so it's only fetched/shown
+  // for non-PYME roles. See Fix 3 in PYME_DASHBOARD_SERVICES_UX_FIX.md.
+  if (!isPymesRole) {
+    const { count: svcCount } = await supabase
+      .from("services")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true);
+    serviceCount = svcCount || 0;
+  }
 
   // Resolve plan details for display
   const baseOwnerPlan = ownerTier ? OWNER_TIERS[ownerTier] : null;
@@ -190,7 +193,6 @@ export default async function DashboardPage() {
           : feature),
       }
     : null;
-  const pymesPlanDetails = pymesPlan ? PYMES_PLANS[pymesPlan] : null;
   const primaryPlan = ownerTier ? OWNER_PRIMARY_PLAN[ownerTier] : null;
   const primaryPlanTerms = ownerPlan?.plans.find((plan) => plan.name === primaryPlan?.name)?.details || [];
   const ownerPlanServiceNames = isOwnerRole
@@ -312,16 +314,37 @@ export default async function DashboardPage() {
           </>
         )}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Available Services</CardTitle>
-            <Heart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{serviceCount}</div>
-            <p className="text-xs text-muted-foreground">Active services</p>
-          </CardContent>
-        </Card>
+        {isPymesRole ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">
+                {pymesPlanDetails ? "Services In Your Plan" : "Available Plans"}
+              </CardTitle>
+              <Heart className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {pymesPlanDetails ? pymesPlanDetails.features.length : 3}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {pymesPlanDetails
+                  ? `Included in your ${pymesPlanDetails.name} plan`
+                  : "Rescue, Growth, Scale — take the diagnosis"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Available Services</CardTitle>
+              <Heart className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{serviceCount}</div>
+              <p className="text-xs text-muted-foreground">Active services</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* ═══ Assigned Plan / Tier ═══ */}
@@ -441,48 +464,10 @@ export default async function DashboardPage() {
       )}
 
       {pymesPlanDetails && (
-        <Card className={`${pymesPlanDetails.borderColor} ${pymesPlanDetails.bgColor}`}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Crown className={`h-5 w-5 ${pymesPlanDetails.color}`} />
-              <CardTitle className="text-lg">Your Recommended Plan</CardTitle>
-            </div>
-            <CardDescription>{pymesPlanDetails.tagline}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1">
-              <span className={`text-3xl font-bold ${pymesPlanDetails.color}`}>
-                {pymesPlanDetails.price}
-              </span>
-              <p className="text-xs text-muted-foreground">
-                {pymesPlanDetails.upfront} + {pymesPlanDetails.installment}
-              </p>
-              <p className="text-xs text-muted-foreground">{pymesPlanDetails.duration}</p>
-            </div>
-            <ul className="space-y-1.5">
-              {pymesPlanDetails.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${pymesPlanDetails.color}`} />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-col gap-2 pt-3 sm:flex-row">
-              <Link
-                href="/dashboard/services#contact"
-                className={buttonVariants({ className: "flex-1" })}
-              >
-                Start Now
-              </Link>
-              <Link
-                href="/dashboard/services"
-                className={buttonVariants({ variant: "outline", className: "flex-1" })}
-              >
-                View Plan Details
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+        <PymesPlanCard
+          planDetails={pymesPlanDetails}
+          pymesPlanRecordId={pymesPlanRecord?.id}
+        />
       )}
 
       {isTenantRole && (
