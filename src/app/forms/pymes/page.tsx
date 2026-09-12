@@ -163,7 +163,7 @@ function calculateCaptacionPlan(
   const budgetPoints = budget <= 500 ? 1 : budget <= 2000 ? 2 : 3;
 
   const years = Number(data.years_in_business) || 0;
-  const yearsPoints = years < 1 ? 1 : years <= 3 ? 2 : 3;
+  const yearsPoints = years <= 1 ? 1 : years <= 3 ? 2 : 3;
 
   const channels = ((data.current_channels as string[]) || []).filter(
     (c) => c !== "None",
@@ -534,6 +534,7 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
               {field.type === "number" && (
                 <Input
                   type="number"
+                  step="1"
                   value={(captData[field.name] as number) || ""}
                   onChange={(e) => updateField(field.name, parseInt(e.target.value) || 0)}
                   placeholder="0"
