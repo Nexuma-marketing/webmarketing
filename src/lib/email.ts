@@ -38,7 +38,7 @@ export async function sendContactNotification({
   name,
   email,
   phone,
-  subject,
+  subject: rawSubject,
 }: {
   name: string;
   email: string;
@@ -46,6 +46,15 @@ export async function sendContactNotification({
   subject: string;
 }): Promise<{ ok: boolean; reason?: string }> {
   emailMetrics.attempts += 1;
+
+  // Steve — consultation subject-newline fix: Resend's API rejects any
+  // email whose `subject` contains "\n" with a 422 validation_error, and
+  // since both sends below share this one `subject`, an unsanitized
+  // caller (any current or future one — this fixed one prior instance in
+  // the consultation page's pre-fill, but that's not the only possible
+  // source of a stray line break) fails BOTH recipients at once. Collapse
+  // line breaks here too as the last line of defense.
+  const subject = rawSubject.replace(/[\r\n]+/g, " ").trim();
 
   if (!process.env.RESEND_API_KEY) {
     emailMetrics.skippedNoApiKey += 1;

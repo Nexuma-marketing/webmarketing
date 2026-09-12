@@ -25,7 +25,15 @@ export default async function ScheduleConsultationPage({
   searchParams: Promise<{ plan?: string; contact?: string }>;
 }) {
   const params = await searchParams;
-  const planName = params.plan || null;
+  // Steve — consultation subject-newline fix: `plan` comes from the URL
+  // query string, which is not trusted input. A `%0A`/`%0D` in it (from a
+  // hand-edited URL, browser history, or a copy-pasted link) would land
+  // as a literal newline in the pre-filled subject below, and Resend
+  // rejects any subject containing "\n" outright — which fails the send
+  // for BOTH recipients, not just a display glitch. Collapse any
+  // line-break characters before they ever reach the subject.
+  const sanitizeForSubject = (value: string) => value.replace(/[\r\n]+/g, " ").trim();
+  const planName = params.plan ? sanitizeForSubject(params.plan) : null;
   const contactStatus = params.contact;
 
   const supabase = await createClient();
@@ -41,9 +49,9 @@ export default async function ScheduleConsultationPage({
     .eq("id", user.id)
     .single();
 
-  const defaultSubject = planName
-    ? `Consultation request — ${planName} plan`
-    : "Consultation request";
+  const defaultSubject = sanitizeForSubject(
+    planName ? `Consultation request — ${planName} plan` : "Consultation request",
+  );
 
   return (
     <div className="mx-auto max-w-xl space-y-6 p-4 py-8">
