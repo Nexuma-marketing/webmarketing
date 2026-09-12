@@ -19,22 +19,59 @@ export interface PymesPlanInfo {
 // one function means both pages render identical plan content instead of
 // drifting the way the "Start Now" button (dashboard) and "Pay $X CAD
 // upfront" button (services) previously did.
+//
+// Steve — Client Acquisition plan scoring fix: a PYME customer may have
+// completed Sales Leak Diagnosis, Client Acquisition, or both — whichever
+// produced a recommended plan more recently wins, so this stays the
+// single lookup both pages call regardless of which form assigned the
+// plan. Sales-Leak-only stats (score, urgency, estimated loss) are only
+// ever sourced from pymes_diagnosis: Client Acquisition's score uses a
+// different 3-9 scale (vs. pymes_diagnosis's 7-35) and must never feed
+// the Dashboard's "Diagnosis Score .../35" stat card.
 export async function getPymesPlanForUser(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<PymesPlanInfo> {
-  const { data: diagnosis } = await supabase
-    .from("pymes_diagnosis")
-    .select("recommended_plan, total_score, urgency_level, estimated_loss")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+  const [{ data: diagnosis }, { data: captacion }] = await Promise.all([
+    supabase
+      .from("pymes_diagnosis")
+      .select("recommended_plan, total_score, urgency_level, estimated_loss, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+    supabase
+      .from("pymes_captacion")
+      .select("recommended_plan, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
 
-  const pymesPlan = diagnosis?.recommended_plan || null;
-  const pymesScore = diagnosis?.total_score ?? null;
-  const pymesUrgency = diagnosis?.urgency_level ?? null;
-  const pymesLoss = diagnosis?.estimated_loss ? Number(diagnosis.estimated_loss) : null;
+  const diagnosisPlan = diagnosis?.recommended_plan || null;
+  const captacionPlan = captacion?.recommended_plan || null;
+
+  const diagnosisCreatedAt = diagnosis?.created_at
+    ? new Date(diagnosis.created_at as string).getTime()
+    : -Infinity;
+  const captacionCreatedAt = captacion?.created_at
+    ? new Date(captacion.created_at as string).getTime()
+    : -Infinity;
+
+  let pymesPlan: string | null = null;
+  let pymesScore: number | null = null;
+  let pymesUrgency: string | null = null;
+  let pymesLoss: number | null = null;
+
+  if (diagnosisPlan && (!captacionPlan || diagnosisCreatedAt >= captacionCreatedAt)) {
+    pymesPlan = diagnosisPlan;
+    pymesScore = diagnosis?.total_score ?? null;
+    pymesUrgency = diagnosis?.urgency_level ?? null;
+    pymesLoss = diagnosis?.estimated_loss ? Number(diagnosis.estimated_loss) : null;
+  } else if (captacionPlan) {
+    pymesPlan = captacionPlan;
+  }
 
   if (!pymesPlan) {
     return {

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { createClient } from "@/lib/supabase/client";
 import { pymesCalculatorSchema, type PymesCalculatorData } from "@/types/forms";
 import { PYMES_PLANS } from "@/lib/constants";
+import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -150,6 +151,33 @@ const URGENCY_MESSAGES: Record<string, { emoji: string; title: string; body: str
 // ═══════════════════════════════════════════════════════
 // Client Acquisition Form (PDF 5.1.2)
 // ═══════════════════════════════════════════════════════
+
+// Steve — Client Acquisition plan scoring fix: reuses the same 3 plans
+// (Rescue/Growth/Scale) as Sales Leak Diagnosis, but scores off 3
+// questions already collected on this form instead of the 7-question
+// Likert set — see CLIENT_ACQUISITION_PLAN_SCORING_FIX.md.
+function calculateCaptacionPlan(
+  data: Record<string, string | number | string[]>,
+): { totalScore: number; recommendedPlan: "rescue" | "growth" | "scale" } {
+  const budget = Number(data.monthly_marketing_budget) || 0;
+  const budgetPoints = budget <= 500 ? 1 : budget <= 2000 ? 2 : 3;
+
+  const years = Number(data.years_in_business) || 0;
+  const yearsPoints = years < 1 ? 1 : years <= 3 ? 2 : 3;
+
+  const channels = ((data.current_channels as string[]) || []).filter(
+    (c) => c !== "None",
+  );
+  const channelsPoints = channels.length === 0 ? 1 : channels.length <= 2 ? 2 : 3;
+
+  const totalScore = budgetPoints + yearsPoints + channelsPoints;
+
+  const recommendedPlan: "rescue" | "growth" | "scale" =
+    totalScore <= 4 ? "rescue" : totalScore <= 7 ? "growth" : "scale";
+
+  return { totalScore, recommendedPlan };
+}
+
 const CAPTACION_STEPS = [
   {
     title: "Business Profile",
@@ -234,6 +262,11 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
     business_goals: [],
     current_channels: [],
   });
+  const [captId, setCaptId] = useState<string | null>(null);
+  const [captRecommendedPlan, setCaptRecommendedPlan] = useState<
+    "rescue" | "growth" | "scale" | null
+  >(null);
+  const [captPlanRecordId, setCaptPlanRecordId] = useState<string | null>(null);
 
   function updateField(name: string, value: string | number | string[]) {
     setCaptData((prev) => ({ ...prev, [name]: value }));
@@ -282,7 +315,13 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
         return;
       }
 
-      const { error: insertError } = await supabase
+      // Steve — Client Acquisition plan scoring fix: score off the 3
+      // existing fields (budget, years in business, channel count) and
+      // assign the same Rescue/Growth/Scale plan Sales Leak Diagnosis
+      // uses, instead of leaving no plan assigned at all.
+      const { totalScore, recommendedPlan } = calculateCaptacionPlan(captData);
+
+      const { data: captRow, error: insertError } = await supabase
         .from("pymes_captacion")
         .insert({
           user_id: user.id,
@@ -297,9 +336,28 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
           current_channels: captData.current_channels,
           monthly_marketing_budget: captData.monthly_marketing_budget || null,
           biggest_challenge: captData.biggest_challenge,
-        });
+          total_score: totalScore,
+          recommended_plan: recommendedPlan,
+        })
+        .select("id")
+        .single();
 
       if (insertError) throw insertError;
+
+      // Reuse the exact same pymes_plans-by-plan_type lookup Sales Leak
+      // Diagnosis and /dashboard/services already use, so the success
+      // screen's checkout button (below) targets a real plan row.
+      const { data: planRecord } = await supabase
+        .from("pymes_plans")
+        .select("id")
+        .eq("plan_type", recommendedPlan)
+        .eq("is_active", true)
+        .limit(1)
+        .single();
+
+      setCaptId(captRow?.id ?? null);
+      setCaptRecommendedPlan(recommendedPlan);
+      setCaptPlanRecordId(planRecord?.id ?? null);
 
       await fetch("/api/leads", {
         method: "POST",
@@ -308,10 +366,14 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
       });
 
       // Steve 4/21 #7: Send lead email to commercial area
+      // Steve — Client Acquisition plan scoring fix: pass captacion_id so
+      // the route can look up the calculated plan server-side and include
+      // it in both the customer and commercial emails.
       await fetch("/api/pymes-captacion-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          captacion_id: captRow?.id,
           business_name: captData.business_name,
           industry: captData.industry,
           business_goals: captData.business_goals,
@@ -353,6 +415,15 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
                 <li>We design a tailored client acquisition strategy during your rescue session</li>
               </ul>
             </div>
+            {/* Steve — Client Acquisition plan scoring fix: reuses the
+                exact same plan card (and working checkout button) Sales
+                Leak Diagnosis and /dashboard/services already render. */}
+            {captRecommendedPlan && PYMES_PLANS[captRecommendedPlan] && (
+              <PymesPlanCard
+                planDetails={PYMES_PLANS[captRecommendedPlan]}
+                pymesPlanRecordId={captPlanRecordId}
+              />
+            )}
             <div className="flex flex-col gap-2">
               {/* Steve 4/21 #7: Primary CTA — AGENDAR MI SESIÓN DE RESCATE */}
               <Button
@@ -363,6 +434,7 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
+                        captacion_id: captId,
                         business_name: captData.business_name,
                         industry: captData.industry,
                         business_goals: captData.business_goals,

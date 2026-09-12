@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
+import { PYMES_PLANS } from "@/lib/constants";
 
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com";
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
@@ -20,6 +21,25 @@ export async function POST(request: Request) {
       .select("full_name, email, phone")
       .eq("id", user.id)
       .single();
+
+    // Steve — Client Acquisition plan scoring fix: look up the plan the
+    // client-side scoring calculated for this submission server-side
+    // (authoritative, not trusted from the request body) so both emails
+    // reflect the real Rescue/Growth/Scale recommendation instead of no
+    // plan info at all. Uses the same PYMES_PLANS lookup by plan_type
+    // that Sales Leak Diagnosis and /dashboard/services already use.
+    let recommendedPlanDetails: (typeof PYMES_PLANS)[string] | null = null;
+    if (body.captacion_id) {
+      const { data: captRow } = await supabase
+        .from("pymes_captacion")
+        .select("recommended_plan")
+        .eq("id", body.captacion_id)
+        .eq("user_id", user.id)
+        .single();
+      if (captRow?.recommended_plan) {
+        recommendedPlanDetails = PYMES_PLANS[captRow.recommended_plan] || null;
+      }
+    }
 
     // Steve 6/7 (6-2.md #30): client reported Jun 7 docx — Client
     // Acquisition form completes successfully but neither commercial
@@ -58,6 +78,7 @@ export async function POST(request: Request) {
               <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Industry</td><td style="padding:8px">${body.industry || "N/A"}</td></tr>
               <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Goals</td><td style="padding:8px">${Array.isArray(body.business_goals) ? body.business_goals.join(", ") : body.business_goals || "N/A"}</td></tr>
               <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Biggest Challenge</td><td style="padding:8px">${body.biggest_challenge || "N/A"}</td></tr>
+              ${recommendedPlanDetails ? `<tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Recommended Plan</td><td style="padding:8px"><strong>${recommendedPlanDetails.name}</strong> — ${recommendedPlanDetails.price}</td></tr>` : ""}
             </table>
             <p style="margin-top:20px;color:#666;font-size:12px">Please contact this lead within 24 hours to schedule their rescue session.</p>
           `,
@@ -96,6 +117,14 @@ export async function POST(request: Request) {
       <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5;width:40%">Business</td><td style="padding:8px">${body.business_name || "N/A"}</td></tr>
       <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Industry</td><td style="padding:8px">${body.industry || "N/A"}</td></tr>
     </table>
+    ${recommendedPlanDetails ? `
+    <div style="background:#f8f9fa;border-left:4px solid #0FA37F;padding:16px;margin:0 0 20px;border-radius:4px">
+      <p style="margin:0;font-size:14px;color:#666">Your recommended plan</p>
+      <p style="margin:4px 0 0;font-size:20px;font-weight:700;color:#0B38D9">
+        ${recommendedPlanDetails.name} — ${recommendedPlanDetails.price}
+      </p>
+      <p style="margin:6px 0 0;font-size:13px;color:#666">${recommendedPlanDetails.tagline}</p>
+    </div>` : ""}
     <p style="margin-top:24px">
       <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://nexuma.ca"}/dashboard" style="display:inline-block;background:#0B38D9;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600">Go to my Dashboard</a>
     </p>
