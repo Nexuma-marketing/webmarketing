@@ -28,6 +28,15 @@ function inferRoleFromSubject(subject: string): string | null {
 }
 
 export async function POST(request: Request) {
+  // Steve — PYME "Schedule a Consultation" fix: the authenticated
+  // consultation form at /dashboard/consultation posts here too (same
+  // lead-insert + email logic, no duplication), but redirecting a
+  // logged-in dashboard user out to the public homepage after submit
+  // would feel broken. An optional `redirect_to` field lets a caller opt
+  // into landing back on its own page; the public contact form never
+  // sends this field, so its behavior (redirect to "/") is unchanged.
+  // Restricted to "/dashboard" paths to rule out an open redirect.
+  let redirectTo = "/";
   try {
     const formData = await request.formData();
     const name = formData.get("name") as string;
@@ -35,6 +44,8 @@ export async function POST(request: Request) {
     const email = formData.get("email") as string;
     const subject = formData.get("subject") as string;
     const explicitRole = (formData.get("role") as string | null)?.trim() || null;
+    const requestedRedirect = (formData.get("redirect_to") as string | null) || "";
+    if (requestedRedirect.startsWith("/dashboard")) redirectTo = requestedRedirect;
 
     if (!name || !email || !subject) {
       return NextResponse.json(
@@ -75,9 +86,9 @@ export async function POST(request: Request) {
     });
 
     const status = emailResult.ok ? "success" : "email_pending";
-    return NextResponse.redirect(new URL(`/?contact=${status}`, request.url), 303);
+    return NextResponse.redirect(new URL(`${redirectTo}?contact=${status}`, request.url), 303);
   } catch (err) {
     console.error("/api/contact failed:", err);
-    return NextResponse.redirect(new URL("/?contact=error", request.url), 303);
+    return NextResponse.redirect(new URL(`${redirectTo}?contact=error`, request.url), 303);
   }
 }

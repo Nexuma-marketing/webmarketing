@@ -85,7 +85,7 @@ export function PymesPlanCard({
             </Link>
           )}
           <Link
-            href="/dashboard/services#contact"
+            href={`/dashboard/consultation?plan=${encodeURIComponent(planDetails.name)}`}
             className={cn(buttonVariants({ variant: "outline" }), "flex-1 gap-2")}
           >
             Schedule a Consultation
