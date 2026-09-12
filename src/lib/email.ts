@@ -57,13 +57,26 @@ export async function sendContactNotification({
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   try {
-    // 1. Internal notification (commercial team)
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: parseRecipients(NOTIFICATION_EMAIL),
-      replyTo: email,
-      subject: `New Contact Form: ${subject}`,
-      html: `
+    // Steve — consultation commercial-email fix: these two sends used to
+    // be sequential `await`s in one try block, so a failure in the first
+    // (commercial) send skipped the second (customer) send entirely, and
+    // — since the Resend SDK returns `{ data, error }` instead of
+    // throwing for most API-level failures (unverified sender domain,
+    // sandbox recipient restrictions, etc.) — neither call's `.error`
+    // was ever inspected, so a silently-failed send was reported as
+    // success. Sending both independently via Promise.allSettled (the
+    // same pattern already used for pymes-schedule-rescue / apply-property
+    // / owner-submit-email / tenant-submit-email) means one failing can
+    // no longer suppress the other, and checking `.error` on each result
+    // means a non-throwing failure is no longer reported as a success.
+    const [commercialResult, customerResult] = await Promise.allSettled([
+      // 1. Internal notification (commercial team)
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: parseRecipients(NOTIFICATION_EMAIL),
+        replyTo: email,
+        subject: `New Contact Form: ${subject}`,
+        html: `
         <h2>New Contact Form Submission</h2>
         <table style="border-collapse:collapse;width:100%;max-width:500px">
           <tr><td style="padding:8px;font-weight:bold">Name</td><td style="padding:8px">${name}</td></tr>
@@ -75,14 +88,13 @@ export async function sendContactNotification({
           This notification was sent from the Nexuma Marketing contact form.
         </p>
       `,
-    });
-
-    // 2. Customer-facing confirmation
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: [email],
-      subject: "We received your message — Nexuma Marketing",
-      html: `
+      }),
+      // 2. Customer-facing confirmation
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: [email],
+        subject: "We received your message — Nexuma Marketing",
+        html: `
         <h2>Thanks for reaching out, ${name}</h2>
         <p>We received your message and our team will get back to you within 24 hours.</p>
         <p style="margin-top:16px"><strong>Subject:</strong> ${subject}</p>
@@ -91,11 +103,30 @@ export async function sendContactNotification({
           Nexuma marketing ltd · British Columbia, Canada
         </p>
       `,
-    });
+      }),
+    ]);
 
-    emailMetrics.succeeded += 1;
-    emailMetrics.lastSuccessAt = new Date().toISOString();
-    return { ok: true };
+    const commercialOk = commercialResult.status === "fulfilled" && !commercialResult.value.error;
+    const customerOk = customerResult.status === "fulfilled" && !customerResult.value.error;
+
+    if (!commercialOk) {
+      const reason = commercialResult.status === "rejected" ? commercialResult.reason : commercialResult.value.error;
+      console.error("sendContactNotification: commercial email failed:", reason);
+    }
+    if (!customerOk) {
+      const reason = customerResult.status === "rejected" ? customerResult.reason : customerResult.value.error;
+      console.error("sendContactNotification: customer email failed:", reason);
+    }
+
+    if (commercialOk && customerOk) {
+      emailMetrics.succeeded += 1;
+      emailMetrics.lastSuccessAt = new Date().toISOString();
+      return { ok: true };
+    }
+
+    emailMetrics.failed += 1;
+    emailMetrics.lastError = !commercialOk ? "commercial_send_failed" : "customer_send_failed";
+    return { ok: false, reason: !commercialOk ? "commercial_send_failed" : "customer_send_failed" };
   } catch (err) {
     emailMetrics.failed += 1;
     emailMetrics.lastError = err instanceof Error ? err.message : String(err);
