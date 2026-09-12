@@ -36,6 +36,7 @@ import { OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
+import { PYMES_PLANS } from "@/lib/constants";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
 // el enlace esta roto, no hace nada". The plan cards used
@@ -402,6 +403,20 @@ export default async function ServicesPage() {
       if (tierList && tierList.length > 0) return tierList;
     }
     return service.features || [];
+  }
+
+  // The "Plan: PYMES — Rescue/Growth/Scale" rows in `services` (migration
+  // v11) carry only a one-line description and no `features` — the full
+  // checklist lives in PYMES_PLANS. Match by name so the "Recommended for
+  // You" cards can show the same checklist as the customer's own
+  // recommended plan, without touching how other services render.
+  function getPymesPlanKey(name: string): keyof typeof PYMES_PLANS | null {
+    if (!name.startsWith("Plan: PYMES")) return null;
+    const lower = name.toLowerCase();
+    if (lower.includes("rescue")) return "rescue";
+    if (lower.includes("growth")) return "growth";
+    if (lower.includes("scale")) return "scale";
+    return null;
   }
 
   const relevantServices = allServices?.filter((s) => {
@@ -997,7 +1012,10 @@ export default async function ServicesPage() {
             Recommended for You
           </h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {relevantServices.map((service) => (
+            {relevantServices.map((service) => {
+              const pymesPlanKey = getPymesPlanKey(service.name);
+              const pymesPlan = pymesPlanKey ? PYMES_PLANS[pymesPlanKey] : null;
+              return (
               <Card key={service.id} className="flex flex-col">
                 <CardHeader>
                   <div className="flex items-start justify-between">
@@ -1025,6 +1043,27 @@ export default async function ServicesPage() {
                   <span className="text-lg font-bold">
                     {formatServicePrice(service)}
                   </span>
+                  {pymesPlan && (
+                    <details className="group mt-3 rounded-lg border bg-card">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                        <span className="flex items-center justify-between gap-3">
+                          View Details
+                          <span className="text-xs font-normal text-muted-foreground">
+                            <span className="group-open:hidden">+ Show full checklist</span>
+                            <span className="hidden group-open:inline">− Hide</span>
+                          </span>
+                        </span>
+                      </summary>
+                      <ul className="space-y-1.5 border-t p-3">
+                        {pymesPlan.features.map((feature, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${pymesPlan.color}`} />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                 </CardContent>
                 {service.price > 0 && (
                   <div className="p-6 pt-0">
@@ -1037,7 +1076,8 @@ export default async function ServicesPage() {
                   </div>
                 )}
               </Card>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
