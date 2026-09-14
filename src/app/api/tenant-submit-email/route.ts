@@ -31,6 +31,46 @@ export async function POST(request: Request) {
     const tenantType = is_premium ? "Premium Tenant" : "Tenant";
     const recipientForCommercial = COMMERCIAL_EMAIL.split(",").map((s) => s.trim()).filter(Boolean);
 
+    // Steve — tenant commercial email match-status fix: commercial had no
+    // urgency signal for a tenant who already has property matches at
+    // submission time. Reuses the exact same filter predicate as
+    // /api/admin/tenant-matches (budget range with the same 0.6-of-max
+    // fallback when min_budget is unset, plus bedrooms) so the count shown
+    // here always agrees with what sales sees on /admin/matches — not the
+    // separate, more elaborate scored matching in matchPropertiesForTenant()
+    // (used for the tenant-facing "Matched Properties" list), which can
+    // legitimately return a different count. Best-effort: a lookup failure
+    // must never block the confirmation emails from sending.
+    let matchCount = 0;
+    let topMatchAddress: string | null = null;
+    try {
+      const maxBudgetNum = max_budget ? Number(max_budget) : null;
+      const rawMinBudget = min_budget ? Number(min_budget) : null;
+      const minBudgetNum = rawMinBudget ?? (maxBudgetNum ? Math.floor(maxBudgetNum * 0.6) : null);
+      const bedroomsNum = bedrooms_needed ? Number(bedrooms_needed) : null;
+
+      let propQuery = supabase
+        .from("properties")
+        .select("address, city, monthly_rent")
+        .eq("is_available", true);
+      if (maxBudgetNum) propQuery = propQuery.lte("monthly_rent", maxBudgetNum);
+      if (minBudgetNum) propQuery = propQuery.gte("monthly_rent", minBudgetNum);
+      if (bedroomsNum && bedroomsNum > 0) propQuery = propQuery.gte("bedrooms", bedroomsNum);
+
+      const { data: matchedProps } = await propQuery.order("monthly_rent", { ascending: true });
+      matchCount = matchedProps?.length ?? 0;
+      topMatchAddress = (matchedProps?.[0]?.address as string | undefined) || null;
+    } catch (err) {
+      console.error("[tenant-submit-email] match lookup failed:", err);
+    }
+
+    const matchStatusHtml =
+      matchCount > 0
+        ? `<p style="background:#fef3c7;border-left:4px solid #d97706;padding:10px 14px;margin:16px 0;font-size:14px">
+    <strong>&#9888; This tenant has ${matchCount} matched propert${matchCount === 1 ? "y" : "ies"}</strong>${topMatchAddress ? ` — top match: ${topMatchAddress}` : ""} — review in <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://webmarketing-lyart.vercel.app"}/admin/matches">Tenant Matches</a>.
+  </p>`
+        : "";
+
     // 1. Email to commercial team
     const sends: Promise<unknown>[] = [
       resend.emails.send({
@@ -50,6 +90,7 @@ export async function POST(request: Request) {
     <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Bedrooms needed</td><td style="padding:8px">${bedrooms_needed || "N/A"}</td></tr>
     <tr><td style="padding:8px;font-weight:bold;background:#f5f5f5">Move-in date</td><td style="padding:8px">${move_in_date || "N/A"}</td></tr>
   </table>
+  ${matchStatusHtml}
 </div>`,
       }),
     ];
