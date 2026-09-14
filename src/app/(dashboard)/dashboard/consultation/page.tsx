@@ -12,13 +12,18 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 
-// Steve — PYME "Schedule a Consultation" fix: this reuses the public
-// Contact Us form's exact submit target (/api/contact) and email logic
-// (see src/app/page.tsx#contact for the anonymous version), adapted for
-// an already-authenticated PYME customer — pre-filled from their profile
-// but left editable, no "I am a..." role picker (hardcoded to "pymes"
-// via hidden field), and a pre-filled, editable subject naming the plan
-// they clicked from.
+// Steve — "Schedule a Consultation" fix, originally built for PYME, then
+// generalized (not duplicated) so Tenant — and any future role — can
+// reuse the exact same page/flow. This reuses the public Contact Us
+// form's exact submit target (/api/contact) and email logic (see
+// src/app/page.tsx#contact for the anonymous version), adapted for an
+// already-authenticated customer — pre-filled from their profile but
+// left editable, no "I am a..." role picker (the hidden role field now
+// sends the authenticated user's actual `profiles.role` instead of a
+// hardcoded "pymes"), and a pre-filled, editable subject. Entry points
+// today: PYME's plan card (`?plan=<name>` — unchanged behavior/output,
+// since a PYME user's real role is still "pymes") and Tenant's "Schedule
+// a Free Consultation" button on /dashboard/services.
 export default async function ScheduleConsultationPage({
   searchParams,
 }: {
@@ -45,12 +50,35 @@ export default async function ScheduleConsultationPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, phone")
+    .select("full_name, phone, role, is_premium_tenant")
     .eq("id", user.id)
     .single();
 
+  const isTenantRole =
+    profile?.role === "inquilino" || profile?.role === "inquilino_premium";
+
+  // Steve — Tenant consultation-subject fix: when the tenant reached this
+  // page without a `?plan=` (the PYME-only entry point), reference their
+  // top matched property when one exists — reusing the exact same
+  // matching logic already used on /dashboard/services and in the
+  // commercial-email match-status line, so this subject line never
+  // claims a match that doesn't actually appear there. Falls back to a
+  // plain "Tenant"/"Premium Tenant" subject when there's no match yet.
+  let tenantMatchAddress: string | null = null;
+  if (isTenantRole && !planName) {
+    const { matchPropertiesForTenant } = await import("@/lib/profiling");
+    const matches = await matchPropertiesForTenant(user.id);
+    tenantMatchAddress = (matches[0]?.address as string | undefined) || null;
+  }
+
   const defaultSubject = sanitizeForSubject(
-    planName ? `Consultation request — ${planName} plan` : "Consultation request",
+    planName
+      ? `Consultation request — ${planName} plan`
+      : isTenantRole
+        ? tenantMatchAddress
+          ? `Consultation request — interested in ${tenantMatchAddress}`
+          : `Consultation request — ${profile?.is_premium_tenant ? "Premium Tenant" : "Tenant"}`
+        : "Consultation request",
   );
 
   return (
@@ -101,10 +129,14 @@ export default async function ScheduleConsultationPage({
         </CardHeader>
         <CardContent>
           <form action="/api/contact" method="POST" className="space-y-4">
-            {/* Already known: this entry point is only reachable from the
-                PYME dashboard, so we skip the "I am a..." picker shown on
-                the public form and send the role directly. */}
-            <input type="hidden" name="role" value="pymes" />
+            {/* Already known: this entry point is only reachable from an
+                already-authenticated dashboard, so we skip the "I am a..."
+                picker shown on the public form and send the signed-in
+                user's actual role directly (was hardcoded to "pymes"
+                before this page was generalized for other roles — a PYME
+                user's real role is still literally "pymes", so their
+                behavior here is unchanged). */}
+            <input type="hidden" name="role" value={profile?.role || ""} />
             <input type="hidden" name="redirect_to" value="/dashboard/consultation" />
 
             <div className="space-y-2">

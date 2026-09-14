@@ -1182,8 +1182,19 @@ export default async function ServicesPage() {
               Our team will contact you to review your profile, answer questions,
               and finalize the best plan for your needs. No obligation.
             </p>
+            {/* Steve — Tenant "Schedule a Free Consultation" fix: this
+                footer CTA sent every role to the public/anonymous Contact
+                Us form. Per the same pattern already wired for PYME's
+                plan card (src/components/dashboard/pymes-plan-card.tsx),
+                Tenants now go through the authenticated
+                /dashboard/consultation flow instead — pre-filled name/
+                phone/email, no "I am a..." picker, editable subject.
+                Owner/Investor/PYME still use the original public-form
+                link here; only their own dedicated buttons elsewhere
+                (e.g. the PYME plan card) go through the authenticated
+                flow, unchanged by this fix. */}
             <Link
-              href="/#contact"
+              href={isTenantRole ? "/dashboard/consultation" : "/#contact"}
               className={cn(buttonVariants({ size: "lg" }), "gap-2")}
             >
               Schedule a Free Consultation
