@@ -154,6 +154,23 @@ export default function ProfilePage() {
 
   if (!profile) return null;
 
+  // Steve — consent-toggle removal (Tenant pass, then Owner/Investor/PYME
+  // pass): this page is shared by every role — one route, no separate
+  // per-role profile pages or component. Legal consents are already
+  // correctly captured as checkboxes at registration and should not be
+  // revocable via a toggle after the fact, for any customer role. Gating
+  // on role (rather than deleting the card outright) leaves the option
+  // open to bring it back for a specific role later without re-adding
+  // the whole card from scratch.
+  const isTenantRole =
+    profile.role === "inquilino" || profile.role === "inquilino_premium";
+  const isOwnerRole =
+    profile.role === "propietario" ||
+    profile.role === "propietario_preferido" ||
+    profile.role === "inversionista";
+  const isPymesRole = profile.role === "pymes";
+  const hideConsentCard = isTenantRole || isOwnerRole || isPymesRole;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -234,42 +251,44 @@ export default function ProfilePage() {
         </form>
       </Card>
 
-      {/* Consent Management */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>Privacy & Consent</CardTitle>
-          </div>
-          <CardDescription>
-            Manage how we use your data. Changes take effect immediately.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {(Object.keys(CONSENT_DESCRIPTIONS) as (keyof ConsentState)[]).map((type) => {
-            const desc = CONSENT_DESCRIPTIONS[type];
-            return (
-              <div key={type} className="flex items-start justify-between gap-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">{desc.label}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {desc.description}
-                  </p>
+      {/* Consent Management — not shown to Tenant/Owner/Investor/PYME; see Steve's note above `hideConsentCard`. */}
+      {!hideConsentCard && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Privacy & Consent</CardTitle>
+            </div>
+            <CardDescription>
+              Manage how we use your data. Changes take effect immediately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {(Object.keys(CONSENT_DESCRIPTIONS) as (keyof ConsentState)[]).map((type) => {
+              const desc = CONSENT_DESCRIPTIONS[type];
+              return (
+                <div key={type} className="flex items-start justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">{desc.label}</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {desc.description}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={consents[type]}
+                    onCheckedChange={(checked) => handleConsentChange(type, checked)}
+                    disabled={savingConsent || type === "data_processing"}
+                  />
                 </div>
-                <Switch
-                  checked={consents[type]}
-                  onCheckedChange={(checked) => handleConsentChange(type, checked)}
-                  disabled={savingConsent || type === "data_processing"}
-                />
-              </div>
-            );
-          })}
-          <p className="text-xs text-muted-foreground border-t pt-4">
-            Data processing consent is required and cannot be revoked while using our services.
-            For questions about your data rights under PIPEDA/GDPR, contact privacy@nexuma.ca
-          </p>
-        </CardContent>
-      </Card>
+              );
+            })}
+            <p className="text-xs text-muted-foreground border-t pt-4">
+              Data processing consent is required and cannot be revoked while using our services.
+              For questions about your data rights under PIPEDA/GDPR, contact privacy@nexuma.ca
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
