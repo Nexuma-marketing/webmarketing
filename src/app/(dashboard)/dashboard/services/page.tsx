@@ -37,6 +37,7 @@ import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { PYMES_PLANS } from "@/lib/constants";
+import { CleaningServicesCard } from "@/components/dashboard/cleaning-services-card";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
 // el enlace esta roto, no hace nada". The plan cards used
@@ -1082,8 +1083,29 @@ export default async function ServicesPage() {
         </div>
       )}
 
+      {/* ═══ Tenant: Other Available Services — Steve tenant-services
+          fix: tenants used to fall into the plain (non-collapsed) grid
+          below and see every Owner/Investor/PYME plan tagged away from
+          their role, which makes no sense for a renter. Unlike Owner
+          (who might also want PYME services) or PYME (who might also
+          own a property), a Tenant has no reason to see any of those
+          plans, so this branch shows none of `otherServices` at all —
+          just the Cleaning Services lead-gen card. Their two actual
+          tenant-relevant services (Tenant Property Search, Premium
+          Tenant Concierge) already render above in "Recommended for
+          You" via `relevantServices`, which correctly matches on
+          target_roles. ═══ */}
+      {isTenantRole && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Other Available Services</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <CleaningServicesCard />
+          </div>
+        </div>
+      )}
+
       {/* ═══ Other Services — secondary to the owner's assigned plan ═══ */}
-      {otherServices && otherServices.length > 0 && (
+      {!isTenantRole && otherServices && otherServices.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Other Available Services</h2>
           {isOwnerRole ? (
