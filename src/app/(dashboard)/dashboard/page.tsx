@@ -80,6 +80,7 @@ export default async function DashboardPage() {
   // Fetch stats based on role
   let propertyCount = 0;
   let serviceCount = 0;
+  let tenantServiceCount = 0;
   let ownerTier: string | null = null;
   let pymesPlanDetails: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanDetails"] = null;
   let pymesPlanRecord: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanRecord"] = null;
@@ -139,6 +140,18 @@ export default async function DashboardPage() {
     const { matchPropertiesForTenant } = await import("@/lib/profiling");
     const matches = await matchPropertiesForTenant(user.id);
     matchedCount = matches.length;
+
+    // Steve — tenant "Available Services" stat fix (same category of
+    // issue already fixed for PYME in PYME_DASHBOARD_SERVICES_UX_FIX.md):
+    // the platform-wide active-services count (~19, mostly property/
+    // investor plans) is meaningless to a Tenant. Per
+    // TENANT_SERVICES_AND_CLEANING_FIX.md, Tenants now only have
+    // Tenant Property Search + Cleaning Services (2), plus Premium
+    // Tenant Concierge (3rd) once they qualify as Premium — mirrors the
+    // exact `target_roles` gating in /dashboard/services (Premium
+    // Tenant Concierge is seeded with target_roles=['inquilino_premium']
+    // only), so a standard tenant correctly sees 2, not an inflated 3.
+    tenantServiceCount = profile.is_premium_tenant ? 3 : 2;
   }
 
   if (isPymesRole) {
@@ -154,7 +167,7 @@ export default async function DashboardPage() {
   // count (~19, mostly property/investor plans) is meaningless to a PYME
   // customer and confusing on their dashboard, so it's only fetched/shown
   // for non-PYME roles. See Fix 3 in PYME_DASHBOARD_SERVICES_UX_FIX.md.
-  if (!isPymesRole) {
+  if (!isPymesRole && !isTenantRole) {
     const { count: svcCount } = await supabase
       .from("services")
       .select("*", { count: "exact", head: true })
@@ -330,6 +343,21 @@ export default async function DashboardPage() {
                 {pymesPlanDetails
                   ? `Included in your ${pymesPlanDetails.name} plan`
                   : "Rescue, Growth, Scale — take the diagnosis"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : isTenantRole ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Available Services</CardTitle>
+              <Heart className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{tenantServiceCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {profile.is_premium_tenant
+                  ? "Property Search, Premium Concierge, Cleaning"
+                  : "Property Search, Cleaning Services"}
               </p>
             </CardContent>
           </Card>
