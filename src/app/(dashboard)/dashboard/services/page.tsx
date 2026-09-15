@@ -677,7 +677,20 @@ export default async function ServicesPage() {
           )}
 
           <div className={`grid gap-4 ${availablePlans.length > 1 ? "md:grid-cols-2" : ""}`}>
-            {availablePlans.map((plan, i) => {
+            {availablePlans
+              // Steve — duplicate Support Tier block fix: Preferred
+              // Owners' "Support Tier" plan card is now already fully
+              // shown above inside "Your Service" (see
+              // RECOMMENDED_SERVICES_PLAN_PRICING_FIX.md's
+              // PrimaryPlanPricingCard), so rendering it again here in
+              // Available Plans duplicated the entire pricing block
+              // (name, per-property breakdown, terms, CTA). Scoped to
+              // preferred_owners only — Basic's Low Price card has the
+              // exact same underlying duplication (see
+              // DUPLICATE_SUPPORT_TIER_BLOCK_REMOVED.md) but is left
+              // untouched here pending a separate decision.
+              .filter((plan) => !(ownerTier === "preferred_owners" && plan.name === "Support Tier"))
+              .map((plan, i) => {
               // Steve 5/22 Milestone 4: wire the static plan card to a
               // real services row so the CTA triggers Stripe checkout
               // instead of scrolling to a non-existent #contact anchor.
