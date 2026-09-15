@@ -1214,12 +1214,17 @@ export default async function ServicesPage() {
                 Tenants now go through the authenticated
                 /dashboard/consultation flow instead — pre-filled name/
                 phone/email, no "I am a..." picker, editable subject.
-                Owner/Investor/PYME still use the original public-form
-                link here; only their own dedicated buttons elsewhere
-                (e.g. the PYME plan card) go through the authenticated
-                flow, unchanged by this fix. */}
+                Steve — Property Owner "Schedule a Consultation" fix:
+                Owner/Preferred Owner/Investor now get the same
+                authenticated-flow treatment (was sending them to the
+                public form, which also redirected back to the public
+                homepage instead of the dashboard after submitting).
+                PYME still uses the original public-form link here; its
+                own dedicated button elsewhere (the PYME plan card)
+                already goes through the authenticated flow, unchanged
+                by this fix. */}
             <Link
-              href={isTenantRole ? "/dashboard/consultation" : "/#contact"}
+              href={isTenantRole || isOwnerRole ? "/dashboard/consultation" : "/#contact"}
               className={cn(buttonVariants({ size: "lg" }), "gap-2")}
             >
               Schedule a Free Consultation

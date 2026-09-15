@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
+import { OWNER_TIERS } from "@/lib/constants";
 
 // Steve — "Schedule a Consultation" fix, originally built for PYME, then
 // generalized (not duplicated) so Tenant — and any future role — can
@@ -22,8 +23,10 @@ import { CheckCircle2 } from "lucide-react";
 // sends the authenticated user's actual `profiles.role` instead of a
 // hardcoded "pymes"), and a pre-filled, editable subject. Entry points
 // today: PYME's plan card (`?plan=<name>` — unchanged behavior/output,
-// since a PYME user's real role is still "pymes") and Tenant's "Schedule
-// a Free Consultation" button on /dashboard/services.
+// since a PYME user's real role is still "pymes"), Tenant's "Schedule
+// a Free Consultation" button, and Property Owner/Preferred Owner/
+// Investor's "Schedule a Free Consultation" button, both on
+// /dashboard/services.
 export default async function ScheduleConsultationPage({
   searchParams,
 }: {
@@ -57,6 +60,14 @@ export default async function ScheduleConsultationPage({
   const isTenantRole =
     profile?.role === "inquilino" || profile?.role === "inquilino_premium";
 
+  const isOwnerRole =
+    profile?.role === "propietario" ||
+    profile?.role === "propietario_preferido" ||
+    profile?.role === "inversionista";
+  const isInvestor = profile?.role === "inversionista";
+  const isOwnerNotInvestor =
+    profile?.role === "propietario" || profile?.role === "propietario_preferido";
+
   // Steve — Tenant consultation-subject fix: when the tenant reached this
   // page without a `?plan=` (the PYME-only entry point), reference their
   // top matched property when one exists — reusing the exact same
@@ -71,6 +82,26 @@ export default async function ScheduleConsultationPage({
     tenantMatchAddress = (matches[0]?.address as string | undefined) || null;
   }
 
+  // Steve — Property Owner/Investor "Schedule a Consultation" fix: same
+  // treatment as Tenant above, referencing the customer's actual assigned
+  // tier instead of a generic subject. Reuses the exact same tier
+  // resolution rule used on Dashboard home and Recommended Services
+  // (investor always Elite; Property Owner capped at Basic/Preferred
+  // Owners based on property count, never auto-promoted to Elite).
+  let ownerTierName: string | null = null;
+  if (isOwnerRole && !planName) {
+    if (isInvestor) {
+      ownerTierName = OWNER_TIERS.elite.name;
+    } else if (isOwnerNotInvestor) {
+      const { count: propertyCount } = await supabase
+        .from("properties")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_id", user.id);
+      ownerTierName =
+        (propertyCount || 0) >= 2 ? OWNER_TIERS.preferred_owners.name : OWNER_TIERS.basic.name;
+    }
+  }
+
   const defaultSubject = sanitizeForSubject(
     planName
       ? `Consultation request — ${planName} plan`
@@ -78,7 +109,9 @@ export default async function ScheduleConsultationPage({
         ? tenantMatchAddress
           ? `Consultation request — interested in ${tenantMatchAddress}`
           : `Consultation request — ${profile?.is_premium_tenant ? "Premium Tenant" : "Tenant"}`
-        : "Consultation request",
+        : isOwnerRole && ownerTierName
+          ? `Consultation request — ${ownerTierName} plan`
+          : "Consultation request",
   );
 
   return (
