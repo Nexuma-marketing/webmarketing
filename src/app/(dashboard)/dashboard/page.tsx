@@ -18,30 +18,12 @@ import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { getFoundersAvailability } from "@/lib/founders-plan";
-import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { OWNER_PRIMARY_PLAN } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
+import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const OWNER_PRIMARY_PLAN: Record<string, { serviceName: string; name: string; pricing: string; cta: string }> = {
-  basic: {
-    serviceName: "Plan: Low Price",
-    name: "Low Price",
-    pricing: "35% of first month's rent (one-time)",
-    cta: "Choose & secure your money",
-  },
-  preferred_owners: {
-    serviceName: "Plan: Owner Preferred — Support Tier",
-    name: "Support Tier",
-    pricing: "30% 1st property / 28% 2nd & 3rd (one-time each)",
-    cta: "Get Support",
-  },
-  // Steve: Elite/investor has no single "Asset Management" purchase —
-  // pricing is per property (Essentials/Signature/Luxury), so it's
-  // rendered as its own per-property breakdown below (see
-  // ElitePortfolioBreakdown) instead of a generic plan card here.
-};
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -421,35 +403,13 @@ export default async function DashboardPage() {
               </ul>
             </div>
             {primaryPlan && (
-              <div className="rounded-lg border bg-card p-4 space-y-3">
-                <div>
-                  <p className="font-semibold">{primaryPlan.name}</p>
-                  <p className={`text-sm font-medium ${ownerPlan.color}`}>
-                    {formatOwnerPlanPrice(primaryPlan.pricing, primaryPlan.name, ownerProperties)}
-                  </p>
-                </div>
-                {primaryPlanTerms.length > 0 && (
-                  <ul className="space-y-1.5">
-                    {primaryPlanTerms.map((term) => (
-                      <li key={term} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-                        {term}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {primaryPlanService && Number(primaryPlanService.price) > 0 ? (
-                  <CheckoutButton
-                    type="service"
-                    serviceId={primaryPlanService.id}
-                    label={`${primaryPlan.cta} — Pay $${Number(primaryPlanService.price)} ${primaryPlanService.currency || "CAD"} upfront`}
-                  />
-                ) : (
-                  <Link href="/dashboard/services#contact" className={buttonVariants({ className: "w-full" })}>
-                    {primaryPlan.cta}
-                  </Link>
-                )}
-              </div>
+              <PrimaryPlanPricingCard
+                primaryPlan={primaryPlan}
+                primaryPlanTerms={primaryPlanTerms}
+                primaryPlanService={primaryPlanService}
+                accentColorClassName={ownerPlan.color}
+                ownerProperties={ownerProperties}
+              />
             )}
             {ownerTier === "preferred_owners" && (
               <Link

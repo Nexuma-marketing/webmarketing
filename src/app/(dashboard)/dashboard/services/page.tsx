@@ -33,7 +33,8 @@ import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
-import { formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { OWNER_PRIMARY_PLAN, formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { PYMES_PLANS } from "@/lib/constants";
@@ -507,6 +508,16 @@ export default async function ServicesPage() {
   ) || [];
   const premierPlan = tierDetails?.plans.find((plan) => plan.name === "Premier Tier");
 
+  // Steve — Recommended Services "Your Service" card was missing the
+  // plan-pricing block (name, per-property $ breakdown, terms, CTA)
+  // that Dashboard home already shows in its "Your Service Tier" card,
+  // so customers had to leave this page to see what they'd pay. Reuses
+  // the exact same OWNER_PRIMARY_PLAN map + un-overridden baseTier.plans
+  // lookup Dashboard home uses, so both pages show identical pricing.
+  const primaryPlan = ownerTier ? OWNER_PRIMARY_PLAN[ownerTier] : null;
+  const primaryPlanTerms = baseTier?.plans.find((plan) => plan.name === primaryPlan?.name)?.details || [];
+  const primaryPlanService = primaryPlan?.serviceName ? servicesByDbName[primaryPlan.serviceName] : undefined;
+
   // Determine the user's primary city for promotion zone targeting.
   // Steve 4/30 #12: zones in /admin/pricing → Promotions used to be ignored
   // because we always passed null. Owners have a city via their property,
@@ -596,6 +607,20 @@ export default async function ServicesPage() {
                   ))}
                 </ul>
               </div>
+
+              {/* Steve — plan-pricing block: name, per-property $ breakdown,
+                  terms, purchase CTA. Same PrimaryPlanPricingCard shown on
+                  Dashboard home's "Your Service Tier" card, so customers
+                  don't have to leave this page to see what they'd pay. */}
+              {primaryPlan && (
+                <PrimaryPlanPricingCard
+                  primaryPlan={primaryPlan}
+                  primaryPlanTerms={primaryPlanTerms}
+                  primaryPlanService={primaryPlanService}
+                  accentColorClassName={tierDetails.color}
+                  ownerProperties={ownerProperties}
+                />
+              )}
 
               <div>
                 <p className="text-xs text-muted-foreground">
