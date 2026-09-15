@@ -347,6 +347,14 @@ export function PropertyEditForm({
       // leave (see the "Done" button in the footer).
       router.refresh();
       setSaved(true);
+
+      // Notify commercial + the customer that this property was updated.
+      // Fire-and-forget: must never block or affect the save success UX.
+      fetch("/api/property-edit-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: data.address, city: data.zone_city }),
+      }).catch((err) => console.error("Property edit email failed:", err));
     } catch (err) {
       setError("Failed to save. Please try again.");
       console.error(err);
