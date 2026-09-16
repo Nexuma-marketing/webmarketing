@@ -235,7 +235,22 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Steve — Investor no longer has a 3rd/4th stat card (Available
+          Services was removed as misleading once per-portfolio features
+          are shown separately; see PER_PORTFOLIO_FEATURES_FIX.md and
+          INVESTOR_AVAILABLE_SERVICES_STAT_REMOVED.md). Stretching 1-2
+          cards across the full md:grid-cols-2 lg:grid-cols-4 grid left a
+          large empty gap on the right, so Investor gets a narrower grid
+          sized to its actual card count instead. */}
+      <div
+        className={`grid gap-4 ${
+          isInvestor
+            ? totalCFP > 0
+              ? "sm:grid-cols-2 max-w-md"
+              : "max-w-xs"
+            : "md:grid-cols-2 lg:grid-cols-4"
+        }`}
+      >
         {isOwnerRole && (
           <>
             <Card>
@@ -343,7 +358,7 @@ export default async function DashboardPage() {
               </p>
             </CardContent>
           </Card>
-        ) : isOwnerRole ? (
+        ) : isOwnerRole && !isInvestor ? (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Available Services</CardTitle>
@@ -358,7 +373,7 @@ export default async function DashboardPage() {
               </p>
             </CardContent>
           </Card>
-        ) : (
+        ) : isInvestor ? null : (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Available Services</CardTitle>
