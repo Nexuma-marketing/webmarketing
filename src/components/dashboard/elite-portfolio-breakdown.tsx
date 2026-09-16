@@ -49,7 +49,13 @@ export function ElitePortfolioBreakdown({
         const service = prop.elite_tier ? eliteServices[prop.elite_tier] : undefined;
 
         return (
-          <div key={prop.id} className="rounded-lg border bg-card p-4 space-y-3">
+          <div
+            key={prop.id}
+            className={cn(
+              "rounded-lg border p-4 space-y-3",
+              tier ? `${tier.borderColor} ${tier.bgColor}` : "bg-card"
+            )}
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium">
