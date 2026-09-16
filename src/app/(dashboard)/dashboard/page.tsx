@@ -391,6 +391,16 @@ export default async function DashboardPage() {
                 Based on {propertyCount} {propertyCount === 1 ? "property" : "properties"}
               </span>
             </div>
+            {ownerPlan.serviceNotes && ownerPlan.serviceNotes.length > 0 && (
+              <ul className="space-y-1.5">
+                {ownerPlan.serviceNotes.map((note) => (
+                  <li key={note} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
+                    {note}
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="space-y-2">
               <p className="text-sm font-medium">What&apos;s included in your {ownerPlan.name} service</p>
               <ul className="space-y-1.5">

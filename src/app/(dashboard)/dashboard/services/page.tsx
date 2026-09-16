@@ -577,6 +577,17 @@ export default async function ServicesPage() {
                 )}
               </div>
 
+              {tierDetails.serviceNotes && tierDetails.serviceNotes.length > 0 && (
+                <ul className="space-y-1.5">
+                  {tierDetails.serviceNotes.map((note) => (
+                    <li key={note} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${tierDetails.color}`} />
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
               {/* Recommendations (Steve #13: only photos + optimization) */}
               <div>
                 <p className="text-sm font-medium mb-2">Recommendations</p>
@@ -621,11 +632,13 @@ export default async function ServicesPage() {
                 />
               )}
 
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  See the full plan pricing and payment options in the &quot;Available Plans&quot; section below.
-                </p>
-              </div>
+              {!isInvestor && (
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    See the full plan pricing and payment options in the &quot;Available Plans&quot; section below.
+                  </p>
+                </div>
+              )}
 
               {/* Elite: Per-property Portfolio + CFP/Payback */}
               {isInvestor && ownerTier === "elite" && ownerProperties.length > 0 && (
@@ -640,7 +653,14 @@ export default async function ServicesPage() {
             </CardContent>
           </Card>
 
-          {/* ═══ Owner: Available Plans ═══ */}
+          {/* ═══ Owner: Available Plans ═══
+              Steve — Elite/Investor has no purchasable plan cards here
+              (pricing is per property, shown above and in "Your
+              Portfolio" below); the old non-functional "Asset
+              Management" card was removed. Hide this whole section for
+              Investor rather than leave an empty heading. */}
+          {!isInvestor && (
+          <>
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Star className="h-5 w-5 text-primary" />
             Available Plans
@@ -782,6 +802,8 @@ export default async function ServicesPage() {
                 );
               })()}
             </details>
+          )}
+          </>
           )}
         </div>
       )}

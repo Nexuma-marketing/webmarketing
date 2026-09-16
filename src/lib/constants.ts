@@ -27,6 +27,7 @@ export const OWNER_TIERS: Record<
       details: string[];
       cta: string;
     }[];
+    serviceNotes?: string[];
   }
 > = {
   basic: {
@@ -128,17 +129,15 @@ export const OWNER_TIERS: Record<
       "Premium tenant welcome program",
       "Satisfaction surveys to reduce turnover",
     ],
-    plans: [
-      {
-        name: "Asset Management",
-        pricing: "Portfolio-based pricing (Essentials / Signature / Luxury)",
-        details: [
-          "Single plan with 3 investment portfolios based on rent level",
-          "Includes CFP (Cash Flow Preserved) calculation per property",
-          "Includes Payback period calculation per property",
-        ],
-        cta: "Manage My Assets",
-      },
+    // Steve — the old "Asset Management" plan card had a non-functional
+    // "Manage My Assets" CTA (Elite has no single purchasable plan —
+    // pricing is per property via ELITE_SUB_TIERS). Its description now
+    // lives as intro text on the "Your Service" card instead.
+    plans: [],
+    serviceNotes: [
+      "Single plan with 3 investment portfolios based on rent level",
+      "Includes CFP (Cash Flow Preserved) calculation per property",
+      "Includes Payback period calculation per property",
     ],
     color: "text-amber-600",
     bgColor: "bg-amber-50",
