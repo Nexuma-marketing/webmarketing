@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Zap } from "lucide-react";
+import { ArrowRight, CheckCircle2, Zap } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
@@ -100,6 +100,22 @@ export function ElitePortfolioBreakdown({
                       <span className="font-medium">Payback:</span> {payback.toFixed(1)} months
                     </p>
                   </div>
+                )}
+
+                {tier.features.length > 0 && (
+                  <details className="rounded-md border bg-white/60 p-2">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      What&apos;s included in {tier.name}
+                    </summary>
+                    <ul className="mt-2 space-y-1.5">
+                      {tier.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-2 text-sm">
+                          <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${tier.color}`} />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
 
                 <p className="text-sm text-muted-foreground border-t pt-2">

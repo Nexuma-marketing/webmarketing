@@ -603,20 +603,27 @@ export default async function ServicesPage() {
                 </ul>
               </div>
 
-              {/* Steve 4/21 #17: What's included in this service (full features list) */}
-              <div className="rounded-lg border bg-muted/30 p-4">
-                <p className="text-base font-semibold mb-3">
-                  What&apos;s included in your {tierDetails.name} service
-                </p>
-                <ul className="space-y-2">
-                  {tierDetails.features.map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${tierDetails.color}`} />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {/* Steve 4/21 #17: What's included in this service (full features list).
+                  Elite is excluded — each portfolio (Essentials/Signature/
+                  Luxury) includes a different, cumulative set of features,
+                  so accurate per-portfolio lists render inside each
+                  property's own card below instead of one shared list
+                  here. See PER_PORTFOLIO_FEATURES_FIX.md. */}
+              {!isInvestor && (
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-base font-semibold mb-3">
+                    What&apos;s included in your {tierDetails.name} service
+                  </p>
+                  <ul className="space-y-2">
+                    {tierDetails.features.map((feature, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${tierDetails.color}`} />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Steve — plan-pricing block: name, per-property $ breakdown,
                   terms, purchase CTA. Same PrimaryPlanPricingCard shown on

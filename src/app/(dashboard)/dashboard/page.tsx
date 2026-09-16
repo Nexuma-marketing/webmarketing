@@ -401,17 +401,25 @@ export default async function DashboardPage() {
                 ))}
               </ul>
             )}
-            <div className="space-y-2">
-              <p className="text-sm font-medium">What&apos;s included in your {ownerPlan.name} service</p>
-              <ul className="space-y-1.5">
-                {ownerPlan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Steve — Elite has no single shared feature list: each
+                portfolio (Essentials/Signature/Luxury) includes a
+                different, cumulative set of features, so accurate
+                per-portfolio lists are shown inside each property's own
+                card in "Your Portfolio" below instead of here. See
+                PER_PORTFOLIO_FEATURES_FIX.md. */}
+            {!isInvestor && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">What&apos;s included in your {ownerPlan.name} service</p>
+                <ul className="space-y-1.5">
+                  {ownerPlan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${ownerPlan.color}`} />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {primaryPlan && (
               <PrimaryPlanPricingCard
                 primaryPlan={primaryPlan}

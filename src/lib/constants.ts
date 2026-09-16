@@ -281,6 +281,37 @@ export const ELITE_TIERS: Record<string, string> = {
 // (seeded in migration v11) so a CheckoutButton can charge the one-time
 // fee via Stripe. Shared by the Dashboard home and Recommended Services
 // per-property breakdown (components/dashboard/elite-portfolio-breakdown.tsx).
+// Steve — per-portfolio included features are cumulative: Signature
+// includes everything in Essentials plus its own additions, and Luxury
+// includes everything in Signature (which already includes Essentials)
+// plus its own additions. Kept as separate "own" arrays composed into
+// each tier's `features` below, so the cumulative relationship is
+// explicit and each tier's unique additions stay easy to find/edit.
+const ELITE_ESSENTIALS_FEATURES = [
+  "Focused marketing campaign per property until tenant found (~15 days avg.)",
+  "Interior design recommendations",
+  "360° tenant verification (credit + behavioral references)",
+  "Priority search positioning",
+  "Unit handover against checklist",
+  "RTB-1 (BC) contract drafting & signing",
+  "Free rent price optimization",
+  "Local vendor partnerships (repairs, maintenance, cleaning services)",
+];
+const ELITE_SIGNATURE_OWN_FEATURES = [
+  "Professional 3D photography & virtual tour",
+  "Unit verification before tenant move-in",
+  "Property showings",
+  "KPI performance report (vacancy avoided, market value increase, turnover analysis, retention strategy)",
+  "Premium portal listings + targeted campaigns",
+  "Tenant satisfaction surveys",
+  "Tips to avoid common investor mistakes",
+];
+const ELITE_LUXURY_OWN_FEATURES = [
+  "Free event packages (concerts, sporting events, seasonal)",
+  "Expansion & wealth growth analysis (new property acquisition report with high cap rate, emerging zone studies)",
+  "Premium welcome program for high-tier tenants",
+];
+
 export const ELITE_SUB_TIERS: Record<
   string,
   {
@@ -291,6 +322,7 @@ export const ELITE_SUB_TIERS: Record<
     monthlyFee: number;
     feeDescription: string;
     extras: string[];
+    features: string[];
     color: string;
     bgColor: string;
     borderColor: string;
@@ -304,6 +336,7 @@ export const ELITE_SUB_TIERS: Record<
     monthlyFee: 200,
     feeDescription: "$900 CAD one-time payment + $200 CAD/month maintenance fee, charged for this property only.",
     extras: ["Quarterly portfolio review", "Basic revenue optimization"],
+    features: ELITE_ESSENTIALS_FEATURES,
     color: "text-blue-600",
     bgColor: "bg-blue-50",
     borderColor: "border-blue-200",
@@ -316,6 +349,7 @@ export const ELITE_SUB_TIERS: Record<
     monthlyFee: 200,
     feeDescription: "$1,410 CAD one-time payment + $200 CAD/month maintenance fee, charged for this property only.",
     extras: ["Monthly portfolio review", "Advanced revenue optimization", "Premium market positioning"],
+    features: [...ELITE_ESSENTIALS_FEATURES, ...ELITE_SIGNATURE_OWN_FEATURES],
     color: "text-amber-600",
     bgColor: "bg-amber-50",
     borderColor: "border-amber-200",
@@ -328,6 +362,7 @@ export const ELITE_SUB_TIERS: Record<
     monthlyFee: 300,
     feeDescription: "$1,650 CAD one-time payment + $300 CAD/month maintenance fee, charged for this property only.",
     extras: ["Weekly portfolio review", "White-glove concierge service", "Luxury market positioning", "International investor network"],
+    features: [...ELITE_ESSENTIALS_FEATURES, ...ELITE_SIGNATURE_OWN_FEATURES, ...ELITE_LUXURY_OWN_FEATURES],
     color: "text-purple-600",
     bgColor: "bg-purple-50",
     borderColor: "border-purple-200",
