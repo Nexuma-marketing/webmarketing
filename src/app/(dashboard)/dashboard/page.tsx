@@ -222,7 +222,7 @@ export default async function DashboardPage() {
   const foundersPlanTerms = OWNER_TIERS.basic.plans.find(
     (plan) => plan.name === "Founders Package — Visionary Owners",
   )?.details || [];
-  const foundersAvailability = isOwnerRole ? await getFoundersAvailability() : null;
+  const foundersAvailability = isOwnerNotInvestor ? await getFoundersAvailability() : null;
 
   return (
     <div className="space-y-6">
@@ -446,7 +446,7 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {isOwnerRole && foundersAvailability && foundersAvailability.limit > 0 && (
+      {isOwnerNotInvestor && foundersAvailability && foundersAvailability.limit > 0 && (
         <FoundersBanner
           taken={foundersAvailability.taken}
           limit={foundersAvailability.limit}

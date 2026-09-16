@@ -131,6 +131,9 @@ export default async function ServicesPage() {
     profile.role === "propietario_preferido" ||
     profile.role === "inversionista";
   const isInvestor = profile.role === "inversionista";
+  // Steve 4/20: Property Owner stays at Basic/Preferred regardless of count
+  const isOwnerNotInvestor =
+    profile.role === "propietario" || profile.role === "propietario_preferido";
 
   const isTenantRole =
     profile.role === "inquilino" || profile.role === "inquilino_premium";
@@ -161,10 +164,6 @@ export default async function ServicesPage() {
       .order("created_at", { ascending: true });
 
     propertyCount = properties?.length ?? 0;
-
-    // Steve 4/20: Property Owner stays at Basic/Preferred regardless of count
-    const isOwnerNotInvestor =
-      profile.role === "propietario" || profile.role === "propietario_preferido";
 
     if (properties && properties.length > 0) {
       // Investor → always Elite (portfolio-based)
@@ -656,7 +655,7 @@ export default async function ServicesPage() {
               tier — including the no-tier branch via FoundersBanner
               below. It is intentionally available across all Property
               Owner tiers. */}
-          {foundersLimit > 0 && (
+          {isOwnerNotInvestor && foundersLimit > 0 && (
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
@@ -794,7 +793,7 @@ export default async function ServicesPage() {
               counter too — without this the counter appeared "stuck at
               0" during admin tests because the no-tier owner card had
               no banner at all. */}
-          {foundersLimit > 0 && (
+          {isOwnerNotInvestor && foundersLimit > 0 && (
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
