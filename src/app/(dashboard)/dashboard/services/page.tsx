@@ -1261,12 +1261,22 @@ export default async function ServicesPage() {
                 authenticated-flow treatment (was sending them to the
                 public form, which also redirected back to the public
                 homepage instead of the dashboard after submitting).
-                PYME still uses the original public-form link here; its
-                own dedicated button elsewhere (the PYME plan card)
-                already goes through the authenticated flow, unchanged
-                by this fix. */}
+                Steve — PYME bottom "Schedule a Free Consultation" fix:
+                this footer CTA still sent PYME to the public form even
+                though PYME's other consultation button (on the plan
+                card above) already used the authenticated flow. Now PYME
+                gets the same /dashboard/consultation treatment here too,
+                carrying `?plan=` when a recommended plan is assigned so
+                the pre-filled Subject names it — same query param
+                pymes-plan-card.tsx already sends. */}
             <Link
-              href={isTenantRole || isOwnerRole ? "/dashboard/consultation" : "/#contact"}
+              href={
+                isTenantRole || isOwnerRole
+                  ? "/dashboard/consultation"
+                  : isPymesRole
+                    ? `/dashboard/consultation${pymesPlanDetails ? `?plan=${encodeURIComponent(pymesPlanDetails.name)}` : ""}`
+                    : "/#contact"
+              }
               className={cn(buttonVariants({ size: "lg" }), "gap-2")}
             >
               Schedule a Free Consultation
