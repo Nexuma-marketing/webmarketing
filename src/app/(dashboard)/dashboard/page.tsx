@@ -317,7 +317,7 @@ export default async function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-600">{formatCurrency(pymesLoss)}</div>
-                  <p className="text-xs text-muted-foreground">Monthly revenue at risk</p>
+                  <p className="text-xs text-muted-foreground">Annual revenue at risk</p>
                 </CardContent>
               </Card>
             )}
