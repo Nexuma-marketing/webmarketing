@@ -272,7 +272,16 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
         }
       }
 
-      await supabase
+      // Steve — BELOW_MINIMUM_STILL_NOT_APPLIED_DIAGNOSTIC.md /
+      // ELITE_TIER_CHECK_CONSTRAINT_FIX.md: this write used to discard
+      // its result entirely, so a rejected value (e.g. elite_tier
+      // violating the properties_elite_tier_check CHECK constraint
+      // before migration_v58 widened it) failed completely silently —
+      // profileOwner() reported success while this property's
+      // classification/CFP/payback were never actually persisted. Now
+      // logged loudly so a similar issue with any future tier addition
+      // shows up immediately in server logs instead of vanishing.
+      const { error: propertyUpdateError } = await supabase
         .from("properties")
         .update({
           service_tier: serviceTier,
@@ -281,6 +290,13 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
           payback_months: paybackMonths,
         })
         .eq("id", prop.id);
+
+      if (propertyUpdateError) {
+        console.error(
+          `[profileOwner] Failed to update property ${prop.id} (elite_tier=${propEliteTier}, service_tier=${serviceTier}, cfp=${cfp}, payback=${paybackMonths}):`,
+          propertyUpdateError,
+        );
+      }
     }
   }
 
