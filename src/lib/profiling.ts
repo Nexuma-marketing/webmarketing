@@ -222,34 +222,35 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
   if (profileReadError && !registeredRole) throw profileReadError;
 
   const currentRole = (existingProfile?.role as UserRole | undefined) ?? registeredRole;
-  const isCurrentlyInvestor = currentRole === "inversionista";
-  const isCurrentlyOwner = currentRole === "propietario" || currentRole === "propietario_preferido";
+  const isOwnerRole =
+    currentRole === "propietario" ||
+    currentRole === "propietario_preferido" ||
+    currentRole === "inversionista";
 
-  // 2. Classify role + tier — RESPECT USER'S INITIAL SELECTION (Steve 4/20)
-  //    - Investor stays as investor + elite (regardless of count)
-  //    - Owners with 4+ properties are promoted to Investor + Elite
-  //    - Owners with 1–3 properties stay on the existing Basic/Preferred path
-  //    - New users (no role set): count-based classification
+  // The base customer role is selected and persisted during registration.
+  // Never turn a Tenant, Business, or missing role into an owner here.
+  if (!isOwnerRole) {
+    throw new Error("Owner profiling requires an existing owner profile role");
+  }
+
+  // 2. Classify role + tier — PURE, STATELESS evaluation from the CURRENT
+  //    propertyCount only. No memory of the user's prior/highest-ever
+  //    role or tier: this must re-derive the tier fresh every run so a
+  //    downgrade (Elite -> Preferred/Basic, Preferred -> Basic) applies
+  //    immediately, exactly like an upgrade does when the count rises.
+  //    See SERVICE_TIER_DOWNGRADE_FIX.md.
   let role: UserRole;
   let serviceTier: PropertyServiceTier;
 
-  if (isCurrentlyInvestor || propertyCount >= 4) {
+  if (propertyCount >= 4) {
     role = "inversionista";
     serviceTier = "elite";
-  } else if (isCurrentlyOwner) {
-    // Owner stays owner — only adjust between basic and preferred_owners.
-    // The 4+ Investor promotion is handled above.
-    if (propertyCount >= 2) {
-      role = "propietario_preferido";
-      serviceTier = "preferred_owners";
-    } else {
-      role = "propietario";
-      serviceTier = "basic";
-    }
+  } else if (propertyCount >= 2) {
+    role = "propietario_preferido";
+    serviceTier = "preferred_owners";
   } else {
-    // The base customer role is selected and persisted during registration.
-    // Never turn a Tenant, Business, or missing role into an owner here.
-    throw new Error("Owner profiling requires an existing owner profile role");
+    role = "propietario";
+    serviceTier = "basic";
   }
 
   // 3. Update each property: service_tier, elite_tier (per property), cfp, payback
