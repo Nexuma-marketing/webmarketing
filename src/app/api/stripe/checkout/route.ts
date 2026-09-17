@@ -189,10 +189,11 @@ export async function POST(request: Request) {
         // every other checkout (owner plans, add-ons, etc.), which are
         // unaffected.
         let eliteTierForSubscription: string | undefined;
+        let propertyMonthlyRent = 0;
         if (propertyId) {
           const { data: property } = await supabase
             .from("properties")
-            .select("id, address, city, elite_tier")
+            .select("id, address, city, elite_tier, monthly_rent")
             .eq("id", propertyId)
             .eq("owner_id", user.id)
             .single();
@@ -204,6 +205,7 @@ export async function POST(request: Request) {
             );
           }
           propertyLabel = `${property.address}, ${property.city}`;
+          propertyMonthlyRent = Number(property.monthly_rent) || 0;
 
           const assignedTier = property.elite_tier
             ? ELITE_SUB_TIERS[property.elite_tier as string]
@@ -216,7 +218,21 @@ export async function POST(request: Request) {
           ? ELITE_SUB_TIERS[eliteTierForSubscription]
           : null;
 
-        const baseCents = Math.round(service.price * 100);
+        // Steve — BELOW_PORTFOLIO_MINIMUM_FULL_CHARGE_FIX.md: the
+        // "Below Portfolio Minimum" one-time fee is 30% of THIS
+        // property's own rent, not a flat amount from `services.price`
+        // (that column only holds a fixed fee for Essentials/Signature/
+        // Luxury, and isn't meaningful for this tier — see the
+        // migration for why the row still exists). Computed here,
+        // server-side, from the ownership-checked property's own
+        // `monthly_rent` — never trusted from client input — and
+        // charged in FULL via Stripe, same as Essentials/Signature/
+        // Luxury's full-fee checkout, no manual balance step.
+        const chargeAmount = eliteTierInfo?.oneTimeFeePercent
+          ? Math.round(propertyMonthlyRent * eliteTierInfo.oneTimeFeePercent * 100) / 100
+          : service.price;
+
+        const baseCents = Math.round(chargeAmount * 100);
         let unitAmount = baseCents;
         let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
         // Steve: full disclosure before checkout — when this purchase
@@ -225,12 +241,12 @@ export async function POST(request: Request) {
         // Checkout line-item description the customer sees before
         // paying, not just in our own UI copy.
         let descriptionSuffix = eliteTierInfo
-          ? `\nBy completing this one-time payment of $${service.price} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically each month until canceled.`
+          ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically each month until canceled.`
           : "";
         if (promoCode) {
           const v = await validatePromoCode(
             String(promoCode),
-            service.price,
+            chargeAmount,
             userRole,
           );
           if (!v.ok) {

@@ -272,6 +272,7 @@ export const ELITE_TIERS: Record<string, string> = {
   essentials: "Essentials ($2,500–$3,999)",
   signature: "Signature ($4,000–$7,000)",
   lujo: "Luxury ($7,001+)",
+  below_minimum: "Below Portfolio Minimum (<$2,500)",
 };
 
 // Elite Assets & Legacy — per-property portfolio fees. Each property is
@@ -318,7 +319,15 @@ export const ELITE_SUB_TIERS: Record<
     name: string;
     dbServiceName: string;
     description: string;
+    // Fixed dollar amount for essentials/signature/lujo. Ignored (0) for
+    // below_minimum, whose one-time fee is a percentage of that
+    // property's own rent instead — see `oneTimeFeePercent`.
     oneTimeFee: number;
+    // Only set for below_minimum: the one-time fee is this fraction of
+    // the property's monthly rent, computed per property (never a flat
+    // dollar amount, unlike every other sub-tier). Independent of
+    // Support/Premier Tier's Property-Owner-side percentage rules.
+    oneTimeFeePercent?: number;
     monthlyFee: number;
     feeDescription: string;
     extras: string[];
@@ -366,6 +375,33 @@ export const ELITE_SUB_TIERS: Record<
     color: "text-purple-600",
     bgColor: "bg-purple-50",
     borderColor: "border-purple-200",
+  },
+  // Steve — fallback for properties whose rent is under the Essentials
+  // minimum ($2,500). Genuinely separate classification, never a
+  // renamed Essentials: flat 30% of THIS property's rent, charged in
+  // FULL and automatically via Stripe at checkout (same as Essentials/
+  // Signature/Luxury's full-fee model — NOT the $200-deposit-then-
+  // manual-balance model used by Low Price/Founders, which was the
+  // wrong pattern for this tier per
+  // BELOW_PORTFOLIO_MINIMUM_FULL_CHARGE_FIX.md, since the exact dollar
+  // amount is always known up front from `monthly_rent`). Instead of
+  // Essentials' fixed $900. Gets the same 8-feature Essentials service
+  // quality. Slate color keeps it visually distinct from
+  // blue/amber/purple. See BELOW_PORTFOLIO_MINIMUM_FALLBACK_FIX.md and
+  // BELOW_PORTFOLIO_MINIMUM_FULL_CHARGE_FIX.md.
+  below_minimum: {
+    name: "Below Portfolio Minimum",
+    dbServiceName: "Plan: Elite — Below Portfolio Minimum",
+    description: "Rent under $2,500 CAD — does not meet the Essentials portfolio minimum",
+    oneTimeFee: 0,
+    oneTimeFeePercent: 0.30,
+    monthlyFee: 200,
+    feeDescription: "30% of this property's monthly rent (one-time), calculated automatically from that property's rent and charged in full at checkout — no manual balance or deposit — + $200 CAD/month maintenance fee, charged for this property only.",
+    extras: [],
+    features: ELITE_ESSENTIALS_FEATURES,
+    color: "text-slate-600",
+    bgColor: "bg-slate-50",
+    borderColor: "border-slate-300",
   },
 };
 

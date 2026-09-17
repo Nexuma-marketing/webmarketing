@@ -47,6 +47,14 @@ export function ElitePortfolioBreakdown({
         const cfpMonthly = prop.cfp_monthly == null ? null : Number(prop.cfp_monthly);
         const payback = prop.payback_months ? Number(prop.payback_months) : null;
         const service = prop.elite_tier ? eliteServices[prop.elite_tier] : undefined;
+        // below_minimum's one-time fee is a % of this property's own
+        // rent, not a flat amount shared by the whole tier — every
+        // other tier just uses its fixed `oneTimeFee`.
+        const oneTimeFee = tier
+          ? tier.oneTimeFeePercent
+            ? rent * tier.oneTimeFeePercent
+            : tier.oneTimeFee
+          : 0;
 
         return (
           <div
@@ -77,7 +85,10 @@ export function ElitePortfolioBreakdown({
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-muted-foreground">One-time fee</p>
-                    <p className="text-sm font-semibold">${tier.oneTimeFee.toLocaleString()} CAD</p>
+                    <p className="text-sm font-semibold">
+                      ${oneTimeFee.toLocaleString(undefined, { maximumFractionDigits: 2 })} CAD
+                      {tier.oneTimeFeePercent ? ` (${tier.oneTimeFeePercent * 100}% of rent)` : ""}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Monthly maintenance</p>
@@ -122,13 +133,13 @@ export function ElitePortfolioBreakdown({
                   {tier.feeDescription}
                 </p>
 
-                {service && Number(service.price) > 0 ? (
+                {service && (tier.oneTimeFeePercent ? rent > 0 : Number(service.price) > 0) ? (
                   <div className="space-y-1.5">
                     <CheckoutButton
                       type="service"
                       serviceId={service.id}
                       propertyId={prop.id}
-                      label={`Acquire ${tier.name} — Pay $${Number(service.price).toLocaleString()} ${service.currency || "CAD"} one-time`}
+                      label={`Acquire ${tier.name} — Pay $${oneTimeFee.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${service.currency || "CAD"} one-time`}
                     />
                     {/* Steve: disclose the recurring charge BEFORE checkout,
                         in our own UI in addition to Stripe Checkout's line
@@ -150,7 +161,11 @@ export function ElitePortfolioBreakdown({
                 )}
               </>
             ) : (
-              <p className="text-xs text-muted-foreground">Below Elite portfolio minimum</p>
+              // Steve — a null elite_tier now only means "no rent set":
+              // rents below the Essentials minimum get the
+              // "below_minimum" fallback tier above instead of null.
+              // See BELOW_PORTFOLIO_MINIMUM_FALLBACK_FIX.md.
+              <p className="text-xs text-muted-foreground">Set this property&apos;s monthly rent to see its portfolio assignment</p>
             )}
           </div>
         );

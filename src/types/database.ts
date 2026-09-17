@@ -14,7 +14,11 @@ export type LeadStatus = "nuevo" | "contactado" | "en_proceso" | "cerrado";
 export type UrgencyLevel = "moderate" | "high" | "critical";
 export type PaymentStatus = "pending" | "completed" | "failed" | "refunded";
 export type PropertyServiceTier = "basic" | "preferred_owners" | "elite";
-export type EliteTier = "essentials" | "signature" | "lujo";
+// "below_minimum" — Elite property whose rent is under the Essentials
+// minimum ($2,500). Distinct fallback classification, never a renamed
+// Essentials: flat 30% one-time fee (vs. Essentials' fixed $900) + the
+// same $200/month maintenance fee. See BELOW_PORTFOLIO_MINIMUM_FALLBACK_FIX.md.
+export type EliteTier = "essentials" | "signature" | "lujo" | "below_minimum";
 export type PymesPlan = "rescue" | "growth" | "scale";
 export type ImageStatus = "pending" | "approved" | "rejected";
 export type ConsentType =

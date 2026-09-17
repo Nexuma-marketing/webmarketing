@@ -183,10 +183,18 @@ function imageFingerprint(room: string, filename: string, sizeBytes: number): st
   return `${normalizeRoomForDedup(room)}|${filename}|${sizeBytes}`;
 }
 
+// Steve — properties under the Essentials minimum ($2,500) used to get
+// no portfolio at all (null: no service, no CFP/payback, nothing
+// purchasable). They now get a dedicated "below_minimum" fallback
+// instead — a genuinely separate classification, never a renamed
+// Essentials. The $2,500 threshold itself is unchanged; null is now
+// reserved for "no rent entered" (rent <= 0). See
+// BELOW_PORTFOLIO_MINIMUM_FALLBACK_FIX.md.
 function getPortfolio(rent: number): { name: string; key: string; color: string; bgColor: string } | null {
   if (rent >= 7001) return { name: "Luxury", key: "lujo", color: "text-purple-600", bgColor: "bg-purple-50" };
   if (rent >= 4000) return { name: "Signature", key: "signature", color: "text-amber-600", bgColor: "bg-amber-50" };
   if (rent >= 2500) return { name: "Essentials", key: "essentials", color: "text-blue-600", bgColor: "bg-blue-50" };
+  if (rent > 0) return { name: "Below Portfolio Minimum", key: "below_minimum", color: "text-slate-600", bgColor: "bg-slate-50" };
   return null;
 }
 
@@ -201,6 +209,20 @@ const PORTFOLIO_FEES: Record<string, { oneTime: number; monthlyFee: number }> = 
   signature: { oneTime: 1410, monthlyFee: 200 },
   lujo: { oneTime: 1650, monthlyFee: 300 },
 };
+
+// Below-portfolio-minimum fallback: flat 30% of THIS property's own
+// rent (one-time), completely independent from Support/Premier Tier's
+// 28%/30% Property-Owner-side rules (those key off property count/order
+// — this is purely Elite-side and always flat 30%). $200 of it is the
+// upfront Stripe deposit (same mechanism as Low Price/Founders), the
+// rest is invoiced after lease signing.
+const BELOW_MINIMUM_FEE_PERCENT = 0.30;
+function getPortfolioFee(key: string, rent: number): { oneTime: number; monthlyFee: number } {
+  if (key === "below_minimum") {
+    return { oneTime: rent * BELOW_MINIMUM_FEE_PERCENT, monthlyFee: 200 };
+  }
+  return PORTFOLIO_FEES[key];
+}
 
 interface InvestorPropertyData {
   property_type: string;
@@ -672,7 +694,7 @@ export default function OwnerFormPage() {
           const rent = data.rents[i] || 0;
           const city = data.cities[i] || "";
           const portfolio = getPortfolio(rent);
-          const portfolioFee = portfolio ? PORTFOLIO_FEES[portfolio.key] : null;
+          const portfolioFee = portfolio ? getPortfolioFee(portfolio.key, rent) : null;
           const cfpMonthly = portfolio ? rent * CFP_RATE : null;
           const paybackMonths = cfpMonthly && portfolioFee
             ? portfolioFee.oneTime / cfpMonthly
@@ -1628,14 +1650,19 @@ export default function OwnerFormPage() {
                   const rent = rents[propIdx];
                   const portfolio = getPortfolio(rent);
                   if (!portfolio) {
+                    // Steve — unreachable under the `rents[propIdx] > 0`
+                    // guard above (getPortfolio now always returns the
+                    // "below_minimum" fallback for any rent > 0), kept
+                    // as a defensive fallback. See
+                    // BELOW_PORTFOLIO_MINIMUM_FALLBACK_FIX.md.
                     return (
                       <div className="rounded-lg border bg-muted/30 p-4">
-                        <p className="text-sm font-medium">Property {propIdx + 1} is below the Elite portfolio minimum</p>
-                        <p className="text-xs text-muted-foreground mt-1">Properties below $2,500/month do not receive an Elite portfolio, CFP, or payback calculation.</p>
+                        <p className="text-sm font-medium">Property {propIdx + 1} — no rent entered yet</p>
+                        <p className="text-xs text-muted-foreground mt-1">Enter this property&apos;s monthly rent to see its portfolio, CFP, and payback calculation.</p>
                       </div>
                     );
                   }
-                  const portfolioFee = PORTFOLIO_FEES[portfolio.key];
+                  const portfolioFee = getPortfolioFee(portfolio.key, rent);
                   const cfp = rent * CFP_RATE;
                   const payback = cfp > 0 ? portfolioFee.oneTime / cfp : 0;
                   return (
@@ -2107,7 +2134,7 @@ export default function OwnerFormPage() {
                                   <span className="text-xs text-emerald-600 font-medium">CFP ${cfp?.toFixed(0)}/mo</span>
                                 </>
                               ) : (
-                                <span className="text-xs text-muted-foreground">Below Elite portfolio minimum</span>
+                                <span className="text-xs text-muted-foreground">No rent entered</span>
                               )}
                             </div>
                           </div>

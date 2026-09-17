@@ -21,12 +21,28 @@ export function classifyOwner(propertyCount: number): {
   return { role: "propietario", serviceTier: "basic" };
 }
 
+// Steve — properties under the Essentials minimum ($2,500) used to get
+// no classification at all (null), meaning no service and no way to
+// purchase anything for that property. They now get a dedicated
+// "below_minimum" fallback (flat 30% one-time fee, see
+// BELOW_MINIMUM_FEE_PERCENT below) instead — a genuinely separate
+// classification, never a renamed Essentials. The $2,500 threshold
+// itself is unchanged; null is now reserved for "no rent set" (rent <= 0).
 export function classifyEliteTier(avgMonthlyRent: number): EliteTier | null {
   if (avgMonthlyRent >= 7001) return "lujo";
   if (avgMonthlyRent >= 4000) return "signature";
   if (avgMonthlyRent >= 2500) return "essentials";
+  if (avgMonthlyRent > 0) return "below_minimum";
   return null;
 }
+
+// Below-portfolio-minimum fallback: a flat 30% of monthly rent, one-time
+// — completely independent from Support/Premier Tier's 28%/30%
+// Property-Owner-side rules (those depend on property count/order; this
+// is always flat 30%, purely Elite-side). $200 of this is the upfront
+// Stripe deposit (same mechanism as Low Price/Founders), the rest is
+// invoiced after lease signing, same as those plans.
+export const BELOW_MINIMUM_FEE_PERCENT = 0.30;
 
 // CFP = Monthly Rent × 10%
 export function calculateCFP(monthlyRent: number): number {
@@ -165,8 +181,11 @@ export function isPremiumTenant(criteriaCount: number, threshold = 3): boolean {
 
 // Payback is the one-time portfolio fee divided by CFP per month.
 // Recurring monthly optimization fees are displayed separately and are not
-// part of the payback calculation.
-export const PORTFOLIO_ONE_TIME_FEES: Record<EliteTier, number> = {
+// part of the payback calculation. "below_minimum" is excluded here on
+// purpose — its one-time fee is 30% of that property's own rent (see
+// BELOW_MINIMUM_FEE_PERCENT), not a fixed amount shared by every
+// property in the tier the way essentials/signature/lujo are.
+export const PORTFOLIO_ONE_TIME_FEES: Record<Exclude<EliteTier, "below_minimum">, number> = {
   essentials: 900,
   signature: 1410,
   lujo: 1650,
@@ -246,7 +265,9 @@ export async function profileOwner(userId: string, registeredRole?: UserRole) {
         propEliteTier = classifyEliteTier(rent);
         if (propEliteTier) {
           cfp = calculateCFP(rent);
-          const fee = PORTFOLIO_ONE_TIME_FEES[propEliteTier];
+          const fee = propEliteTier === "below_minimum"
+            ? rent * BELOW_MINIMUM_FEE_PERCENT
+            : PORTFOLIO_ONE_TIME_FEES[propEliteTier];
           paybackMonths = calculatePayback(fee, cfp);
         }
       }
