@@ -5,13 +5,20 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Trash2, AlertTriangle } from "lucide-react";
+import type { PropertyServiceTier } from "@/types/database";
 
 export function DeletePropertyButton({
   propertyId,
   propertyLabel,
+  address,
+  city,
+  previousTier,
 }: {
   propertyId: string;
   propertyLabel: string;
+  address: string;
+  city: string;
+  previousTier: PropertyServiceTier | null;
 }) {
   const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -42,7 +49,18 @@ export function DeletePropertyButton({
         body: JSON.stringify({ type: "owner" }),
       }).catch(() => null);
 
-      // 4. Refresh the page
+      // 4. Notify commercial + the customer that this property was
+      // removed (and, if applicable, that the service tier changed as a
+      // result). Fire-and-forget: must never block or affect the delete
+      // success UX. Runs after profiling above so the email reflects the
+      // already-recalculated tier.
+      fetch("/api/property-delete-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, city, previousTier }),
+      }).catch((err) => console.error("Property delete email failed:", err));
+
+      // 5. Refresh the page
       router.refresh();
     } catch (err) {
       console.error("Delete property failed:", err);

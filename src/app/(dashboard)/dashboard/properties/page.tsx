@@ -196,6 +196,9 @@ export default async function PropertiesPage() {
                     <DeletePropertyButton
                       propertyId={property.id}
                       propertyLabel={`${property.property_type} — ${property.address}, ${property.city}`}
+                      address={property.address}
+                      city={property.city}
+                      previousTier={property.service_tier}
                     />
                   </div>
                 </CardContent>
