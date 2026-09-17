@@ -377,12 +377,29 @@ export default async function ServicesPage() {
   function formatServicePrice(svc: { price?: number | null; currency?: string | null; category?: string | null; name?: string | null }): string {
     const price = Number(svc.price ?? 0);
     const currency = svc.currency || "CAD";
+    const name = (svc.name || "").toLowerCase();
     if (svc.category === "plan" && price === 0) {
-      const name = (svc.name || "").toLowerCase();
       if (name.includes("founder")) return "30% of first month's rent (one-time, lifetime rate)";
-      if (name.includes("preferred") && name.includes("support")) return "30% / 28% of first month's rent (one-time)";
-      if (name.includes("preferred") && name.includes("premier")) return "30% / 28% with flexible installments";
+      // Steve — SERVICES_CATALOG_DESCRIPTIONS_FIX.md: these two cover
+      // 2-3 properties at different rates (30%/28%) — "per property"
+      // makes explicit that's not a single flat total for the whole
+      // portfolio.
+      if (name.includes("preferred") && name.includes("support")) return "30% / 28% of first month's rent (one-time) — per property";
+      if (name.includes("preferred") && name.includes("premier")) return "30% / 28% with flexible installments — per property";
       return "% of first month's rent (one-time)";
+    }
+    // Steve — SERVICES_CATALOG_DESCRIPTIONS_FIX.md: Elite's per-property
+    // portfolio fees (Essentials/Signature/Luxury) showed a flat "$900
+    // CAD" that reads as one total price regardless of how many
+    // properties the investor has, when it's actually charged per
+    // property. Scoped to just these three by name so it doesn't
+    // mislabel unrelated flat-priced services (e.g. PYMES plans,
+    // Tenant Property Search) that really are a single price.
+    const isElitePortfolioTier =
+      name.includes("elite") &&
+      (name.includes("essentials") || name.includes("signature") || name.includes("lujo") || name.includes("luxury"));
+    if (isElitePortfolioTier) {
+      return `$${price.toLocaleString()} ${currency} / property`;
     }
     return `$${price.toLocaleString()} ${currency}`;
   }
@@ -427,6 +444,15 @@ export default async function ServicesPage() {
 
   const otherServices = allServices?.filter((s) => {
     if (!s.target_roles || s.target_roles.length === 0) return false;
+    // Below Portfolio Minimum is a system-only automatic fallback applied
+    // to one specific property when its rent falls under $2,500 — never
+    // something a customer browses/chooses from a catalog. It must stay
+    // is_active in the DB (both this page's own per-property
+    // `eliteServices` lookup above and dashboard/page.tsx's portfolio
+    // breakdown, plus the checkout security check, all depend on the row
+    // existing) — only excluded from this browsable list. See
+    // SERVICES_CATALOG_DESCRIPTIONS_FIX.md.
+    if (s.name === ELITE_SUB_TIERS.below_minimum.dbServiceName) return false;
     return !s.target_roles.includes(profile.role);
   });
   const ownerOtherServiceGroups = isOwnerRole
