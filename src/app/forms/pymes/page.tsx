@@ -638,7 +638,6 @@ export default function PymesCalculatorPage() {
   const [formType, setFormType] = useState<"selector" | "diagnosis" | "captacion">("selector");
   const [step, setStep] = useState(1); // 1: company info, 2-8: questions, 9: submit
   const [error, setError] = useState<string | null>(null);
-  const [reviewCountdown, setReviewCountdown] = useState(0); // Steve #6-2: force read time on review step
 
   // Steve 4/28 round 2: admin-editable form metadata overlay.
   const fieldMeta = useFormFieldMeta("pymes_diagnosis");
@@ -688,24 +687,6 @@ export default function PymesCalculatorPage() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [handlePopState]);
-
-  // Steve #6-2: when entering review step (9), start 6-second countdown
-  // so user has time to read the urgency message before submitting
-  useEffect(() => {
-    if (step === 9 && formType === "diagnosis") {
-      setReviewCountdown(6);
-      const interval = setInterval(() => {
-        setReviewCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [step, formType]);
 
   async function nextStep() {
     if (step === 1) {
@@ -1145,58 +1126,9 @@ export default function PymesCalculatorPage() {
               </Button>
             )}
             {step === 9 ? (
-              <div className="flex flex-col items-end gap-1.5">
-                <Button type="submit" disabled={loading || reviewCountdown > 0}>
-                  {loading ? (
-                    "Submitting..."
-                  ) : reviewCountdown > 0 ? (
-                    <>
-                      {/* Steve — READ_MESSAGE_COUNTDOWN_UX_FIX.md: a
-                          draining ring makes the wait read as an
-                          intentional, running countdown rather than a
-                          frozen/broken button. stroke-dashoffset is
-                          recalculated once a second, but the CSS
-                          transition below smoothly animates between
-                          those steps instead of jumping. */}
-                      <svg
-                        viewBox="0 0 20 20"
-                        className="size-4 -rotate-90 text-primary-foreground"
-                        aria-hidden="true"
-                      >
-                        <circle
-                          cx="10"
-                          cy="10"
-                          r="8"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeOpacity="0.3"
-                          strokeWidth="2.5"
-                        />
-                        <circle
-                          cx="10"
-                          cy="10"
-                          r="8"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeDasharray={2 * Math.PI * 8}
-                          strokeDashoffset={2 * Math.PI * 8 * (1 - reviewCountdown / 6)}
-                          className="transition-[stroke-dashoffset] duration-1000 ease-linear"
-                        />
-                      </svg>
-                      Reviewing your plan… {reviewCountdown}s
-                    </>
-                  ) : (
-                    "Get Full Results"
-                  )}
-                </Button>
-                {reviewCountdown > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Take a moment to read the message above — this unlocks automatically.
-                  </p>
-                )}
-              </div>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Submitting..." : "Get Full Results"}
+              </Button>
             ) : step === 8 ? (
               <Button type="button" onClick={() => setStep(9)}>
                 See Results
