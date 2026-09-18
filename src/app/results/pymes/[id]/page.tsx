@@ -25,107 +25,24 @@ import {
 import { PymesRadarChart } from "@/components/charts/pymes-radar-chart";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { ScheduleRescueButton } from "@/components/pymes/schedule-rescue-button";
+import { PYMES_PLANS } from "@/lib/constants";
 
-// ─── Plan Details ────────────────────────────────────
-const PLAN_DETAILS: Record<
-  string,
-  {
-    name: string;
-    price: string;
-    priceNum: number;
-    upfront: string;
-    installment: string;
-    duration: string;
-    tagline: string;
-    features: string[];
-    color: string;
-    bgColor: string;
-    borderColor: string;
-  }
-> = {
-  rescue: {
-    name: "Rescue",
-    price: "$1,500 CAD",
-    priceNum: 1500,
-    upfront: "$750 CAD upfront (50%)",
-    installment: "$375 CAD × 2 monthly payments",
-    duration: "Minimum 2.5 months",
-    tagline: "Intensive intervention plan to exit critical mode and move to growth",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Digital presence emergency recovery",
-      "Basic optimization (Google Business, Social Media, SEO)",
-      "Lead capture structure & funnel setup",
-      "Direct 1-on-1 advisory sessions",
-      "Monthly KPI performance report",
-    ],
-    color: "text-red-600",
-    bgColor: "bg-red-50",
-    borderColor: "border-red-200",
-  },
-  growth: {
-    name: "Growth",
-    price: "$2,500 CAD",
-    priceNum: 2500,
-    upfront: "$1,250 CAD upfront (50%)",
-    installment: "$625 CAD × 2 monthly payments",
-    duration: "Minimum 4–5 months",
-    tagline: "Plan to overcome stagnation, correct weaknesses and start growing",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Marketing strategy development & execution",
-      "Conversion rate optimization",
-      "Campaign structure & ad management",
-      "Lead tracking system implementation",
-      "Market positioning analysis",
-      "Bi-weekly KPI performance reports",
-    ],
-    color: "text-orange-600",
-    bgColor: "bg-orange-50",
-    borderColor: "border-orange-200",
-  },
-  scale: {
-    name: "Scale",
-    price: "$3,800 CAD",
-    priceNum: 3800,
-    upfront: "$1,520 CAD upfront (40%)",
-    installment: "$570 CAD × 4 monthly payments",
-    duration: "Minimum 6 months",
-    tagline: "Plan to scale and maximize revenue with advanced strategies",
-    features: [
-      "Complete business diagnosis & sales leak analysis",
-      "Advanced multi-channel optimization",
-      "Channel expansion & new market entry",
-      "Growth strategy & scaling roadmap",
-      "Opportunity & competitor analysis",
-      "Weekly KPI performance reports",
-    ],
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-  },
-};
+// Steve — PYME_GROWTH_SCALE_FEATURES_FIX.md: this page used to keep its
+// own separate PLAN_DETAILS + ALL_FEATURES copies of the Rescue/Growth/
+// Scale plan data, duplicated from (and drifted out of sync with)
+// PYMES_PLANS in src/lib/constants.ts — the same source Dashboard home
+// and Recommended Services already share via getPymesPlanForUser(). Now
+// reads PYMES_PLANS directly instead, so a future correction only needs
+// to happen in one place. ALL_FEATURES (the row list for the "Compare
+// All Plans" table) is derived from it rather than hand-maintained, so
+// it can't silently miss a newly added feature again either.
+const PLAN_DETAILS = PYMES_PLANS;
 
-// ─── All features across plans (for comparison table) ──
-const ALL_FEATURES = [
-  "Complete business diagnosis & sales leak analysis",
-  "Digital presence emergency recovery",
-  "Basic optimization (Google Business, Social Media, SEO)",
-  "Lead capture structure & funnel setup",
-  "Direct 1-on-1 advisory sessions",
-  "Marketing strategy development & execution",
-  "Conversion rate optimization",
-  "Campaign structure & ad management",
-  "Lead tracking system implementation",
-  "Market positioning analysis",
-  "Advanced multi-channel optimization",
-  "Channel expansion & new market entry",
-  "Growth strategy & scaling roadmap",
-  "Opportunity & competitor analysis",
-  "Monthly KPI performance report",
-  "Bi-weekly KPI performance reports",
-  "Weekly KPI performance reports",
-];
+const ALL_FEATURES = Array.from(
+  new Set(
+    (["rescue", "growth", "scale"] as const).flatMap((key) => PLAN_DETAILS[key].features),
+  ),
+);
 
 const QUESTION_LABELS = [
   { key: "q1_online_presence", label: "Online Presence" },
