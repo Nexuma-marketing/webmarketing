@@ -32,7 +32,7 @@ import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { getFoundersAvailability } from "@/lib/founders-plan";
-import { OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
+import { OWNER_TIERS, ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 import { OWNER_PRIMARY_PLAN, formatOwnerPlanPrice } from "@/lib/owner-plan-display";
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
@@ -82,7 +82,7 @@ function OtherServiceCard({
     <Card className="opacity-75">
       <CardHeader>
         <div className="flex items-start justify-between">
-          <CardTitle className="text-lg">{service.name}</CardTitle>
+          <CardTitle className="text-lg">{displayServiceName(service.name)}</CardTitle>
           <Badge variant="outline" className="capitalize">
             {service.category}
           </Badge>
@@ -1049,7 +1049,7 @@ export default async function ServicesPage() {
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <CardTitle className="text-lg">
-                        {service.name as string}
+                        {displayServiceName(service.name as string)}
                       </CardTitle>
                       <Badge className="bg-amber-100 text-amber-800 border border-amber-300 capitalize">
                         {isPlanLevel ? "Plan" : (service.category as string)}
@@ -1113,7 +1113,7 @@ export default async function ServicesPage() {
               <Card key={service.id} className="flex flex-col">
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{service.name}</CardTitle>
+                    <CardTitle className="text-lg">{displayServiceName(service.name)}</CardTitle>
                     <Badge variant="outline" className="capitalize">
                       {service.category}
                     </Badge>

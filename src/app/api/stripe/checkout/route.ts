@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
-import { ELITE_SUB_TIERS } from "@/lib/constants";
+import { ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -289,7 +289,15 @@ export async function POST(request: Request) {
               price_data: {
                 currency: (service.currency || "cad").toLowerCase(),
                 product_data: {
-                  name: propertyLabel ? `${service.name} — ${propertyLabel}` : service.name,
+                  // Steve — LUJO_CARD_TITLE_DISPLAY_FIX.md: this is the
+                  // literal product name shown on Stripe's hosted
+                  // checkout page and the customer's receipt — genuinely
+                  // customer-facing, unlike `service.name` used for the
+                  // security check above (untouched). Only the display
+                  // string is translated.
+                  name: propertyLabel
+                    ? `${displayServiceName(service.name)} — ${propertyLabel}`
+                    : displayServiceName(service.name),
                   description:
                     (service.description || "") + descriptionSuffix || undefined,
                 },

@@ -408,6 +408,22 @@ export const ELITE_SUB_TIERS: Record<
   },
 };
 
+// Steve — LUJO_CARD_TITLE_DISPLAY_FIX.md: `services.name` for the Luxury
+// row is intentionally still its internal lookup key
+// ("Plan: Elite — Lujo") — ELITE_SUB_TIERS.lujo.dbServiceName and the
+// Stripe checkout security check (src/app/api/stripe/checkout/route.ts)
+// both match against it verbatim, so it can't be renamed in the DB (see
+// SERVICES_CATALOG_DESCRIPTIONS_FIX.md, which fixed the description
+// text but deliberately left this raw name alone). Call this wherever a
+// `services.name` value is about to be shown as visible text — never
+// where it's compared/looked up — so "Lujo" never reaches a customer.
+export function displayServiceName(name: string): string {
+  if (name === ELITE_SUB_TIERS.lujo.dbServiceName) {
+    return `Plan: Elite — ${ELITE_SUB_TIERS.lujo.name}`;
+  }
+  return name;
+}
+
 export const IMAGE_STATUS_COLORS: Record<
   string,
   { bg: string; text: string }
