@@ -1145,13 +1145,58 @@ export default function PymesCalculatorPage() {
               </Button>
             )}
             {step === 9 ? (
-              <Button type="submit" disabled={loading || reviewCountdown > 0}>
-                {loading
-                  ? "Submitting..."
-                  : reviewCountdown > 0
-                    ? `Read the message (${reviewCountdown}s)`
-                    : "Get Full Results"}
-              </Button>
+              <div className="flex flex-col items-end gap-1.5">
+                <Button type="submit" disabled={loading || reviewCountdown > 0}>
+                  {loading ? (
+                    "Submitting..."
+                  ) : reviewCountdown > 0 ? (
+                    <>
+                      {/* Steve — READ_MESSAGE_COUNTDOWN_UX_FIX.md: a
+                          draining ring makes the wait read as an
+                          intentional, running countdown rather than a
+                          frozen/broken button. stroke-dashoffset is
+                          recalculated once a second, but the CSS
+                          transition below smoothly animates between
+                          those steps instead of jumping. */}
+                      <svg
+                        viewBox="0 0 20 20"
+                        className="size-4 -rotate-90 text-primary-foreground"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="10"
+                          cy="10"
+                          r="8"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeOpacity="0.3"
+                          strokeWidth="2.5"
+                        />
+                        <circle
+                          cx="10"
+                          cy="10"
+                          r="8"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeDasharray={2 * Math.PI * 8}
+                          strokeDashoffset={2 * Math.PI * 8 * (1 - reviewCountdown / 6)}
+                          className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+                        />
+                      </svg>
+                      Reviewing your plan… {reviewCountdown}s
+                    </>
+                  ) : (
+                    "Get Full Results"
+                  )}
+                </Button>
+                {reviewCountdown > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Take a moment to read the message above — this unlocks automatically.
+                  </p>
+                )}
+              </div>
             ) : step === 8 ? (
               <Button type="button" onClick={() => setStep(9)}>
                 See Results
