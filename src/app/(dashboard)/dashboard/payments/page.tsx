@@ -17,10 +17,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Download, Receipt, Calendar } from "lucide-react";
+import { CreditCard, Download, Receipt, Calendar, Wallet } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/admin";
 import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscription-button";
 import { RefundRequestButton } from "@/components/dashboard/refund-request-button";
+import { PropertyBalanceSummary, type InstallmentDisplay } from "@/components/dashboard/property-balance-summary";
+import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
+import { computeBalanceCents, PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
+import { getCompletedPaymentForPropertyService } from "@/lib/payment-lookup";
 
 const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
   completed: { variant: "default", label: "Completed" },
@@ -37,12 +41,19 @@ export default async function PaymentsPage() {
 
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const isOwnerRole = profile?.role === "propietario" || profile?.role === "propietario_preferido";
+
   // Fetch payments with service/plan names
   const { data: payments, error: paymentsError } = await supabase
     .from("payments")
     .select(`
       *,
-      services:service_id (name),
+      services:service_id (name, category),
       pymes_plans:pymes_plan_id (name)
     `)
     .eq("user_id", user.id)
@@ -83,6 +94,114 @@ export default async function PaymentsPage() {
         address: prop.address as string,
         city: prop.city as string,
       };
+    }
+  }
+
+  // PROMPT2 items 2/3/5: pending-balance + Pay-remaining-balance /
+  // installment display, one row per property with a completed plan
+  // upfront payment. Property rank (30%/28% for Support/Premier) uses
+  // the same index-into-owner's-properties-ordered-by-created_at
+  // convention as src/lib/owner-plan-display.ts's percentageForPlan —
+  // more accurate than plan-percentage.ts's flat getPlanPercentage()
+  // for a multi-property owner (see the payment-flow report).
+  interface PlanBalanceRow {
+    propertyId: string;
+    propertyLabel: string;
+    planName: string;
+    upfrontPaidCents: number;
+    pendingBalanceCents: number;
+    balanceInvoiceUrl: string | null;
+    balanceInvoiceStatus: string | null;
+    installments?: InstallmentDisplay[];
+  }
+  const planBalanceRows: PlanBalanceRow[] = [];
+  let priorityListingAddOn: { id: string; price: number; currency: string | null } | null = null;
+  let priorityListingPropertyId: string | undefined;
+  let priorityListingAlreadyPaid = false;
+
+  if (isOwnerRole) {
+    const { data: ownerProperties } = await supabase
+      .from("properties")
+      .select("id, address, city, monthly_rent, balance_invoice_url, balance_invoice_status")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true });
+    const ownerPropIds = (ownerProperties || []).map((p) => p.id as string);
+
+    const { data: installmentRows } = ownerPropIds.length > 0
+      ? await supabase
+          .from("plan_installments")
+          .select("property_id, sequence, due_date, amount_cents, status, hosted_invoice_url")
+          .in("property_id", ownerPropIds)
+      : { data: [] as Record<string, unknown>[] };
+    const installmentsByProperty: Record<string, InstallmentDisplay[]> = {};
+    for (const row of installmentRows || []) {
+      const pid = row.property_id as string;
+      if (!installmentsByProperty[pid]) installmentsByProperty[pid] = [];
+      installmentsByProperty[pid].push({
+        sequence: row.sequence as number,
+        amountCents: row.amount_cents as number,
+        dueDate: row.due_date as string,
+        status: row.status as InstallmentDisplay["status"],
+        hostedInvoiceUrl: row.hosted_invoice_url as string | null,
+      });
+    }
+
+    // Backward-compat: pre-existing Low Price/Founders/Support/Premier
+    // payment rows have property_id = null (checkout never passed it
+    // before this change). Unambiguous fallback for a single-property
+    // owner only — see payment-lookup.ts's docstrings for the same
+    // pattern used elsewhere.
+    const isSingleProperty = ownerPropIds.length === 1;
+    (ownerProperties || []).forEach((prop, index) => {
+      const propId = prop.id as string;
+      const planPayment = (payments || []).find(
+        (p) =>
+          (p.property_id === propId || (isSingleProperty && !p.property_id)) &&
+          p.status === "completed" &&
+          (p.services as { category?: string } | null)?.category === "plan",
+      );
+      if (!planPayment) return;
+      const planName = (planPayment.services as { name?: string } | null)?.name || "Plan";
+      const lowerName = planName.toLowerCase();
+      const isPremierProperty = lowerName.includes("preferred") && lowerName.includes("premier");
+      const isSupportOrPremier = lowerName.includes("preferred") && (lowerName.includes("support") || lowerName.includes("premier"));
+      const percentage = lowerName.includes("low price")
+        ? 0.35
+        : lowerName.includes("founder")
+          ? 0.3
+          : isSupportOrPremier
+            ? (index === 0 ? 0.3 : 0.28)
+            : null;
+      if (percentage === null) return; // Elite/flat-fee plans have no percentage balance
+      const rent = Number(prop.monthly_rent) || 0;
+      const pendingBalanceCents = computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
+      planBalanceRows.push({
+        propertyId: propId,
+        propertyLabel: `${prop.address}, ${prop.city}`,
+        planName,
+        upfrontPaidCents: PLAN_UPFRONT_AMOUNT_CAD * 100,
+        pendingBalanceCents,
+        balanceInvoiceUrl: isPremierProperty ? null : (prop.balance_invoice_url as string | null),
+        balanceInvoiceStatus: isPremierProperty ? null : (prop.balance_invoice_status as string | null),
+        installments: isPremierProperty ? installmentsByProperty[propId] : undefined,
+      });
+    });
+
+    // Item 7: standalone priority-listing add-on purchase for an owner
+    // who skipped it at checkout — attached to their first property
+    // (same default used at checkout time; Low Price is single-property
+    // by definition).
+    const { data: addOnSvc } = await supabase
+      .from("services")
+      .select("id, price, currency")
+      .eq("name", "Add-on: Priority Listing Placement (1 month)")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (addOnSvc && ownerPropIds[0]) {
+      priorityListingAddOn = addOnSvc as { id: string; price: number; currency: string | null };
+      priorityListingPropertyId = ownerPropIds[0];
+      const paid = await getCompletedPaymentForPropertyService(supabase, ownerPropIds[0], addOnSvc.id as string);
+      priorityListingAlreadyPaid = !!paid;
     }
   }
 
@@ -186,6 +305,62 @@ export default async function PaymentsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* PROMPT2 items 2/3/5: pending balance + Pay remaining balance /
+          installment schedule, one card per property with a completed
+          plan upfront payment. This is the primary, always-available
+          surface for paying the balance — no dependency on Stripe's
+          own invoice email ever arriving (item 3). */}
+      {planBalanceRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Plan Balances
+            </CardTitle>
+            <CardDescription>
+              Your remaining balance per property, and how to pay it once it becomes payable.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {planBalanceRows.map((row) => (
+              <div key={row.propertyId} className="space-y-1.5">
+                <p className="text-sm font-medium">{row.propertyLabel}</p>
+                <PropertyBalanceSummary
+                  planName={row.planName}
+                  upfrontPaidCents={row.upfrontPaidCents}
+                  pendingBalanceCents={row.pendingBalanceCents}
+                  balanceInvoiceUrl={row.balanceInvoiceUrl}
+                  balanceInvoiceStatus={row.balanceInvoiceStatus}
+                  installments={row.installments}
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PROMPT2 item 7: standalone priority-listing add-on purchase
+          for an owner who skipped it at checkout. */}
+      {priorityListingAddOn && !priorityListingAlreadyPaid && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Priority Listing Placement</CardTitle>
+            <CardDescription>
+              Boost your property to a priority listing position for 1 month.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PaidOrCheckout
+              alreadyPaid={false}
+              type="service"
+              serviceId={priorityListingAddOn.id}
+              propertyId={priorityListingPropertyId}
+              label={`Add priority listing — $${Number(priorityListingAddOn.price)} ${priorityListingAddOn.currency || "CAD"}`}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Active installment subscriptions */}
       {subscriptionGroups.length > 0 && (

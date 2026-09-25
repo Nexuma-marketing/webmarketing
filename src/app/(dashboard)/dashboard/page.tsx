@@ -13,7 +13,7 @@ import { Building2, Heart, Crown, CheckCircle2, CreditCard, TrendingUp, AlertTri
 import Link from "next/link";
 import { ROLE_LABELS, OWNER_TIERS, ELITE_SUB_TIERS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/admin";
-import { CheckoutButton } from "@/components/checkout/checkout-button";
+import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
@@ -21,6 +21,10 @@ import { getFoundersAvailability } from "@/lib/founders-plan";
 import { OWNER_PRIMARY_PLAN } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
+import {
+  getCompletedPaymentKeysForProperties,
+  getCompletedPaymentForUserPymesPlan,
+} from "@/lib/payment-lookup";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -194,6 +198,7 @@ export default async function DashboardPage() {
     ? ([
         primaryPlan?.serviceName,
         "Plan: Founder Package — Visionary Owners",
+        "Add-on: Priority Listing Placement (1 month)",
         ...(isInvestor ? Object.values(ELITE_SUB_TIERS).map((t) => t.dbServiceName) : []),
       ].filter(Boolean) as string[])
     : [];
@@ -223,6 +228,18 @@ export default async function DashboardPage() {
     (plan) => plan.name === "Founders Package — Visionary Owners",
   )?.details || [];
   const foundersAvailability = isOwnerNotInvestor ? await getFoundersAvailability() : null;
+
+  // PROMPT2 items 2/4/8: same "already paid" bulk lookup as Services —
+  // see src/lib/payment-lookup.ts. Drives PaidOrCheckout everywhere on
+  // this page too, since item 4 explicitly flags Dashboard home as one
+  // of the duplicate render sites that must also stop double-charging.
+  const ownerPropertyIds = ownerProperties.map((p) => p.id);
+  const paidServiceKeys = ownerPropertyIds.length > 0
+    ? await getCompletedPaymentKeysForProperties(supabase, ownerPropertyIds)
+    : new Set<string>();
+  const pymesAlreadyPaid = pymesPlanRecord?.id
+    ? !!(await getCompletedPaymentForUserPymesPlan(supabase, user.id, pymesPlanRecord.id))
+    : false;
 
   return (
     <div className="space-y-6">
@@ -435,14 +452,26 @@ export default async function DashboardPage() {
                 </ul>
               </div>
             )}
-            {primaryPlan && (
+            {primaryPlan && ownerTier === "basic" && (
               <PrimaryPlanPricingCard
                 primaryPlan={primaryPlan}
                 primaryPlanTerms={primaryPlanTerms}
                 primaryPlanService={primaryPlanService}
                 accentColorClassName={ownerPlan.color}
                 ownerProperties={ownerProperties}
+                propertyId={ownerProperties[0]?.id}
+                alreadyPaid={!!primaryPlanService && !!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${primaryPlanService.id}`)}
+                addOnService={planServicesByName["Add-on: Priority Listing Placement (1 month)"]}
               />
+            )}
+            {/* PROMPT2 item 6: preferred_owners' Support Tier is now
+                per-property pricing — send the owner to Services for
+                the real breakdown instead of duplicating it here. */}
+            {primaryPlan && ownerTier === "preferred_owners" && (
+              <p className="text-sm text-muted-foreground">
+                {primaryPlan.name} pricing is per property — see the full breakdown and pay in{" "}
+                <Link href="/dashboard/services" className="text-primary underline">Services</Link>.
+              </p>
             )}
             {ownerTier === "preferred_owners" && (
               <Link
@@ -474,6 +503,7 @@ export default async function DashboardPage() {
               properties={ownerProperties}
               eliteServices={eliteServices}
               totalCFP={totalCFP}
+              paidServiceKeys={paidServiceKeys}
             />
           </CardContent>
         </Card>
@@ -486,9 +516,12 @@ export default async function DashboardPage() {
           terms={foundersPlanTerms}
         >
           {foundersPlanService && Number(foundersPlanService.price) > 0 ? (
-            <CheckoutButton
+            <PaidOrCheckout
+              alreadyPaid={!!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${foundersPlanService.id}`)}
               type="service"
               serviceId={foundersPlanService.id}
+              propertyId={ownerProperties[0]?.id}
+              netAgainstExisting
               label={`Upgrade to Founders — Pay $${Number(foundersPlanService.price)} ${foundersPlanService.currency || "CAD"} upfront`}
             />
           ) : (
@@ -503,6 +536,7 @@ export default async function DashboardPage() {
         <PymesPlanCard
           planDetails={pymesPlanDetails}
           pymesPlanRecordId={pymesPlanRecord?.id}
+          alreadyPaid={pymesAlreadyPaid}
         />
       )}
 

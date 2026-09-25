@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
 import { ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
+import { computeNetAmountDueCents } from "@/lib/plan-switch";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { type, serviceId, pymesPlanId, propertyId, promoCode } = await request.json();
+    const { type, serviceId, pymesPlanId, propertyId, addOnServiceId, netAgainstExisting, promoCode } = await request.json();
 
     // Get or create Stripe customer
     const { data: profile } = await supabase
@@ -228,13 +229,9 @@ export async function POST(request: Request) {
         // `monthly_rent` — never trusted from client input — and
         // charged in FULL via Stripe, same as Essentials/Signature/
         // Luxury's full-fee checkout, no manual balance step.
-        const chargeAmount = eliteTierInfo?.oneTimeFeePercent
+        let chargeAmount = eliteTierInfo?.oneTimeFeePercent
           ? Math.round(propertyMonthlyRent * eliteTierInfo.oneTimeFeePercent * 100) / 100
           : service.price;
-
-        const baseCents = Math.round(chargeAmount * 100);
-        let unitAmount = baseCents;
-        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
         // Steve: full disclosure before checkout — when this purchase
         // will also enroll the property in a recurring monthly
         // maintenance-fee subscription, say so plainly in the Stripe
@@ -243,6 +240,55 @@ export async function POST(request: Request) {
         let descriptionSuffix = eliteTierInfo
           ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically each month until canceled.`
           : "";
+
+        // PROMPT2 item 8: "smart balance" plan switch (Founders and any
+        // future plan-to-plan switch on the same property). Nets
+        // whatever was already paid upfront for this property (any
+        // prior plan) against the new plan's total fee — see
+        // src/lib/plan-switch.ts. Only meaningful with a propertyId.
+        if (netAgainstExisting && propertyId) {
+          const net = await computeNetAmountDueCents(supabase, {
+            propertyId,
+            newServiceId: serviceId,
+          });
+          if (!net) {
+            return NextResponse.json(
+              { error: "Could not resolve property/service for plan switch" },
+              { status: 404 },
+            );
+          }
+          if (net.netDueCents === 0) {
+            // Already fully covered by a prior payment on this property —
+            // no new Stripe charge. Record a $0 audit row (never a
+            // silent no-op) and send the user straight to Payment
+            // History; downstream balance flow (item 1) proceeds from
+            // there exactly as if the upfront had just been paid.
+            const { error: noopError } = await supabaseAdmin.from("payments").insert({
+              user_id: user.id,
+              service_id: serviceId,
+              property_id: propertyId,
+              stripe_session_id: `plan_switch_noop_${propertyId}_${Date.now()}`,
+              amount: 0,
+              currency: (service.currency || "CAD").toUpperCase(),
+              payment_type: "plan_switch_noop",
+              status: "completed",
+            });
+            if (noopError) {
+              console.error("[stripe-checkout] Failed to record plan_switch_noop row:", noopError);
+            }
+            return NextResponse.json({
+              redirectUrl: `${APP_URL}/dashboard/payments?planSwitched=1`,
+            });
+          }
+          chargeAmount = net.netDueCents / 100;
+          if (net.alreadyPaidCents > 0) {
+            descriptionSuffix += `\nNetted against $${net.alreadyPaidCents / 100} CAD already paid on this property — you only pay the difference.`;
+          }
+        }
+
+        const baseCents = Math.round(chargeAmount * 100);
+        let unitAmount = baseCents;
+        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
         if (promoCode) {
           const v = await validatePromoCode(
             String(promoCode),
@@ -258,6 +304,47 @@ export async function POST(request: Request) {
           // disclosure above (when present) still reaches the customer
           // even when a promo code is also applied.
           descriptionSuffix += `\nPromo applied: ${v.appliedLabel}`;
+        }
+
+        // PROMPT2 item 7: optional +$100 priority listing placement
+        // add-on (Low Price plan) as a second, clearly itemized Stripe
+        // line item on the SAME checkout session — not a separate
+        // purchase. Promo codes only apply to the main plan line item
+        // above, not the add-on.
+        let addOnLineItem: {
+          price_data: {
+            currency: string;
+            product_data: { name: string; description?: string };
+            unit_amount: number;
+            tax_behavior: "exclusive";
+          };
+          quantity: 1;
+          tax_rates?: string[];
+        } | null = null;
+        let addOnAmountCents = 0;
+        if (addOnServiceId) {
+          const { data: addOnService } = await supabase
+            .from("services")
+            .select("id, name, description, price, currency, is_active")
+            .eq("id", addOnServiceId)
+            .eq("is_active", true)
+            .single();
+          if (addOnService) {
+            addOnAmountCents = Math.round(Number(addOnService.price) * 100);
+            addOnLineItem = {
+              price_data: {
+                currency: (addOnService.currency || "cad").toLowerCase(),
+                product_data: {
+                  name: displayServiceName(addOnService.name as string),
+                  description: (addOnService.description as string) || undefined,
+                },
+                unit_amount: addOnAmountCents,
+                tax_behavior: "exclusive",
+              },
+              quantity: 1,
+              ...taxFields(),
+            };
+          }
         }
 
         const session = await stripe.checkout.sessions.create({
@@ -307,6 +394,7 @@ export async function POST(request: Request) {
               quantity: 1,
               ...taxFields(),
             },
+            ...(addOnLineItem ? [addOnLineItem] : []),
           ],
           success_url: `${APP_URL}/dashboard/payments/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${APP_URL}/dashboard/services?cancelled=true`,
@@ -322,6 +410,13 @@ export async function POST(request: Request) {
             // tier (validated above) — never trusted from raw client
             // input.
             ...(eliteTierForSubscription ? { elite_tier: eliteTierForSubscription } : {}),
+            // PROMPT2 item 7: read by the webhook to split this one
+            // Checkout Session into two `payments` rows (main plan +
+            // add-on) so the add-on's own "already purchased" check
+            // (item 4) works and it doesn't get offered again.
+            ...(addOnLineItem
+              ? { addon_service_id: addOnServiceId, addon_amount_cents: String(addOnAmountCents) }
+              : {}),
             ...(promoMeta
               ? {
                   promotion_id: promoMeta.promotionId,

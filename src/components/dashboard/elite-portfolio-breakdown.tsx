@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, Zap } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CheckoutButton } from "@/components/checkout/checkout-button";
+import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
 import { ELITE_SUB_TIERS } from "@/lib/constants";
 
 export interface EliteBreakdownProperty {
@@ -33,10 +33,16 @@ export function ElitePortfolioBreakdown({
   properties,
   eliteServices,
   totalCFP,
+  paidServiceKeys,
 }: {
   properties: EliteBreakdownProperty[];
   eliteServices: Partial<Record<string, EliteServiceInfo>>;
   totalCFP?: number;
+  // PROMPT2 item 4: Set of "propertyId:serviceId" keys with a completed
+  // payment already on file — see
+  // src/lib/payment-lookup.ts::getCompletedPaymentKeysForProperties.
+  // Optional so existing callers that haven't been updated yet still work.
+  paidServiceKeys?: Set<string>;
 }) {
   return (
     <div className="space-y-3">
@@ -135,7 +141,9 @@ export function ElitePortfolioBreakdown({
 
                 {service && (tier.oneTimeFeePercent ? rent > 0 : Number(service.price) > 0) ? (
                   <div className="space-y-1.5">
-                    <CheckoutButton
+                    <PaidOrCheckout
+                      alreadyPaid={!!paidServiceKeys?.has(`${prop.id}:${service.id}`)}
+                      paidLabel="Portfolio fee paid ✓ — View history"
                       type="service"
                       serviceId={service.id}
                       propertyId={prop.id}

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { generateBalanceInvoice } from "@/lib/balance-invoice";
 
 // Steve 6/5 (6-2.md #23): Property Management at /admin/properties was
 // showing "Unknown" for every Owner column because the PostgREST embed
@@ -42,7 +41,7 @@ export async function GET() {
   const { data: propertyRows, error: propErr } = await supabaseAdmin
     .from("properties")
     .select(
-      "id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, vacancy_date, availability_date, near_parks, near_churches, near_skytrain, skytrain_lines, near_bus, near_mall, social_life, nearby_supermarkets, cfp_monthly, payback_months, balance_invoice_id, balance_invoice_status, balance_invoice_amount, balance_invoice_sent_at, balance_invoice_paid_at, created_at",
+      "id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, vacancy_date, availability_date, near_parks, near_churches, near_skytrain, skytrain_lines, near_bus, near_mall, social_life, nearby_supermarkets, cfp_monthly, payback_months, balance_invoice_id, balance_invoice_status, balance_invoice_amount, balance_invoice_sent_at, balance_invoice_paid_at, balance_invoice_url, tenant_lease_signed_at, tenant_lease_signed_by, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -153,6 +152,8 @@ export async function GET() {
       balance_invoice_amount: (p.balance_invoice_amount as number | null) ?? null,
       balance_invoice_sent_at: (p.balance_invoice_sent_at as string | null) ?? null,
       balance_invoice_paid_at: (p.balance_invoice_paid_at as string | null) ?? null,
+      balance_invoice_url: (p.balance_invoice_url as string | null) ?? null,
+      tenant_lease_signed_at: (p.tenant_lease_signed_at as string | null) ?? null,
       created_at: p.created_at as string,
       owner_name: owner?.full_name || "Unknown",
       owner_email: owner?.email || "",
@@ -211,23 +212,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Steve 6/11 (6-2.md #53): toggling Available -> false is Alex's
-  // signal that the tenant signed the lease. Trigger the residential
-  // % balance invoice flow on a best-effort basis — failure here
-  // doesn't roll back the toggle, but the response carries the
-  // invoice result so Sales sees what happened.
-  // Steve 6/11: call the logic in-process via the shared lib. The
-  // previous server-to-server fetch was returning null because
-  // cookie / internal-routing didn't survive the round-trip.
-  let balanceInvoice: unknown = null;
-  if (is_available === false) {
-    try {
-      balanceInvoice = await generateBalanceInvoice(id);
-    } catch (err) {
-      console.error("balance invoice trigger failed:", err);
-      balanceInvoice = { success: false, error: err instanceof Error ? err.message : "unknown" };
-    }
-  }
-
-  return NextResponse.json({ success: true, balance_invoice: balanceInvoice });
+  // PROMPT2 item 1: `is_available` no longer implicitly means "tenant
+  // signed the lease" — it's used for several unrelated reasons (owner
+  // withdraws before finding a tenant, owner rents independently and
+  // tells us, etc.) and conflating it with lease-signed silently
+  // mis-triggered (or silently failed to trigger, with errors
+  // swallowed) the balance-invoice flow. That flow now only fires from
+  // the explicit "Tenant signed lease" action —
+  // POST /api/admin/properties/[id]/tenant-signed-lease — scoped per
+  // property, available from both the admin properties table and the
+  // property detail modal.
+  return NextResponse.json({ success: true });
 }

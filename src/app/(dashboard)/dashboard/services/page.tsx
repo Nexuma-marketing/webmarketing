@@ -27,18 +27,26 @@ import {
   MapPin,
 } from "lucide-react";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
+import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
+import { PropertyBalanceSummary } from "@/components/dashboard/property-balance-summary";
 import { MatchedPropertyCard } from "@/components/tenant/matched-property-card";
 import { ActivePromotionsBanner } from "@/components/dashboard/active-promotions-banner";
 import { FoundersBanner } from "@/components/dashboard/founders-banner";
 import { ElitePortfolioBreakdown, type EliteServiceInfo } from "@/components/dashboard/elite-portfolio-breakdown";
+import { OwnerPlanPortfolioBreakdown, type PropertyBalanceInfo } from "@/components/dashboard/owner-plan-portfolio-breakdown";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { OWNER_TIERS, ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 import { OWNER_PRIMARY_PLAN, formatOwnerPlanPrice } from "@/lib/owner-plan-display";
+import { computeBalanceCents, getPlanPercentage, PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { PYMES_PLANS } from "@/lib/constants";
 import { CleaningServicesCard } from "@/components/dashboard/cleaning-services-card";
+import {
+  getCompletedPaymentKeysForProperties,
+  getCompletedPaymentForUserPymesPlan,
+} from "@/lib/payment-lookup";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
 // el enlace esta roto, no hace nada". The plan cards used
@@ -105,6 +113,16 @@ function OtherServiceCard({
           </ul>
         )}
         <span className="text-lg font-bold">{formatServicePrice(service)}</span>
+        {/* PROMPT2 item 9: this card has no purchase button — make sure
+            that's not read as a dead end. Visually prominent, not a
+            small gray caption, since these cards render at opacity-75. */}
+        <p className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary">
+          Have questions or want to know more? Click{" "}
+          <a href="#contact" className="underline underline-offset-2">
+            Schedule a Free Consultation
+          </a>{" "}
+          below.
+        </p>
       </CardContent>
     </Card>
   );
@@ -191,17 +209,64 @@ export default async function ServicesPage() {
     }
   }
 
+  // ─── PROMPT2 items 2/3/4/5/6: already-paid + balance data ──────
+  // One bulk query per owner instead of N — see
+  // src/lib/payment-lookup.ts. `paidServiceKeys` drives item 4 (block
+  // double-charging) everywhere on this page; `balanceByProperty`
+  // drives items 2/3/5's pending-balance + Pay-remaining-balance /
+  // installment display inside OwnerPlanPortfolioBreakdown.
+  const ownerPropertyIds = ownerProperties.map((p) => p.id);
+  const paidServiceKeys = ownerPropertyIds.length > 0
+    ? await getCompletedPaymentKeysForProperties(supabase, ownerPropertyIds)
+    : new Set<string>();
+  const balanceByProperty: Record<string, PropertyBalanceInfo> = {};
+  if (ownerPropertyIds.length > 0) {
+    const [{ data: balanceRows }, { data: installmentRows }] = await Promise.all([
+      supabase
+        .from("properties")
+        .select("id, balance_invoice_url, balance_invoice_status")
+        .in("id", ownerPropertyIds),
+      supabase
+        .from("plan_installments")
+        .select("property_id, sequence, due_date, amount_cents, status, hosted_invoice_url")
+        .in("property_id", ownerPropertyIds),
+    ]);
+    for (const row of balanceRows || []) {
+      balanceByProperty[row.id as string] = {
+        balanceInvoiceUrl: row.balance_invoice_url as string | null,
+        balanceInvoiceStatus: row.balance_invoice_status as string | null,
+      };
+    }
+    for (const row of installmentRows || []) {
+      const pid = row.property_id as string;
+      if (!balanceByProperty[pid]) balanceByProperty[pid] = {};
+      if (!balanceByProperty[pid].installments) balanceByProperty[pid].installments = [];
+      balanceByProperty[pid].installments!.push({
+        sequence: row.sequence as number,
+        amountCents: row.amount_cents as number,
+        dueDate: row.due_date as string,
+        status: row.status as "scheduled" | "invoiced" | "paid" | "failed" | "voided",
+        hostedInvoiceUrl: row.hosted_invoice_url as string | null,
+      });
+    }
+  }
+
   // ─── PYMES data ────────────────────────────────
   // Steve — PYME dashboard/services UX fix: resolved through the same
   // getPymesPlanForUser() helper the Dashboard home page now uses, so
   // both pages show identical plan content/pricing/overrides.
   let pymesPlanDetails: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanDetails"] = null;
   let pymesPlanRecord: Awaited<ReturnType<typeof getPymesPlanForUser>>["pymesPlanRecord"] = null;
+  let pymesAlreadyPaid = false;
 
   if (isPymesRole) {
     const pymesInfo = await getPymesPlanForUser(supabase, user.id);
     pymesPlanDetails = pymesInfo.pymesPlanDetails;
     pymesPlanRecord = pymesInfo.pymesPlanRecord;
+    if (pymesPlanRecord?.id) {
+      const paid = await getCompletedPaymentForUserPymesPlan(supabase, user.id, pymesPlanRecord.id);
+      pymesAlreadyPaid = !!paid;
+    }
   }
 
   // ─── Tenant data: matched properties (Steve #2: show ALL matches with full info) ────────────
@@ -654,14 +719,69 @@ export default async function ServicesPage() {
               {/* Steve — plan-pricing block: name, per-property $ breakdown,
                   terms, purchase CTA. Same PrimaryPlanPricingCard shown on
                   Dashboard home's "Your Service Tier" card, so customers
-                  don't have to leave this page to see what they'd pay. */}
-              {primaryPlan && (
+                  don't have to leave this page to see what they'd pay.
+                  PROMPT2 item 6: preferred_owners' primary plan (Support
+                  Tier) is per-property pricing — its own
+                  OwnerPlanPortfolioBreakdown renders below instead of this
+                  single-card component, which stays for basic (Low
+                  Price — inherently single-property). */}
+              {primaryPlan && ownerTier === "basic" && (
                 <PrimaryPlanPricingCard
                   primaryPlan={primaryPlan}
                   primaryPlanTerms={primaryPlanTerms}
                   primaryPlanService={primaryPlanService}
                   accentColorClassName={tierDetails.color}
                   ownerProperties={ownerProperties}
+                  propertyId={ownerProperties[0]?.id}
+                  alreadyPaid={!!primaryPlanService && !!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${primaryPlanService.id}`)}
+                  addOnService={servicesByDbName["Add-on: Priority Listing Placement (1 month)"]}
+                />
+              )}
+
+              {/* PROMPT2 item 2: pending balance shown as soon as the
+                  upfront succeeds, for whichever basic-tier plan (Low
+                  Price or Founders) was actually purchased on this
+                  property — informational even before item 1's "Tenant
+                  signed lease" trigger makes it payable. */}
+              {ownerTier === "basic" && ownerProperties[0] && (() => {
+                const prop = ownerProperties[0];
+                const lowPriceSvc = servicesByDbName["Plan: Low Price"];
+                const foundersSvc = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+                const paidSvc =
+                  lowPriceSvc && paidServiceKeys.has(`${prop.id}:${lowPriceSvc.id}`)
+                    ? { svc: lowPriceSvc, name: "Low Price" }
+                    : foundersSvc && paidServiceKeys.has(`${prop.id}:${foundersSvc.id}`)
+                      ? { svc: foundersSvc, name: "Founders Package" }
+                      : null;
+                if (!paidSvc) return null;
+                const percentage = getPlanPercentage(paidSvc.svc.name);
+                if (percentage === null) return null;
+                const rent = Number(prop.monthly_rent) || 0;
+                const pendingBalanceCents = computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
+                const balance = balanceByProperty[prop.id];
+                return (
+                  <PropertyBalanceSummary
+                    planName={paidSvc.name}
+                    upfrontPaidCents={PLAN_UPFRONT_AMOUNT_CAD * 100}
+                    pendingBalanceCents={pendingBalanceCents}
+                    balanceInvoiceUrl={balance?.balanceInvoiceUrl}
+                    balanceInvoiceStatus={balance?.balanceInvoiceStatus}
+                  />
+                );
+              })()}
+
+              {/* PROMPT2 item 6: Support Tier per-property cards — one
+                  row per property (up to 3), each with its own checkout,
+                  paid state (item 4) and balance/installment display
+                  (items 2/3/5). */}
+              {ownerTier === "preferred_owners" && ownerProperties.length > 0 && (
+                <OwnerPlanPortfolioBreakdown
+                  properties={ownerProperties}
+                  planName="Support Tier"
+                  service={servicesByDbName["Plan: Owner Preferred — Support Tier"]}
+                  isPremier={false}
+                  paidServiceKeys={paidServiceKeys}
+                  balanceByProperty={balanceByProperty}
                 />
               )}
 
@@ -680,6 +800,7 @@ export default async function ServicesPage() {
                     properties={ownerProperties}
                     eliteServices={eliteServices}
                     totalCFP={totalCFP}
+                    paidServiceKeys={paidServiceKeys}
                   />
                 </div>
               )}
@@ -712,10 +833,18 @@ export default async function ServicesPage() {
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+                const foundersPropertyId = ownerProperties[0]?.id;
                 return foundersService && Number(foundersService.price) > 0 ? (
-                  <CheckoutButton
+                  <PaidOrCheckout
+                    alreadyPaid={!!foundersPropertyId && paidServiceKeys.has(`${foundersPropertyId}:${foundersService.id}`)}
                     type="service"
                     serviceId={foundersService.id}
+                    propertyId={foundersPropertyId}
+                    // PROMPT2 item 8: automatic smart balance — nets any
+                    // upfront already paid on this property (any plan)
+                    // against Founders' 30% total fee instead of always
+                    // charging a fresh flat $200.
+                    netAgainstExisting
                     label={`Upgrade to Founders — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
                   />
                 ) : (
@@ -770,9 +899,13 @@ export default async function ServicesPage() {
                   </CardContent>
                   <div className="p-6 pt-0">
                     {svc && upfrontPrice > 0 ? (
-                      <CheckoutButton
+                      <PaidOrCheckout
+                        alreadyPaid={
+                          !!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${svc.id}`)
+                        }
                         type="service"
                         serviceId={svc.id}
+                        propertyId={ownerProperties[0]?.id}
                         label={`${plan.cta} — Pay $${upfrontPrice} ${svc.currency || "CAD"} upfront`}
                       />
                     ) : (
@@ -790,50 +923,30 @@ export default async function ServicesPage() {
             })}
           </div>
 
-          {premierPlan && (
+          {/* PROMPT2 item 6: Premier Tier per-property cards — same
+              pattern as Support Tier above, replacing the single
+              account-wide card + its duplicated JSX that used to live in
+              this collapsible section. */}
+          {premierPlan && ownerTier === "preferred_owners" && ownerProperties.length > 0 && (
             <details id="premier-tier" className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
               <summary className="cursor-pointer font-semibold text-emerald-800">
                 Want to pay in installments? See Premier Tier details.
               </summary>
-              {(() => {
-                const dbName = PLAN_NAME_TO_DB_SERVICE[premierPlan.name];
-                const svc = dbName ? servicesByDbName[dbName] : undefined;
-                const upfrontPrice = svc ? Number(svc.price) || 0 : 0;
-                return (
-                  <Card className="mt-4 flex flex-col">
-                    <CardHeader>
-                      <CardTitle className="text-lg">{premierPlan.name}</CardTitle>
-                      <CardDescription className={`text-base font-semibold ${tierDetails.color}`}>
-                        {formatOwnerPlanPrice(premierPlan.pricing, premierPlan.name, ownerProperties)}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 space-y-3">
-                      <ul className="space-y-1.5">
-                        {premierPlan.details.map((detail, index) => (
-                          <li key={index} className="flex items-start gap-2 text-sm text-muted-foreground">
-                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-                            {detail}
-                          </li>
-                        ))}
-                      </ul>
-                    </CardContent>
-                    <div className="p-6 pt-0">
-                      {svc && upfrontPrice > 0 ? (
-                        <CheckoutButton
-                          type="service"
-                          serviceId={svc.id}
-                          label={`${premierPlan.cta} — Pay $${upfrontPrice} ${svc.currency || "CAD"} upfront`}
-                        />
-                      ) : (
-                        <Link href="/dashboard/services#contact" className={cn(buttonVariants(), "w-full gap-2")}>
-                          {premierPlan.cta}
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
-                      )}
-                    </div>
-                  </Card>
-                );
-              })()}
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-emerald-900">
+                  For owners committing 1.5+ years. Property 1: 30% of rent, balance due 2 months after
+                  the $200 upfront. Properties 2 &amp; 3: 28% of rent, balance split 50% / 30% / 20% due
+                  at 1 / 2 / 3 months after the upfront.
+                </p>
+                <OwnerPlanPortfolioBreakdown
+                  properties={ownerProperties}
+                  planName="Premier Tier"
+                  service={servicesByDbName["Plan: Owner Preferred — Premier Tier"]}
+                  isPremier
+                  paidServiceKeys={paidServiceKeys}
+                  balanceByProperty={balanceByProperty}
+                />
+              </div>
             </details>
           )}
           </>
@@ -852,10 +965,14 @@ export default async function ServicesPage() {
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
                 const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+                const foundersPropertyId = ownerProperties[0]?.id;
                 return foundersService && Number(foundersService.price) > 0 ? (
-                  <CheckoutButton
+                  <PaidOrCheckout
+                    alreadyPaid={!!foundersPropertyId && paidServiceKeys.has(`${foundersPropertyId}:${foundersService.id}`)}
                     type="service"
                     serviceId={foundersService.id}
+                    propertyId={foundersPropertyId}
+                    netAgainstExisting
                     label={`Upgrade to Founders — Pay $${Number(foundersService.price)} ${foundersService.currency || "CAD"} upfront`}
                   />
                 ) : (
@@ -893,6 +1010,7 @@ export default async function ServicesPage() {
         <PymesPlanCard
           planDetails={pymesPlanDetails}
           pymesPlanRecordId={pymesPlanRecord?.id}
+          alreadyPaid={pymesAlreadyPaid}
         />
       )}
 

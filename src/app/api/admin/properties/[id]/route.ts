@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   const { data: property, error: propertyError } = await supabaseAdmin
     .from("properties")
-    .select("id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, availability_date, near_parks, near_churches, near_skytrain, skytrain_lines, near_bus, near_mall, social_life, nearby_supermarkets")
+    .select("id, owner_id, title, description, address, city, province, postal_code, country, property_type, monthly_rent, is_available, service_tier, elite_tier, bedrooms, bathrooms, area_sqft, amenities, common_areas, pet_friendly, smart_home, dishwasher, occupancy_status, availability_date, near_parks, near_churches, near_skytrain, skytrain_lines, near_bus, near_mall, social_life, nearby_supermarkets, tenant_lease_signed_at, balance_invoice_url, balance_invoice_status")
     .eq("id", id)
     .single();
   if (propertyError || !property) {

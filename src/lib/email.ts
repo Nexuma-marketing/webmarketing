@@ -226,6 +226,12 @@ export async function sendPaymentReceiptEmail(args: {
   currency?: string;
   receiptUrl?: string | null;
   paymentDate?: string;
+  // PROMPT2 item 8: Founders Package confirmation email (sent to
+  // commercial via the existing notifyCommercial BCC below) was
+  // missing spots taken/remaining. Only set by the webhook's Founders
+  // purchase branch — appended to the BCC'd commercial copy only, so
+  // the customer-facing receipt is unchanged.
+  foundersAvailability?: { taken: number; limit: number } | null;
 }): Promise<void> {
   const currency = args.currency || "CAD";
   const subtotal = formatCurrency(args.amountCents, currency);
@@ -262,6 +268,41 @@ export async function sendPaymentReceiptEmail(args: {
         </table>
         ${args.receiptUrl ? `<p><a href="${args.receiptUrl}" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">View Stripe receipt</a></p>` : ""}
         <p>You can also see this payment any time in your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments">payment history</a>.</p>
+        ${args.foundersAvailability ? `<p style="background:#fef3c7;border-left:4px solid #d97706;padding:10px 14px;font-size:13px"><strong>Founders Package:</strong> ${args.foundersAvailability.taken} of ${args.foundersAvailability.limit} spots taken — ${Math.max(0, args.foundersAvailability.limit - args.foundersAvailability.taken)} remaining.</p>` : ""}
+        ${brandFooter()}
+      </div>
+    `,
+  });
+}
+
+// PROMPT2 item 1: sent when the new "Tenant signed lease" action
+// triggers generateBalanceInvoice() successfully. In addition to —
+// never instead of — Stripe's own hosted-invoice email, since the
+// customer must never have to rely on finding that email (item 3: the
+// dashboard is the primary, always-available way to pay).
+export async function sendBalanceInvoiceAvailableEmail(args: {
+  to: string;
+  customerName: string;
+  propertyLabel: string;
+  amountCents: number;
+  currency?: string;
+  dueDate?: string | null;
+}): Promise<void> {
+  const amount = formatCurrency(args.amountCents, args.currency || "CAD");
+  const dueLabel = args.dueDate
+    ? new Date(args.dueDate).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
+    : null;
+  await sendOne({
+    to: args.to,
+    notifyCommercial: true,
+    subject: `Your remaining balance is now payable — ${args.propertyLabel}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#16a34a">Your remaining balance is ready, ${args.customerName}</h2>
+        <p>The remaining balance for <strong>${args.propertyLabel}</strong> is now payable: <strong>${amount}</strong>.</p>
+        ${dueLabel ? `<p>Due by <strong>${dueLabel}</strong>.</p>` : ""}
+        <p>You'll also receive a separate invoice email directly from Stripe — but you don't need to wait for it or search for it. You can pay any time from your Payment History:</p>
+        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">Pay remaining balance</a></p>
         ${brandFooter()}
       </div>
     `,

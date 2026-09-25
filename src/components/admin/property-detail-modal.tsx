@@ -48,6 +48,9 @@ export interface PropertyDetail {
   owner_name: string;
   owner_email: string;
   owner_phone: string;
+  tenant_lease_signed_at: string | null;
+  balance_invoice_url: string | null;
+  balance_invoice_status: string | null;
 }
 
 interface PhotoRow {
@@ -70,6 +73,7 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
   const [error, setError] = useState("");
   const [photoSavingId, setPhotoSavingId] = useState<string | null>(null);
   const [planDetails, setPlanDetails] = useState<{ tagline: string; features: string[] } | null>(null);
+  const [signingLease, setSigningLease] = useState(false);
 
   useEffect(() => {
     if (!propertyId) {
@@ -135,6 +139,31 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     onPhotoStatusChanged?.();
   }
 
+  // PROMPT2 item 1: same explicit "Tenant signed lease" action as the
+  // admin properties table, available here too since a detail modal is
+  // the other natural place a sales/marketing/admin user would trigger
+  // it from while reviewing a property.
+  async function markTenantSignedLease() {
+    if (!propertyId) return;
+    setSigningLease(true);
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/tenant-signed-lease`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; signed_at?: string };
+      if (!res.ok) {
+        setError(body.error || `Tenant signed lease failed (${res.status})`);
+        return;
+      }
+      setProperty((current) =>
+        current ? { ...current, tenant_lease_signed_at: body.signed_at || new Date().toISOString() } : current,
+      );
+      onPhotoStatusChanged?.();
+    } finally {
+      setSigningLease(false);
+    }
+  }
+
   return (
     <Dialog open={!!propertyId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-4xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
@@ -160,6 +189,26 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
                 <KV k="Available" v={property.is_available ? "Yes" : "No"} />
                 {property.occupancy_status && <KV k="Occupancy" v={property.occupancy_status} />}
                 {property.availability_date && <KV k="Available from" v={new Date(property.availability_date).toLocaleDateString("en-CA")} />}
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground min-w-[110px]">Tenant lease:</span>
+                  {property.tenant_lease_signed_at ? (
+                    <span className="text-xs font-medium text-green-700">
+                      ✓ Signed {new Date(property.tenant_lease_signed_at).toLocaleDateString("en-CA")}
+                    </span>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled={signingLease} onClick={markTenantSignedLease}>
+                      {signingLease ? "Marking…" : "Mark tenant signed lease"}
+                    </Button>
+                  )}
+                </div>
+                {property.balance_invoice_url && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground min-w-[110px]">Balance invoice:</span>
+                    <a href={property.balance_invoice_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline inline-flex items-center gap-1">
+                      {property.balance_invoice_status || "open"} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                )}
               </DetailSection>
               <DetailSection title="Owner">
                 <KV k="Name" v={property.owner_name} />

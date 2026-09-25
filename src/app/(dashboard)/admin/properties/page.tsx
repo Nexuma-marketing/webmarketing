@@ -37,6 +37,7 @@ interface PropertyRow {
   availability_date: string | null;
   cfp_monthly: number | null;
   payback_months: number | null;
+  tenant_lease_signed_at: string | null;
   created_at: string;
   owner_name: string;
   owner_email: string;
@@ -104,6 +105,37 @@ export default function AdminPropertiesPage() {
       setProperties((prev) =>
         prev.map((p) => (p.id === id ? { ...p, is_available: current } : p)),
       );
+    }
+  }
+
+  // PROMPT2 item 1: explicit "Tenant signed lease" action, decoupled
+  // from the Available toggle above. Idempotent server-side — this
+  // component just reflects whatever the route reports back.
+  const [signingLeaseId, setSigningLeaseId] = useState<string | null>(null);
+  async function markTenantSignedLease(id: string) {
+    setSigningLeaseId(id);
+    try {
+      const res = await fetch(`/api/admin/properties/${id}/tenant-signed-lease`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        signed_at?: string;
+        already_signed?: boolean;
+      };
+      if (!res.ok) {
+        alert(`Tenant signed lease failed: ${body.error || res.status}`);
+        return;
+      }
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, tenant_lease_signed_at: body.signed_at || new Date().toISOString() }
+            : p,
+        ),
+      );
+    } finally {
+      setSigningLeaseId(null);
     }
   }
 
@@ -212,6 +244,34 @@ export default function AdminPropertiesPage() {
               </Badge>
             )}
           </div>
+        );
+      },
+    },
+    // PROMPT2 item 1: "Tenant signed lease" — explicit, per-property,
+    // decoupled from the Available switch above. Once signed, shows a
+    // static confirmation instead of a re-clickable button (the route
+    // is idempotent regardless, but this keeps the intent visible).
+    {
+      id: "tenant_lease_signed",
+      header: "Lease signed",
+      cell: ({ row }) => {
+        const signedAt = row.original.tenant_lease_signed_at;
+        if (signedAt) {
+          return (
+            <span className="text-xs text-green-700">
+              ✓ {new Date(signedAt).toLocaleDateString("en-CA")}
+            </span>
+          );
+        }
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={signingLeaseId === row.original.id}
+            onClick={() => markTenantSignedLease(row.original.id)}
+          >
+            {signingLeaseId === row.original.id ? "Marking…" : "Mark signed"}
+          </Button>
         );
       },
     },

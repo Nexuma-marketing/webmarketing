@@ -13,6 +13,16 @@ interface CheckoutButtonProps {
   // specific property, so per-property purchases aren't conflated when
   // an investor owns several properties on the same service/tier.
   propertyId?: string;
+  // Item 7: optional +$100 priority-listing add-on — when set, the
+  // checkout route adds this service as a second Stripe line item on
+  // the same session instead of a separate purchase.
+  addOnServiceId?: string;
+  // Item 8: when true, the checkout route nets this property's
+  // already-paid upfront (any plan) against the new plan's total fee
+  // instead of charging the flat `services.price` — see
+  // src/lib/plan-switch.ts. Only meaningful for type="service" with a
+  // propertyId.
+  netAgainstExisting?: boolean;
   label?: string;
   variant?: "default" | "outline" | "secondary";
   size?: "default" | "sm" | "lg";
@@ -24,6 +34,8 @@ export function CheckoutButton({
   serviceId,
   pymesPlanId,
   propertyId,
+  addOnServiceId,
+  netAgainstExisting,
   label = "Purchase",
   variant = "default",
   size = "default",
@@ -50,6 +62,8 @@ export function CheckoutButton({
           serviceId,
           pymesPlanId,
           propertyId,
+          addOnServiceId,
+          netAgainstExisting,
           promoCode: promoCode.trim() || undefined,
         }),
       });
@@ -58,6 +72,12 @@ export function CheckoutButton({
 
       if (data.url) {
         window.location.href = data.url;
+      } else if (data.redirectUrl) {
+        // Item 8: the fee was already fully covered by a prior payment
+        // on this property — no Stripe session was created, the route
+        // recorded a $0 audit row and this just routes the user to see
+        // the result (e.g. Payment History).
+        window.location.href = data.redirectUrl;
       } else {
         // If the API rejected the promo code, surface the error inline so
         // the user can fix it without losing the rest of the purchase

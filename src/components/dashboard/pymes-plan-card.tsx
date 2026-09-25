@@ -10,7 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, Zap, ArrowRight } from "lucide-react";
-import { CheckoutButton } from "@/components/checkout/checkout-button";
+import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
 import type { PymesPlanDetails } from "@/lib/pymes-plan-display";
 
 // Steve — PYME dashboard/services UX fix: this is the working plan card
@@ -21,9 +21,13 @@ import type { PymesPlanDetails } from "@/lib/pymes-plan-display";
 export function PymesPlanCard({
   planDetails,
   pymesPlanRecordId,
+  alreadyPaid = false,
 }: {
   planDetails: PymesPlanDetails;
   pymesPlanRecordId?: string | null;
+  // PROMPT2 item 4: PYME upfront has no property_id — keyed by
+  // user+pymes_plan_id instead (src/lib/payment-lookup.ts).
+  alreadyPaid?: boolean;
 }) {
   return (
     <Card className={`${planDetails.borderColor} ${planDetails.bgColor}`}>
@@ -69,7 +73,8 @@ export function PymesPlanCard({
         </ul>
         <div className="flex flex-col gap-2 sm:flex-row">
           {pymesPlanRecordId ? (
-            <CheckoutButton
+            <PaidOrCheckout
+              alreadyPaid={alreadyPaid}
               type="pymes_upfront"
               pymesPlanId={pymesPlanRecordId}
               label={`Pay ${planDetails.upfront}`}

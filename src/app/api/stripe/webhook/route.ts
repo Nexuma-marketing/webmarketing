@@ -8,6 +8,8 @@ import {
   sendPaymentFailedEmail,
 } from "@/lib/email";
 import { ELITE_SUB_TIERS } from "@/lib/constants";
+import { getFoundersAvailability } from "@/lib/founders-plan";
+import { schedulePremierInstallments } from "@/lib/premier-installments";
 import type Stripe from "stripe";
 
 // Steve 5/20 Milestone 4: helper to load the customer's profile +
@@ -97,6 +99,18 @@ export async function POST(request: Request) {
 
         if (!userId) break;
 
+        // PROMPT2 item 7: a priority-listing add-on bundled onto this
+        // same Checkout Session (metadata.addon_service_id) gets its
+        // own `payments` row with its own service_id, so its "already
+        // purchased" check (item 4) and standalone-repurchase
+        // eligibility both key off the right row. Any tax Stripe added
+        // is left attributed to the main line item — this app doesn't
+        // split tax across rows anywhere else either.
+        const addonServiceId = metadata.addon_service_id || null;
+        const addonAmountCents = addonServiceId ? Number(metadata.addon_amount_cents || 0) : 0;
+        const totalCents = session.amount_total || 0;
+        const mainAmountCents = addonServiceId ? Math.max(0, totalCents - addonAmountCents) : totalCents;
+
         // Record payment
         console.log("[webhook-diag] About to insert payment", {
           user_id: userId,
@@ -108,7 +122,7 @@ export async function POST(request: Request) {
             typeof session.payment_intent === "string"
               ? session.payment_intent
               : null,
-          amount: (session.amount_total || 0) / 100,
+          amount: mainAmountCents / 100,
           currency: "CAD",
           payment_type: paymentType,
           status: "completed",
@@ -128,7 +142,7 @@ export async function POST(request: Request) {
               typeof session.payment_intent === "string"
                 ? session.payment_intent
                 : null,
-            amount: (session.amount_total || 0) / 100,
+            amount: mainAmountCents / 100,
             currency: "CAD",
             payment_type: paymentType,
             status: "completed",
@@ -137,6 +151,26 @@ export async function POST(request: Request) {
           data: paymentData,
           error: paymentError,
         });
+
+        if (addonServiceId) {
+          const { error: addonPaymentError } = await supabaseAdmin.from("payments").insert({
+            user_id: userId,
+            service_id: addonServiceId,
+            property_id: metadata.property_id || null,
+            stripe_session_id: session.id,
+            stripe_payment_intent_id:
+              typeof session.payment_intent === "string" ? session.payment_intent : null,
+            amount: addonAmountCents / 100,
+            currency: "CAD",
+            payment_type: paymentType,
+            status: "completed",
+          });
+          console.log("[webhook-diag] Add-on payment insert completed", {
+            addonServiceId,
+            amount: addonAmountCents / 100,
+            error: addonPaymentError,
+          });
+        }
         // Steve: this insert previously failed silently on schema
         // mismatches (e.g. a column referenced in code but not yet
         // added by migration) — it was only ever passed to
@@ -161,8 +195,13 @@ export async function POST(request: Request) {
         // in app_config so the "X owners have already chosen" banner on
         // /dashboard/services + the public landing reflects reality.
         // Match by service name so we don't have to hard-code the UUID.
+        // PROMPT2 item 5 also needs this service-name lookup to detect a
+        // Premier Tier upfront purchase and kick off its installment
+        // schedule — resolved once here and reused below.
+        let purchasedServiceName: string | null = null;
+        let isFoundersPurchase = false;
         if (metadata.service_id) {
-          console.log("[webhook-diag] About to look up Founders-counter service", {
+          console.log("[webhook-diag] About to look up purchased service name", {
             serviceId: metadata.service_id,
           });
           const { data: svc, error: svcError } = await supabaseAdmin
@@ -170,11 +209,13 @@ export async function POST(request: Request) {
             .select("name")
             .eq("id", metadata.service_id)
             .single();
-          console.log("[webhook-diag] Founders-counter service lookup completed", {
+          console.log("[webhook-diag] Purchased service lookup completed", {
             data: svc,
             error: svcError,
           });
-          if (svc?.name && /Founder.+Package/i.test(svc.name as string)) {
+          purchasedServiceName = (svc?.name as string | undefined) ?? null;
+          if (purchasedServiceName && /Founder.+Package/i.test(purchasedServiceName)) {
+            isFoundersPurchase = true;
             console.log("[webhook-diag] About to read Founders counter");
             const { data: counter, error: counterError } = await supabaseAdmin
               .from("app_config")
@@ -204,6 +245,48 @@ export async function POST(request: Request) {
               newValue: String(current + 1),
               data: counterUpdateData,
               error: counterUpdateError,
+            });
+          }
+        }
+
+        // PROMPT2 item 5: Premier Tier's remaining balance is scheduled
+        // automatically the moment the $200 upfront succeeds — never
+        // gated by "Tenant signed lease" (that's Low Price/Founders/
+        // Support Tier's flow, item 1). Matches the same "preferred" +
+        // "premier" name convention as getPlanPercentage
+        // (src/lib/plan-percentage.ts) / percentageForPlan
+        // (src/lib/owner-plan-display.ts).
+        if (
+          paymentType === "one_time" &&
+          metadata.property_id &&
+          purchasedServiceName &&
+          /preferred/i.test(purchasedServiceName) &&
+          /premier/i.test(purchasedServiceName)
+        ) {
+          console.log("[webhook-diag] Premier Tier upfront detected — scheduling installments", {
+            propertyId: metadata.property_id,
+            serviceId: metadata.service_id,
+          });
+          const { data: premierProperty, error: premierPropertyError } = await supabaseAdmin
+            .from("properties")
+            .select("owner_id, monthly_rent")
+            .eq("id", metadata.property_id)
+            .single();
+          console.log("[webhook-diag] Premier Tier property lookup completed", {
+            data: premierProperty,
+            error: premierPropertyError,
+          });
+          if (premierProperty?.owner_id && premierProperty.monthly_rent) {
+            await schedulePremierInstallments({
+              propertyId: metadata.property_id,
+              ownerId: premierProperty.owner_id as string,
+              serviceId: metadata.service_id,
+              monthlyRentCad: Number(premierProperty.monthly_rent),
+              upfrontPaidAt: new Date(),
+            });
+          } else {
+            console.error("[webhook-diag] CRITICAL: cannot schedule Premier installments — property missing owner_id/monthly_rent", {
+              propertyId: metadata.property_id,
             });
           }
         }
@@ -333,6 +416,11 @@ export async function POST(request: Request) {
         if (ctx) {
           const subtotalCents = session.amount_subtotal ?? session.amount_total ?? 0;
           const taxCents = (session.total_details?.amount_tax ?? 0) as number;
+          // PROMPT2 item 8: Founders confirmation email (the BCC'd
+          // commercial copy of this receipt) now includes live spots
+          // taken/remaining instead of leaving commercial to check
+          // /admin/pricing separately.
+          const foundersAvailability = isFoundersPurchase ? await getFoundersAvailability() : null;
           await sendPaymentReceiptEmail({
             to: ctx.email,
             customerName: ctx.name,
@@ -341,6 +429,7 @@ export async function POST(request: Request) {
             taxCents,
             currency: (session.currency || "cad").toUpperCase(),
             receiptUrl: null,
+            foundersAvailability,
           });
         }
 
@@ -354,15 +443,19 @@ export async function POST(request: Request) {
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
 
-        // Steve 6/11 (6-2.md #53): plan balance invoice path.
-        // Created by /api/admin/properties/[id]/balance-invoice when
-        // Sales toggles Available -> false. Identified by
-        // metadata.kind === "plan_balance". Updates the property row
-        // so the admin UI shows "Arrendada - Pagado".
+        // Steve 6/11 (6-2.md #53): plan balance invoice path. Created
+        // by the explicit "Tenant signed lease" action (PROMPT2 item 1;
+        // this used to fire from the Admin `is_available` toggle — see
+        // that route for why the implicit trigger was removed) or the
+        // standalone /api/admin/properties/[id]/balance-invoice
+        // re-trigger endpoint. Identified by metadata.kind ===
+        // "plan_balance". Updates the property row so the admin UI
+        // shows "Arrendada - Pagado".
         if (invoice.metadata?.kind === "plan_balance") {
           const propertyId = invoice.metadata?.property_id;
+          console.log("[webhook-diag] plan_balance payment_succeeded", { propertyId, invoiceId: invoice.id });
           if (propertyId) {
-            await supabaseAdmin
+            const { error: balancePaidError } = await supabaseAdmin
               .from("properties")
               .update({
                 balance_invoice_status: "paid",
@@ -372,6 +465,10 @@ export async function POST(request: Request) {
                 // customer's /dashboard/payments history.
               })
               .eq("id", propertyId);
+            console.log("[webhook-diag] plan_balance property row updated to paid", {
+              propertyId,
+              error: balancePaidError,
+            });
 
             // Insert a payments row mirroring the invoice. Owner
             // resolved via property.owner_id.
@@ -392,6 +489,48 @@ export async function POST(request: Request) {
                 amount: (invoice.amount_paid || 0) / 100,
                 currency: (invoice.currency || "cad").toUpperCase(),
                 payment_type: "plan_balance",
+                status: "completed",
+              });
+            }
+          }
+          break;
+        }
+
+        // PROMPT2 item 5: Premier Tier installment invoice paid.
+        // Created by the daily process-installments cron via
+        // createAndSendStripeInvoice, identified by
+        // metadata.kind === "plan_installment" +
+        // metadata.installment_id.
+        if (invoice.metadata?.kind === "plan_installment") {
+          const installmentId = invoice.metadata?.installment_id;
+          const propertyId = invoice.metadata?.property_id;
+          console.log("[webhook-diag] plan_installment payment_succeeded", { installmentId, propertyId });
+          if (installmentId) {
+            const { data: installmentRow, error: updateError } = await supabaseAdmin
+              .from("plan_installments")
+              .update({ status: "paid", updated_at: new Date().toISOString() })
+              .eq("id", installmentId)
+              .select("property_id")
+              .single();
+            console.log("[webhook-diag] plan_installments row updated to paid", {
+              installmentId,
+              data: installmentRow,
+              error: updateError,
+            });
+            const { data: prop } = await supabaseAdmin
+              .from("properties")
+              .select("owner_id")
+              .eq("id", (installmentRow?.property_id as string) || propertyId)
+              .single();
+            if (prop?.owner_id) {
+              await supabaseAdmin.from("payments").insert({
+                user_id: prop.owner_id,
+                property_id: (installmentRow?.property_id as string) || propertyId || null,
+                stripe_session_id: invoice.id,
+                stripe_payment_intent_id: null,
+                amount: (invoice.amount_paid || 0) / 100,
+                currency: (invoice.currency || "cad").toUpperCase(),
+                payment_type: "plan_installment",
                 status: "completed",
               });
             }
@@ -605,6 +744,7 @@ export async function POST(request: Request) {
         // that the owner hasn't paid yet.
         if (invoice.metadata?.kind === "plan_balance") {
           const propertyId = invoice.metadata?.property_id;
+          console.log("[webhook-diag] plan_balance payment_failed", { propertyId, invoiceStatus: invoice.status });
           if (propertyId) {
             await supabaseAdmin
               .from("properties")
@@ -614,6 +754,20 @@ export async function POST(request: Request) {
                   : "overdue",
               })
               .eq("id", propertyId);
+          }
+          break;
+        }
+
+        // PROMPT2 item 5: Premier Tier installment invoice failed —
+        // mirrors the plan_balance branch above.
+        if (invoice.metadata?.kind === "plan_installment") {
+          const installmentId = invoice.metadata?.installment_id;
+          console.log("[webhook-diag] plan_installment payment_failed", { installmentId });
+          if (installmentId) {
+            await supabaseAdmin
+              .from("plan_installments")
+              .update({ status: "failed", updated_at: new Date().toISOString() })
+              .eq("id", installmentId);
           }
           break;
         }
