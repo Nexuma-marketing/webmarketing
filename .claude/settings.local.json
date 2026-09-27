@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(find / -maxdepth 2 -iname \"node*\")",
+      "Bash(command -v node)",
+      "Bash(command -v npm)",
+      "Bash(command -v psql)",
+      "Bash(command -v supabase)",
+      "Bash(env)",
+      "Bash(ls -d node_modules 2>&1; echo \"---\"; ls /usr/local/bin | grep -i node; echo \"---\"; find / -maxdepth 3 -iname \"node\" -type f 2>/dev/null)",
+      "Read(//usr/local/bin/**)"
     ]
   }
 }

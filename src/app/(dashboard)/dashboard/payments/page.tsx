@@ -209,7 +209,20 @@ export default async function PaymentsPage() {
     ?.filter((p) => p.status === "completed")
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
 
-  const pendingCount = payments?.filter((p) => p.status === "pending").length || 0;
+  // "Pending" summary tile: must read the SAME figure as the Plan
+  // Balances cards below (PropertyBalanceSummary), which render
+  // row.pendingBalanceCents unless balanceInvoiceStatus === "paid".
+  // Previously this tile showed a count of payment rows with
+  // status "pending" (usually 0), so it disagreed with the card.
+  // Non-owner roles have no plan balances, so they keep seeing the
+  // total of their pending payment rows.
+  const pendingTotal = isOwnerRole
+    ? planBalanceRows
+        .filter((row) => row.balanceInvoiceStatus !== "paid")
+        .reduce((sum, row) => sum + row.pendingBalanceCents, 0) / 100
+    : payments
+        ?.filter((p) => p.status === "pending")
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
 
   // Steve 5/16 Milestone 4: surface ACTIVE installment subscriptions
   // so the user can see how many installments remain and cancel them
@@ -301,7 +314,7 @@ export default async function PaymentsPage() {
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{pendingCount}</div>
+            <div className="text-2xl font-bold">{formatCurrency(pendingTotal)}</div>
           </CardContent>
         </Card>
       </div>

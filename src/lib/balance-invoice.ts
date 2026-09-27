@@ -39,16 +39,13 @@ export interface BalanceInvoiceResult {
   error?: string;
 }
 
-function plusBusinessDays(days: number): number {
-  const date = new Date();
-  let added = 0;
-  while (added < days) {
-    date.setDate(date.getDate() + 1);
-    const dow = date.getDay();
-    if (dow !== 0 && dow !== 6) added++;
-  }
-  return Math.floor(date.getTime() / 1000);
-}
+// Invoices use collection_method "send_invoice" (owner pays manually
+// from the hosted invoice link), so the due date is expressed ONLY via
+// `days_until_due`. Stripe rejects passing both `days_until_due` and
+// `due_date` ("You may only specify one of these parameters") — that
+// was the root cause of "Tenant signed lease" never producing a balance
+// invoice. `due_date` is intentionally not sent.
+const INVOICE_DAYS_UNTIL_DUE = 7;
 
 /** Lazily creates + persists a Stripe Customer for an owner. Shared by the balance-invoice flow and the Premier installment cron. */
 export async function ensureStripeCustomer(
@@ -104,7 +101,6 @@ export async function createAndSendStripeInvoice(
   // that surfaces as a thrown error from invoiceItems.create/invoices.create
   // below, which the caller's try/catch turns into a failed result.
   const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
-  const dueDate = plusBusinessDays(3);
 
   console.log("[balance-invoice-diag] About to create InvoiceItem", {
     customer: params.stripeCustomerId,
@@ -125,15 +121,18 @@ export async function createAndSendStripeInvoice(
   const invoice = await stripe.invoices.create({
     customer: params.stripeCustomerId,
     collection_method: "send_invoice",
-    days_until_due: 3,
-    due_date: dueDate,
+    days_until_due: INVOICE_DAYS_UNTIL_DUE,
     description: params.invoiceDescription,
     ...(gstRateId
       ? { default_tax_rates: [gstRateId] }
       : { automatic_tax: { enabled: true } }),
     metadata: params.metadata,
   });
-  console.log("[balance-invoice-diag] Invoice created", { invoiceId: invoice.id });
+  console.log("[balance-invoice-diag] Invoice created", {
+    invoiceId: invoice.id,
+    collectionMethod: "send_invoice",
+    daysUntilDue: INVOICE_DAYS_UNTIL_DUE,
+  });
 
   const finalized = invoice.id
     ? await stripe.invoices.finalizeInvoice(invoice.id)
@@ -149,10 +148,22 @@ export async function createAndSendStripeInvoice(
     });
   }
 
+  // Stripe computes due_date from days_until_due at finalization; fall
+  // back to the same arithmetic if it's somehow absent.
+  const dueDateUnix =
+    finalized.due_date ?? Math.floor(Date.now() / 1000) + INVOICE_DAYS_UNTIL_DUE * 86400;
+
+  console.log("[balance-invoice-diag] Invoice created successfully", {
+    invoiceId: finalized.id,
+    hostedInvoiceUrl: finalized.hosted_invoice_url,
+    dueDate: new Date(dueDateUnix * 1000).toISOString(),
+    kind: params.metadata.kind,
+  });
+
   return {
     invoiceId: finalized.id ?? "",
     hostedInvoiceUrl: finalized.hosted_invoice_url ?? null,
-    dueDateUnix: dueDate,
+    dueDateUnix,
   };
 }
 
