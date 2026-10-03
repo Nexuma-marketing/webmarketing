@@ -74,6 +74,8 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
   const [photoSavingId, setPhotoSavingId] = useState<string | null>(null);
   const [planDetails, setPlanDetails] = useState<{ tagline: string; features: string[] } | null>(null);
   const [signingLease, setSigningLease] = useState(false);
+  const [regeneratingInvoice, setRegeneratingInvoice] = useState(false);
+  const [invoiceMessage, setInvoiceMessage] = useState("");
 
   useEffect(() => {
     if (!propertyId) {
@@ -164,6 +166,49 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     }
   }
 
+  // Re-issues the lump-sum balance invoice for a property whose lease is
+  // already signed (e.g. after the $0-invoice bug — see
+  // BUGFIX_ZERO_DOLLAR_INVOICE_REPORT.md). The server voids an open
+  // previous invoice and refuses if the previous one was really paid.
+  async function regenerateBalanceInvoice() {
+    if (!propertyId) return;
+    if (!window.confirm("Regenerate and re-send the balance invoice for this property? Any open previous invoice will be voided in Stripe.")) return;
+    setRegeneratingInvoice(true);
+    setInvoiceMessage("");
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/balance-invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate: true }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        no_balance?: boolean;
+        message?: string;
+        amount?: number;
+        hosted_invoice_url?: string | null;
+      };
+      if (!res.ok) {
+        setError(body.error || `Regenerate balance invoice failed (${res.status})`);
+        return;
+      }
+      if (body.no_balance) {
+        setInvoiceMessage(body.message || "No balance due — nothing to invoice.");
+        return;
+      }
+      setInvoiceMessage(`New balance invoice sent ($${(body.amount ?? 0).toFixed(2)} CAD).`);
+      setProperty((current) =>
+        current
+          ? { ...current, balance_invoice_url: body.hosted_invoice_url ?? current.balance_invoice_url, balance_invoice_status: "open" }
+          : current,
+      );
+      onPhotoStatusChanged?.();
+    } finally {
+      setRegeneratingInvoice(false);
+    }
+  }
+
   return (
     <Dialog open={!!propertyId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-4xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
@@ -207,6 +252,15 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
                     <a href={property.balance_invoice_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline inline-flex items-center gap-1">
                       {property.balance_invoice_status || "open"} <ExternalLink className="h-3 w-3" />
                     </a>
+                  </div>
+                )}
+                {property.tenant_lease_signed_at && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground min-w-[110px]" />
+                    <Button variant="outline" size="sm" disabled={regeneratingInvoice} onClick={regenerateBalanceInvoice}>
+                      {regeneratingInvoice ? "Regenerating…" : "Resend / Regenerate balance invoice"}
+                    </Button>
+                    {invoiceMessage && <span className="text-xs text-green-700">{invoiceMessage}</span>}
                   </div>
                 )}
               </DetailSection>

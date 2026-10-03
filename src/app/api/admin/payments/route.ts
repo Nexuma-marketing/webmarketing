@@ -35,7 +35,7 @@ export async function GET() {
   const { data: paymentRows, error: payErr } = await supabaseAdmin
     .from("payments")
     .select(
-      "id, user_id, service_id, pymes_plan_id, amount, currency, payment_type, installment_number, status, created_at, stripe_payment_intent_id, stripe_subscription_id",
+      "id, user_id, service_id, pymes_plan_id, amount, currency, payment_type, installment_number, status, created_at, stripe_payment_intent_id, stripe_subscription_id, stripe_session_id",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -99,6 +99,7 @@ export async function GET() {
       status: p.status as string,
       created_at: p.created_at as string,
       stripe_payment_intent_id: (p.stripe_payment_intent_id as string | null) ?? null,
+      stripe_session_id: (p.stripe_session_id as string | null) ?? null,
       stripe_subscription_id: (p.stripe_subscription_id as string | null) ?? null,
     };
   });

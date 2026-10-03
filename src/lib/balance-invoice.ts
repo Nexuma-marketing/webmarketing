@@ -86,6 +86,47 @@ export interface CreateAndSendInvoiceResult {
 }
 
 /**
+ * Deletes pending (not-yet-invoiced) InvoiceItems left on the customer
+ * for the SAME balance/installment as `metadata` — i.e. items orphaned
+ * by the old $0-invoice bug (see createAndSendStripeInvoice). Without
+ * this, they'd sit on the customer and get swept into the next invoice
+ * that does include pending items (e.g. an Elite subscription renewal).
+ * Matched strictly on kind + property_id (+ installment_id when
+ * present) so unrelated pending items are never touched.
+ */
+async function deleteOrphanedPendingInvoiceItems(
+  stripeCustomerId: string,
+  metadata: Record<string, string>,
+): Promise<void> {
+  if (!metadata.kind || !metadata.property_id) return;
+  const stripe = getStripeServer();
+  try {
+    const pending = await stripe.invoiceItems.list({ customer: stripeCustomerId, pending: true, limit: 100 });
+    for (const item of pending.data) {
+      const m = item.metadata || {};
+      const matches =
+        m.kind === metadata.kind &&
+        m.property_id === metadata.property_id &&
+        (!metadata.installment_id || m.installment_id === metadata.installment_id);
+      if (!matches) continue;
+      await stripe.invoiceItems.del(item.id);
+      console.log("[balance-invoice-diag] Deleted orphaned pending InvoiceItem", {
+        invoiceItemId: item.id,
+        amount: item.amount,
+        metadata: m,
+      });
+    }
+  } catch (err) {
+    // Non-fatal: the new invoice uses pending_invoice_items_behavior
+    // "exclude", so a leftover item can't leak into it.
+    console.error("[balance-invoice-diag] Failed to clean up orphaned pending InvoiceItems", {
+      stripeCustomerId,
+      error: err instanceof Error ? err.message : err,
+    });
+  }
+}
+
+/**
  * Shared Stripe Customer/InvoiceItem/Invoice/finalize/send sequence.
  * PROMPT2 item 5: reused by both the lump-sum balance flow below
  * (`kind: "plan_balance"`) and the Premier Tier installment cron
@@ -102,43 +143,93 @@ export async function createAndSendStripeInvoice(
   // below, which the caller's try/catch turns into a failed result.
   const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
 
-  console.log("[balance-invoice-diag] About to create InvoiceItem", {
-    customer: params.stripeCustomerId,
-    amountCents: params.amountCents,
-    metadata: params.metadata,
-  });
-  await stripe.invoiceItems.create({
-    customer: params.stripeCustomerId,
-    amount: params.amountCents,
-    currency: "cad",
-    description: params.itemDescription,
-    ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
-    metadata: params.metadata,
-  });
-  console.log("[balance-invoice-diag] InvoiceItem created");
+  // ROOT CAUSE of the $0 balance invoices: this used to create a
+  // *pending* InvoiceItem on the customer and then call
+  // invoices.create() without `pending_invoice_items_behavior`. Since
+  // Stripe API version 2022-08-01 (we're on 2026-03-25.dahlia, see
+  // src/lib/stripe.ts) that parameter defaults to "exclude", so the new
+  // Invoice never picked up the pending item: it was finalized with
+  // zero lines / $0, Stripe auto-marked it "paid", and the webhook
+  // recorded a ghost $0 "completed" plan_balance payment. The item
+  // stayed orphaned (pending) on the customer.
+  //
+  // Fix: create the draft Invoice FIRST, then attach the InvoiceItem to
+  // it explicitly via `invoice: invoice.id`. `exclude` is passed
+  // explicitly so no stale pending item (e.g. one orphaned by the old
+  // bug) can ever be swept into this invoice.
+  await deleteOrphanedPendingInvoiceItems(params.stripeCustomerId, params.metadata);
 
   console.log("[balance-invoice-diag] About to create Invoice", { metadata: params.metadata });
   const invoice = await stripe.invoices.create({
     customer: params.stripeCustomerId,
     collection_method: "send_invoice",
     days_until_due: INVOICE_DAYS_UNTIL_DUE,
+    pending_invoice_items_behavior: "exclude",
     description: params.invoiceDescription,
     ...(gstRateId
       ? { default_tax_rates: [gstRateId] }
       : { automatic_tax: { enabled: true } }),
     metadata: params.metadata,
   });
-  console.log("[balance-invoice-diag] Invoice created", {
+  if (!invoice.id) throw new Error("Stripe returned an invoice without an id");
+  console.log("[balance-invoice-diag] Invoice created (draft)", {
     invoiceId: invoice.id,
+    customer: params.stripeCustomerId,
     collectionMethod: "send_invoice",
     daysUntilDue: INVOICE_DAYS_UNTIL_DUE,
   });
 
-  const finalized = invoice.id
-    ? await stripe.invoices.finalizeInvoice(invoice.id)
-    : invoice;
+  console.log("[balance-invoice-diag] About to create InvoiceItem", {
+    invoiceId: invoice.id,
+    customer: params.stripeCustomerId,
+    amountCents: params.amountCents,
+    metadata: params.metadata,
+  });
+  const invoiceItem = await stripe.invoiceItems.create({
+    customer: params.stripeCustomerId,
+    invoice: invoice.id,
+    amount: params.amountCents,
+    currency: "cad",
+    description: params.itemDescription,
+    ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
+    metadata: params.metadata,
+  });
+  console.log("[balance-invoice-diag] InvoiceItem created and attached", {
+    invoiceItemId: invoiceItem.id,
+    invoiceId: invoice.id,
+  });
+
+  // Safety net: never finalize an invoice that ended up at $0 — Stripe
+  // auto-marks a finalized $0 invoice as paid, which is exactly the
+  // ghost-payment bug. Delete the draft and fail loudly instead.
+  const draft = await stripe.invoices.retrieve(invoice.id);
+  console.log("[balance-invoice-diag] Draft invoice totals before finalize", {
+    invoiceId: draft.id,
+    subtotal: draft.subtotal,
+    total: draft.total,
+    amountDue: draft.amount_due,
+  });
+  if (!draft.total || draft.total <= 0) {
+    console.error("[balance-invoice-diag] CRITICAL: draft invoice total is $0 — deleting draft instead of finalizing", {
+      invoiceId: draft.id,
+      expectedAmountCents: params.amountCents,
+      metadata: params.metadata,
+    });
+    await stripe.invoices.del(invoice.id).catch((err) => {
+      console.error("[balance-invoice-diag] Failed to delete $0 draft invoice", {
+        invoiceId: invoice.id,
+        error: err instanceof Error ? err.message : err,
+      });
+    });
+    throw new Error(
+      `Stripe draft invoice ${invoice.id} has a $0 total (expected ${params.amountCents} cents) — not finalized`,
+    );
+  }
+
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
   console.log("[balance-invoice-diag] Invoice finalized", {
     invoiceId: finalized.id,
+    total: finalized.total,
     hostedInvoiceUrl: finalized.hosted_invoice_url,
   });
   if (finalized.id) {
@@ -167,10 +258,51 @@ export async function createAndSendStripeInvoice(
   };
 }
 
+/**
+ * Which plan was actually purchased for THIS property (most recent
+ * completed plan-category payment scoped to property_id). Shared by
+ * the "Tenant signed lease" action and the admin "Regenerate balance
+ * invoice" action.
+ */
+export async function getPropertyPlanName(propertyId: string): Promise<string | null> {
+  const { data: propertyPayments } = await supabaseAdmin
+    .from("payments")
+    .select("service_id, created_at")
+    .eq("property_id", propertyId)
+    .eq("status", "completed")
+    .not("service_id", "is", null)
+    .order("created_at", { ascending: false });
+  for (const p of propertyPayments ?? []) {
+    const { data: svc } = await supabaseAdmin
+      .from("services")
+      .select("name, category")
+      .eq("id", p.service_id as string)
+      .single();
+    if (svc?.category === "plan") return svc.name as string;
+  }
+  return null;
+}
+
+/** Premier Tier's balance is billed in scheduled installments (cron), never as one lump-sum balance invoice. */
+export function isPremierTierPlan(planName: string | null): boolean {
+  return !!planName && /preferred/i.test(planName) && /premier/i.test(planName);
+}
+
+export interface GenerateBalanceInvoiceOptions {
+  /**
+   * Admin "Regenerate balance invoice": bypasses the "already issued"
+   * idempotency guard. An existing open/uncollectible invoice is voided
+   * (a draft is deleted) before a new one is issued. Never re-bills an
+   * invoice that was actually paid with real money (amount_paid > 0).
+   */
+  regenerate?: boolean;
+}
+
 export async function generateBalanceInvoice(
   propertyId: string,
+  { regenerate = false }: GenerateBalanceInvoiceOptions = {},
 ): Promise<BalanceInvoiceResult> {
-  console.log("[balance-invoice-diag] generateBalanceInvoice called", { propertyId });
+  console.log("[balance-invoice-diag] generateBalanceInvoice called", { propertyId, regenerate });
 
   // 1. Property + idempotency
   const { data: property, error: propErr } = await supabaseAdmin
@@ -195,6 +327,7 @@ export async function generateBalanceInvoice(
     };
   }
   if (
+    !regenerate &&
     property.balance_invoice_id &&
     property.balance_invoice_status &&
     property.balance_invoice_status !== "paid" &&
@@ -210,6 +343,54 @@ export async function generateBalanceInvoice(
       already_issued: true,
       invoice_id: property.balance_invoice_id as string,
     };
+  }
+
+  // 1b. Look at the previous Stripe invoice (if any) before issuing a
+  // new one. A previous invoice that was really paid (amount_paid > 0)
+  // blocks re-billing in both modes. A $0 "paid" invoice (the ghost
+  // from the old pending-InvoiceItem bug) or a voided one is ignored.
+  if (property.balance_invoice_id) {
+    const previousId = property.balance_invoice_id as string;
+    const stripe = getStripeServer();
+    let previous: Awaited<ReturnType<typeof stripe.invoices.retrieve>> | null = null;
+    try {
+      previous = await stripe.invoices.retrieve(previousId);
+    } catch (err) {
+      console.error("[balance-invoice-diag] Could not retrieve previous balance invoice", {
+        propertyId,
+        previousId,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+    console.log("[balance-invoice-diag] Previous balance invoice", {
+      propertyId,
+      previousId,
+      status: previous?.status,
+      total: previous?.total,
+      amountPaid: previous?.amount_paid,
+    });
+    if (previous?.status === "paid" && (previous.amount_paid ?? 0) > 0) {
+      return {
+        success: false,
+        error: `Balance invoice ${previousId} was already paid ($${((previous.amount_paid ?? 0) / 100).toFixed(2)}) — refusing to bill this property again.`,
+      };
+    }
+    if (regenerate && previous) {
+      try {
+        if (previous.status === "draft") {
+          await stripe.invoices.del(previousId);
+          console.log("[balance-invoice-diag] Regenerate: deleted previous draft invoice", { previousId });
+        } else if (previous.status === "open" || previous.status === "uncollectible") {
+          await stripe.invoices.voidInvoice(previousId);
+          console.log("[balance-invoice-diag] Regenerate: voided previous invoice", { previousId });
+        }
+      } catch (err) {
+        return {
+          success: false,
+          error: `Could not void previous invoice ${previousId}: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
   }
 
   // 2. Owner
@@ -342,6 +523,8 @@ export async function generateBalanceInvoice(
       balance_invoice_amount: balanceCents / 100,
       balance_invoice_sent_at: new Date().toISOString(),
       balance_invoice_url: created.hostedInvoiceUrl,
+      // Clear a stale paid_at left by a previous (e.g. ghost $0) invoice.
+      balance_invoice_paid_at: null,
     })
     .eq("id", propertyId);
   console.log("[balance-invoice-diag] Property row persisted", {

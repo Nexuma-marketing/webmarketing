@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { DollarSign, CreditCard, TrendingUp, Tag } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { stripeDashboardPaymentUrl } from "@/lib/stripe-dashboard";
 
 interface PaymentRow {
   id: string;
@@ -28,6 +29,7 @@ interface PaymentRow {
   // visible table, only use them to decide which buttons render.
   stripe_payment_intent_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_session_id: string | null;
 }
 
 interface PromoStat {
@@ -190,11 +192,22 @@ export default function AdminPaymentsPage() {
         const p = row.original;
         const canRefund = p.status === "completed" && !!p.stripe_payment_intent_id;
         const canCancel = !!p.stripe_subscription_id && p.status !== "canceled";
-        if (!canRefund && !canCancel) {
+        const stripeUrl = stripeDashboardPaymentUrl(p);
+        if (!canRefund && !canCancel && !stripeUrl) {
           return <span className="text-xs text-muted-foreground">—</span>;
         }
         return (
           <div className="flex gap-1">
+            {stripeUrl && (
+              <a
+                href={stripeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
+              >
+                Stripe ↗
+              </a>
+            )}
             {canRefund && (
               <button
                 type="button"

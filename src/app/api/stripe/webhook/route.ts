@@ -443,6 +443,26 @@ export async function POST(request: Request) {
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
 
+        // Zero-dollar guard: a plan_balance / plan_installment invoice
+        // that "succeeds" with nothing paid is the ghost from the old
+        // pending-InvoiceItem bug (src/lib/balance-invoice.ts) — Stripe
+        // auto-marks a finalized $0 invoice as paid. Never record it as
+        // a completed payment or mark the balance/installment paid.
+        if (
+          (invoice.metadata?.kind === "plan_balance" || invoice.metadata?.kind === "plan_installment") &&
+          (!invoice.amount_paid || !invoice.total)
+        ) {
+          console.error("[balance-invoice-diag] CRITICAL: $0 plan invoice reported as paid — NOT recording a payment", {
+            invoiceId: invoice.id,
+            kind: invoice.metadata?.kind,
+            propertyId: invoice.metadata?.property_id,
+            installmentId: invoice.metadata?.installment_id,
+            amountPaid: invoice.amount_paid,
+            total: invoice.total,
+          });
+          break;
+        }
+
         // Steve 6/11 (6-2.md #53): plan balance invoice path. Created
         // by the explicit "Tenant signed lease" action (PROMPT2 item 1;
         // this used to fire from the Admin `is_available` toggle — see
@@ -480,6 +500,7 @@ export async function POST(request: Request) {
             if (prop?.owner_id) {
               await supabaseAdmin.from("payments").insert({
                 user_id: prop.owner_id,
+                property_id: propertyId,
                 stripe_session_id: invoice.id,
                 // Steve 6/11: Stripe SDK v18 dropped the convenience
                 // `payment_intent` getter on Invoice. Pull it via the

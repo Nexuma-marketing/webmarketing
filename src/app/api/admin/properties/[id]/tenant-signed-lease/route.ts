@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { generateBalanceInvoice, type BalanceInvoiceResult } from "@/lib/balance-invoice";
+import {
+  generateBalanceInvoice,
+  getPropertyPlanName,
+  isPremierTierPlan,
+  type BalanceInvoiceResult,
+} from "@/lib/balance-invoice";
 import { sendBalanceInvoiceAvailableEmail } from "@/lib/email";
 
 // PROMPT2 item 1: the new, explicit "Tenant signed lease" action —
@@ -81,26 +86,8 @@ export async function POST(
   // Property-scoped plan detection (not owner-wide) — which plan was
   // actually purchased for THIS property, so a multi-property owner on
   // different plans per property gets the right flow.
-  const { data: propertyPayments } = await supabaseAdmin
-    .from("payments")
-    .select("service_id, created_at")
-    .eq("property_id", propertyId)
-    .eq("status", "completed")
-    .not("service_id", "is", null)
-    .order("created_at", { ascending: false });
-  let planName: string | null = null;
-  for (const p of propertyPayments ?? []) {
-    const { data: svc } = await supabaseAdmin
-      .from("services")
-      .select("name, category")
-      .eq("id", p.service_id as string)
-      .single();
-    if (svc?.category === "plan") {
-      planName = svc.name as string;
-      break;
-    }
-  }
-  const isPremierTier = !!planName && /preferred/i.test(planName) && /premier/i.test(planName);
+  const planName = await getPropertyPlanName(propertyId);
+  const isPremierTier = isPremierTierPlan(planName);
 
   let balanceInvoice: BalanceInvoiceResult | null = null;
   if (!isPremierTier) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { Resend } from "resend";
+import { stripeDashboardPaymentUrl } from "@/lib/stripe-dashboard";
 
 // Steve 6/10 (6-2.md #52): customer-facing refund request endpoint.
 // Alex docx 2026-06-07 — "Donde el cliente pide una devolucion de
@@ -49,6 +50,12 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   }
+  if (!(Number(payment.amount) > 0)) {
+    return NextResponse.json(
+      { error: "Nothing to refund on a $0 payment" },
+      { status: 400 },
+    );
+  }
   if (payment.status !== "completed") {
     return NextResponse.json(
       { error: `Cannot request a refund on a ${payment.status} payment` },
@@ -87,6 +94,10 @@ export async function POST(request: Request) {
       const customerPhone = (profile?.phone as string) || "(no phone)";
       const amount = `${Number(payment.amount).toLocaleString()} ${payment.currency || "CAD"}`;
       const date = new Date(payment.created_at as string).toLocaleDateString("en-CA");
+      const stripeUrl = stripeDashboardPaymentUrl({
+        stripe_payment_intent_id: payment.stripe_payment_intent_id as string | null,
+        stripe_session_id: payment.stripe_session_id as string | null,
+      });
       await resend.emails.send({
         from,
         to: commercial,
@@ -103,10 +114,12 @@ export async function POST(request: Request) {
     <tr><td style="padding:6px;background:#f5f5f5;font-weight:bold">Amount</td><td style="padding:6px">${amount}</td></tr>
     <tr><td style="padding:6px;background:#f5f5f5;font-weight:bold">Original date</td><td style="padding:6px">${date}</td></tr>
     <tr><td style="padding:6px;background:#f5f5f5;font-weight:bold">Stripe session</td><td style="padding:6px"><code>${payment.stripe_session_id || "—"}</code></td></tr>
+    <tr><td style="padding:6px;background:#f5f5f5;font-weight:bold">Stripe payment</td><td style="padding:6px">${stripeUrl ? `<a href="${stripeUrl}">Open this payment in Stripe Dashboard</a>` : "—"}</td></tr>
   </table>
+  ${stripeUrl ? `<p style="margin:16px 0"><a href="${stripeUrl}" style="display:inline-block;background:#0B38D9;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold">View payment in Stripe →</a></p>` : ""}
   <p style="font-weight:bold">Customer's reason:</p>
   <blockquote style="border-left:3px solid #0B38D9;padding:8px 12px;background:#f9f9f9;margin:8px 0;font-style:italic">${reason.replace(/</g, "&lt;")}</blockquote>
-  <p style="margin-top:24px">To process this refund, open <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://nexuma.ca"}/admin/payments">/admin/payments</a>, find the row, and click the Refund button. Stripe handles the actual money movement.</p>
+  <p style="margin-top:24px">To process this refund, open <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://nexuma.ca"}/admin/payments">/admin/payments</a>, find the row, and click the Refund button${stripeUrl ? `, or refund it directly from the <a href="${stripeUrl}">Stripe Dashboard</a>` : ""}. Stripe handles the actual money movement.</p>
   <p style="font-size:12px;color:#666">Replying to this email goes directly to the customer (${customerEmail}).</p>
 </div>`,
       });

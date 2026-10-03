@@ -485,7 +485,7 @@ export default async function PaymentsPage() {
                           {/* Steve 6/10 (6-2.md #52): only show Request
                               Refund on completed payments — refunded /
                               failed / pending rows don't qualify. */}
-                          {payment.status === "completed" && (
+                          {payment.status === "completed" && Number(payment.amount) > 0 && (
                             <RefundRequestButton
                               paymentId={payment.id}
                               serviceName={serviceName}
