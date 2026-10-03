@@ -218,3 +218,43 @@ export async function getCompletedPaymentKeysForProperties(
 
   return keys;
 }
+
+// Low Price and Founders are two alternatives for the SAME basic-tier
+// slot on a property (same $200 upfront, different final % — 35% vs
+// 30%). "Already paid" for either card must therefore be answered at
+// the property level, not per plan — otherwise an owner who paid via
+// Founders still sees "Pay $200 CAD upfront" on the Low Price card (and
+// vice versa), which would allow a duplicate charge.
+export const LOW_PRICE_SERVICE_NAME = "Plan: Low Price";
+export const FOUNDERS_SERVICE_NAME = "Plan: Founder Package — Visionary Owners";
+
+export interface BasicTierPlanStatus {
+  /** True if the property has a completed Low Price OR Founders payment. */
+  alreadyPaid: boolean;
+  /**
+   * Which of the two plans is active. Founders wins when both exist —
+   * a Founders payment after a Low Price one is an upgrade (netted via
+   * computeNetAmountDueCents), never the other way around.
+   */
+  activePlan: "founders" | "low_price" | null;
+}
+
+/**
+ * Shared Low Price / Founders "already paid" resolver. Works off the
+ * `paidServiceKeys` set every page already builds with
+ * getCompletedPaymentKeysForProperties (legacy null-property_id
+ * fallback included), so no extra query is needed.
+ */
+export function getBasicTierPlanStatus(
+  paidServiceKeys: Set<string>,
+  propertyId: string | null | undefined,
+  { lowPriceServiceId, foundersServiceId }: { lowPriceServiceId?: string | null; foundersServiceId?: string | null },
+): BasicTierPlanStatus {
+  if (!propertyId) return { alreadyPaid: false, activePlan: null };
+  const foundersPaid = !!foundersServiceId && paidServiceKeys.has(`${propertyId}:${foundersServiceId}`);
+  const lowPricePaid = !!lowPriceServiceId && paidServiceKeys.has(`${propertyId}:${lowPriceServiceId}`);
+  return {
+    alreadyPaid: foundersPaid || lowPricePaid,
+    activePlan: foundersPaid ? "founders" : lowPricePaid ? "low_price" : null,
+  };
+}

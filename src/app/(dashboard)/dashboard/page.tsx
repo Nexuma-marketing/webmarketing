@@ -21,9 +21,14 @@ import { getFoundersAvailability } from "@/lib/founders-plan";
 import { OWNER_PRIMARY_PLAN } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
+import { FoundersActivePlanCard } from "@/components/dashboard/founders-active-plan-card";
+import { getPlanPercentage } from "@/lib/plan-percentage";
 import {
   getCompletedPaymentKeysForProperties,
   getCompletedPaymentForUserPymesPlan,
+  getBasicTierPlanStatus,
+  LOW_PRICE_SERVICE_NAME,
+  FOUNDERS_SERVICE_NAME,
 } from "@/lib/payment-lookup";
 
 export const dynamic = "force-dynamic";
@@ -197,7 +202,11 @@ export default async function DashboardPage() {
   const ownerPlanServiceNames = isOwnerRole
     ? ([
         primaryPlan?.serviceName,
-        "Plan: Founder Package — Visionary Owners",
+        // Always loaded (even when the primary plan isn't Low Price) so
+        // the shared Low Price / Founders "already paid" check below
+        // can see both service ids.
+        LOW_PRICE_SERVICE_NAME,
+        FOUNDERS_SERVICE_NAME,
         "Add-on: Priority Listing Placement (1 month)",
         ...(isInvestor ? Object.values(ELITE_SUB_TIERS).map((t) => t.dbServiceName) : []),
       ].filter(Boolean) as string[])
@@ -223,7 +232,7 @@ export default async function DashboardPage() {
       }),
     );
   }
-  const foundersPlanService = planServicesByName["Plan: Founder Package — Visionary Owners"];
+  const foundersPlanService = planServicesByName[FOUNDERS_SERVICE_NAME];
   const foundersPlanTerms = OWNER_TIERS.basic.plans.find(
     (plan) => plan.name === "Founders Package — Visionary Owners",
   )?.details || [];
@@ -237,6 +246,22 @@ export default async function DashboardPage() {
   const paidServiceKeys = ownerPropertyIds.length > 0
     ? await getCompletedPaymentKeysForProperties(supabase, ownerPropertyIds)
     : new Set<string>();
+  // Low Price and Founders share one "already paid" state per property
+  // (see getBasicTierPlanStatus) — paying either one marks both cards
+  // as paid, so neither can be charged twice.
+  const basicPlanProperty = ownerProperties[0];
+  const basicPlanStatus = getBasicTierPlanStatus(paidServiceKeys, basicPlanProperty?.id, {
+    lowPriceServiceId: planServicesByName[LOW_PRICE_SERVICE_NAME]?.id,
+    foundersServiceId: foundersPlanService?.id,
+  });
+  const basicPlanRent = Number(basicPlanProperty?.monthly_rent) || 0;
+  const foundersTotalCad = basicPlanRent * (getPlanPercentage(FOUNDERS_SERVICE_NAME) ?? 0);
+  const lowPriceTotalCad = basicPlanRent * (getPlanPercentage(LOW_PRICE_SERVICE_NAME) ?? 0);
+  // Where the Founders success card goes: inside "Your Service Tier"
+  // (above the dimmed Low Price card) for basic tier; otherwise it
+  // replaces the Founders urgency banner further down.
+  const foundersActive = isOwnerNotInvestor && basicPlanStatus.activePlan === "founders";
+  const foundersActiveInPlanCard = foundersActive && !!ownerPlan && !!primaryPlan && ownerTier === "basic";
   const pymesAlreadyPaid = pymesPlanRecord?.id
     ? !!(await getCompletedPaymentForUserPymesPlan(supabase, user.id, pymesPlanRecord.id))
     : false;
@@ -452,6 +477,13 @@ export default async function DashboardPage() {
                 </ul>
               </div>
             )}
+            {foundersActiveInPlanCard && (
+              <FoundersActivePlanCard
+                foundersTotalCad={foundersTotalCad}
+                lowPriceTotalCad={lowPriceTotalCad}
+                terms={foundersPlanTerms}
+              />
+            )}
             {primaryPlan && ownerTier === "basic" && (
               <PrimaryPlanPricingCard
                 primaryPlan={primaryPlan}
@@ -459,9 +491,10 @@ export default async function DashboardPage() {
                 primaryPlanService={primaryPlanService}
                 accentColorClassName={ownerPlan.color}
                 ownerProperties={ownerProperties}
-                propertyId={ownerProperties[0]?.id}
-                alreadyPaid={!!primaryPlanService && !!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${primaryPlanService.id}`)}
+                propertyId={basicPlanProperty?.id}
+                alreadyPaid={basicPlanStatus.alreadyPaid}
                 addOnService={planServicesByName["Add-on: Priority Listing Placement (1 month)"]}
+                notSelectedNote={foundersActiveInPlanCard ? "Not selected — you're saving with Founders" : undefined}
               />
             )}
             {/* PROMPT2 item 6: preferred_owners' Support Tier is now
@@ -509,7 +542,17 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {isOwnerNotInvestor && foundersAvailability && foundersAvailability.limit > 0 && (
+      {foundersActive && !foundersActiveInPlanCard && (
+        <FoundersActivePlanCard
+          foundersTotalCad={foundersTotalCad}
+          lowPriceTotalCad={lowPriceTotalCad}
+          terms={foundersPlanTerms}
+        />
+      )}
+
+      {/* Urgency banner is pointless once Founders is the active plan —
+          the success card above / in "Your Service Tier" replaces it. */}
+      {isOwnerNotInvestor && !foundersActive && foundersAvailability && foundersAvailability.limit > 0 && (
         <FoundersBanner
           taken={foundersAvailability.taken}
           limit={foundersAvailability.limit}
@@ -517,7 +560,7 @@ export default async function DashboardPage() {
         >
           {foundersPlanService && Number(foundersPlanService.price) > 0 ? (
             <PaidOrCheckout
-              alreadyPaid={!!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${foundersPlanService.id}`)}
+              alreadyPaid={basicPlanStatus.alreadyPaid}
               type="service"
               serviceId={foundersPlanService.id}
               propertyId={ownerProperties[0]?.id}

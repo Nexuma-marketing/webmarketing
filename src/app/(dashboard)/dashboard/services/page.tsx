@@ -41,11 +41,15 @@ import { computeBalanceCents, getPlanPercentage, PLAN_UPFRONT_AMOUNT_CAD } from 
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
+import { FoundersActivePlanCard } from "@/components/dashboard/founders-active-plan-card";
 import { PYMES_PLANS } from "@/lib/constants";
 import { CleaningServicesCard } from "@/components/dashboard/cleaning-services-card";
 import {
   getCompletedPaymentKeysForProperties,
   getCompletedPaymentForUserPymesPlan,
+  getBasicTierPlanStatus,
+  LOW_PRICE_SERVICE_NAME,
+  FOUNDERS_SERVICE_NAME,
 } from "@/lib/payment-lookup";
 
 // Steve 5/22 Milestone 4: client reported "no puedo comprar ningún plan,
@@ -608,6 +612,23 @@ export default async function ServicesPage() {
   const primaryPlanTerms = baseTier?.plans.find((plan) => plan.name === primaryPlan?.name)?.details || [];
   const primaryPlanService = primaryPlan?.serviceName ? servicesByDbName[primaryPlan.serviceName] : undefined;
 
+  // Low Price and Founders share one "already paid" state per property
+  // (see getBasicTierPlanStatus) — paying either one marks both cards
+  // as paid, so neither can be charged twice.
+  const basicPlanProperty = ownerProperties[0];
+  const basicPlanStatus = getBasicTierPlanStatus(paidServiceKeys, basicPlanProperty?.id, {
+    lowPriceServiceId: servicesByDbName[LOW_PRICE_SERVICE_NAME]?.id,
+    foundersServiceId: servicesByDbName[FOUNDERS_SERVICE_NAME]?.id,
+  });
+  const basicPlanRent = Number(basicPlanProperty?.monthly_rent) || 0;
+  const foundersTotalCad = basicPlanRent * (getPlanPercentage(FOUNDERS_SERVICE_NAME) ?? 0);
+  const lowPriceTotalCad = basicPlanRent * (getPlanPercentage(LOW_PRICE_SERVICE_NAME) ?? 0);
+  // Where the Founders success card goes: inside "Your Service" (above
+  // the dimmed Low Price card) for basic tier; otherwise it replaces the
+  // Founders urgency banner.
+  const foundersActive = isOwnerNotInvestor && basicPlanStatus.activePlan === "founders";
+  const foundersActiveInPlanCard = foundersActive && !!tierDetails && !!primaryPlan && ownerTier === "basic";
+
   // Determine the user's primary city for promotion zone targeting.
   // Steve 4/30 #12: zones in /admin/pricing → Promotions used to be ignored
   // because we always passed null. Owners have a city via their property,
@@ -725,6 +746,13 @@ export default async function ServicesPage() {
                   OwnerPlanPortfolioBreakdown renders below instead of this
                   single-card component, which stays for basic (Low
                   Price — inherently single-property). */}
+              {foundersActiveInPlanCard && (
+                <FoundersActivePlanCard
+                  foundersTotalCad={foundersTotalCad}
+                  lowPriceTotalCad={lowPriceTotalCad}
+                  terms={foundersPlanTerms}
+                />
+              )}
               {primaryPlan && ownerTier === "basic" && (
                 <PrimaryPlanPricingCard
                   primaryPlan={primaryPlan}
@@ -732,9 +760,10 @@ export default async function ServicesPage() {
                   primaryPlanService={primaryPlanService}
                   accentColorClassName={tierDetails.color}
                   ownerProperties={ownerProperties}
-                  propertyId={ownerProperties[0]?.id}
-                  alreadyPaid={!!primaryPlanService && !!ownerProperties[0] && paidServiceKeys.has(`${ownerProperties[0].id}:${primaryPlanService.id}`)}
+                  propertyId={basicPlanProperty?.id}
+                  alreadyPaid={basicPlanStatus.alreadyPaid}
                   addOnService={servicesByDbName["Add-on: Priority Listing Placement (1 month)"]}
+                  notSelectedNote={foundersActiveInPlanCard ? "Not selected — you're saving with Founders" : undefined}
                 />
               )}
 
@@ -743,17 +772,17 @@ export default async function ServicesPage() {
                   Price or Founders) was actually purchased on this
                   property — informational even before item 1's "Tenant
                   signed lease" trigger makes it payable. */}
-              {ownerTier === "basic" && ownerProperties[0] && (() => {
-                const prop = ownerProperties[0];
-                const lowPriceSvc = servicesByDbName["Plan: Low Price"];
-                const foundersSvc = servicesByDbName["Plan: Founder Package — Visionary Owners"];
+              {ownerTier === "basic" && basicPlanProperty && (() => {
+                const prop = basicPlanProperty;
+                // Founders takes precedence when both exist (a Founders
+                // payment after Low Price is an upgrade).
                 const paidSvc =
-                  lowPriceSvc && paidServiceKeys.has(`${prop.id}:${lowPriceSvc.id}`)
-                    ? { svc: lowPriceSvc, name: "Low Price" }
-                    : foundersSvc && paidServiceKeys.has(`${prop.id}:${foundersSvc.id}`)
-                      ? { svc: foundersSvc, name: "Founders Package" }
+                  basicPlanStatus.activePlan === "founders"
+                    ? { svc: servicesByDbName[FOUNDERS_SERVICE_NAME], name: "Founders Package" }
+                    : basicPlanStatus.activePlan === "low_price"
+                      ? { svc: servicesByDbName[LOW_PRICE_SERVICE_NAME], name: "Low Price" }
                       : null;
-                if (!paidSvc) return null;
+                if (!paidSvc?.svc) return null;
                 const percentage = getPlanPercentage(paidSvc.svc.name);
                 if (percentage === null) return null;
                 const rent = Number(prop.monthly_rent) || 0;
@@ -829,14 +858,23 @@ export default async function ServicesPage() {
               tier — including the no-tier branch via FoundersBanner
               below. It is intentionally available across all Property
               Owner tiers. */}
-          {isOwnerNotInvestor && foundersLimit > 0 && (
+          {foundersActive && !foundersActiveInPlanCard && (
+            <FoundersActivePlanCard
+              foundersTotalCad={foundersTotalCad}
+              lowPriceTotalCad={lowPriceTotalCad}
+              terms={foundersPlanTerms}
+            />
+          )}
+          {/* Urgency banner is pointless once Founders is the active
+              plan — the success card replaces it. */}
+          {isOwnerNotInvestor && !foundersActive && foundersLimit > 0 && (
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
-                const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
-                const foundersPropertyId = ownerProperties[0]?.id;
+                const foundersService = servicesByDbName[FOUNDERS_SERVICE_NAME];
+                const foundersPropertyId = basicPlanProperty?.id;
                 return foundersService && Number(foundersService.price) > 0 ? (
                   <PaidOrCheckout
-                    alreadyPaid={!!foundersPropertyId && paidServiceKeys.has(`${foundersPropertyId}:${foundersService.id}`)}
+                    alreadyPaid={basicPlanStatus.alreadyPaid}
                     type="service"
                     serviceId={foundersService.id}
                     propertyId={foundersPropertyId}
@@ -961,14 +999,23 @@ export default async function ServicesPage() {
               counter too — without this the counter appeared "stuck at
               0" during admin tests because the no-tier owner card had
               no banner at all. */}
-          {isOwnerNotInvestor && foundersLimit > 0 && (
+          {foundersActive && !foundersActiveInPlanCard && (
+            <FoundersActivePlanCard
+              foundersTotalCad={foundersTotalCad}
+              lowPriceTotalCad={lowPriceTotalCad}
+              terms={foundersPlanTerms}
+            />
+          )}
+          {/* Urgency banner is pointless once Founders is the active
+              plan — the success card replaces it. */}
+          {isOwnerNotInvestor && !foundersActive && foundersLimit > 0 && (
             <FoundersBanner taken={foundersTaken} limit={foundersLimit} terms={foundersPlanTerms}>
               {(() => {
-                const foundersService = servicesByDbName["Plan: Founder Package — Visionary Owners"];
-                const foundersPropertyId = ownerProperties[0]?.id;
+                const foundersService = servicesByDbName[FOUNDERS_SERVICE_NAME];
+                const foundersPropertyId = basicPlanProperty?.id;
                 return foundersService && Number(foundersService.price) > 0 ? (
                   <PaidOrCheckout
-                    alreadyPaid={!!foundersPropertyId && paidServiceKeys.has(`${foundersPropertyId}:${foundersService.id}`)}
+                    alreadyPaid={basicPlanStatus.alreadyPaid}
                     type="service"
                     serviceId={foundersService.id}
                     propertyId={foundersPropertyId}

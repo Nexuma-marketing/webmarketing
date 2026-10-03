@@ -27,23 +27,36 @@ interface PaidOrCheckoutProps {
   className?: string;
 }
 
+/** The "already paid" state on its own — also used by cards that never render a checkout (e.g. FoundersActivePlanCard). */
+export function AlreadyPaidLink({
+  href = "/dashboard/payments",
+  label = "Deposit paid ✓ — View balance",
+  className,
+}: {
+  href?: string;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(buttonVariants({ variant: "outline" }), "w-full gap-2 border-green-300 text-green-700 hover:text-green-800", className)}
+    >
+      <CheckCircle2 className="h-4 w-4" />
+      {label}
+    </Link>
+  );
+}
+
 export function PaidOrCheckout({
   alreadyPaid,
-  paidHref = "/dashboard/payments",
-  paidLabel = "Deposit paid ✓ — View balance",
+  paidHref,
+  paidLabel,
   className,
   ...checkoutProps
 }: PaidOrCheckoutProps) {
   if (alreadyPaid) {
-    return (
-      <Link
-        href={paidHref}
-        className={cn(buttonVariants({ variant: "outline" }), "w-full gap-2 border-green-300 text-green-700 hover:text-green-800", className)}
-      >
-        <CheckCircle2 className="h-4 w-4" />
-        {paidLabel}
-      </Link>
-    );
+    return <AlreadyPaidLink href={paidHref} label={paidLabel} className={className} />;
   }
   return <CheckoutButton className={className} {...checkoutProps} />;
 }

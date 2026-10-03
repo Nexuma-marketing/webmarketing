@@ -28,6 +28,7 @@ export function PrimaryPlanPricingCard({
   propertyId,
   alreadyPaid = false,
   addOnService,
+  notSelectedNote,
 }: {
   primaryPlan: { name: string; pricing: string; cta: string };
   primaryPlanTerms: string[];
@@ -42,6 +43,11 @@ export function PrimaryPlanPricingCard({
   // PROMPT2 item 7: the priority-listing add-on service row, when this
   // card's plan offers it (Low Price only).
   addOnService?: { id: string; price: number | string; currency?: string | null } | null;
+  // When set, the card renders as a dimmed, non-actionable comparison
+  // (no checkout/paid button) with this note — used for Low Price when
+  // the owner's active plan on the property is Founders (see
+  // FoundersActivePlanCard).
+  notSelectedNote?: string;
 }) {
   const [addOnChecked, setAddOnChecked] = useState(false);
   const addOnPrice = addOnService ? Number(addOnService.price) : 0;
@@ -51,6 +57,30 @@ export function PrimaryPlanPricingCard({
     addOnService && addOnChecked
       ? `${primaryPlan.cta} — Pay $${baseUpfront + addOnPrice} ${primaryPlanService?.currency || "CAD"} upfront ($${baseUpfront} + $${addOnPrice} priority listing)`
       : `${primaryPlan.cta} — Pay $${baseUpfront} ${primaryPlanService?.currency || "CAD"} upfront`;
+
+  if (notSelectedNote) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-muted/30 p-4 space-y-3 text-gray-400">
+        <div>
+          <p className="font-semibold">{primaryPlan.name}</p>
+          <p className="text-sm font-medium">
+            {formatOwnerPlanPrice(primaryPlan.pricing, primaryPlan.name, ownerProperties)}
+          </p>
+        </div>
+        {primaryPlanTerms.length > 0 && (
+          <ul className="space-y-1.5">
+            {primaryPlanTerms.map((term) => (
+              <li key={term} className="flex items-start gap-2 text-sm">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-300" />
+                {term}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs italic">{notSelectedNote}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
