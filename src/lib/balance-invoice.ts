@@ -47,21 +47,100 @@ export interface BalanceInvoiceResult {
 // invoice. `due_date` is intentionally not sent.
 const INVOICE_DAYS_UNTIL_DUE = 7;
 
-/** Lazily creates + persists a Stripe Customer for an owner. Shared by the balance-invoice flow and the Premier installment cron. */
-export async function ensureStripeCustomer(
-  ownerId: string,
-  email: string,
-  name?: string | null,
-  existingId?: string | null,
-): Promise<string> {
-  if (existingId) return existingId;
+/** The invoiced property's address, used as the owner's billing address on Stripe invoices. */
+export interface BillingPropertyAddress {
+  address: string | null;
+  city: string | null;
+  province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+}
+
+/** Stripe wants an ISO-3166 alpha-2 country; properties store free text ("Canada", "CA", null). */
+function toStripeCountry(country: string | null | undefined): string {
+  const value = (country || "").trim();
+  if (/^[a-z]{2}$/i.test(value)) return value.toUpperCase();
+  if (/^united states|^usa?$/i.test(value)) return "US";
+  return "CA";
+}
+
+function toStripeAddress(property?: BillingPropertyAddress | null) {
+  if (!property?.address) return undefined;
+  return {
+    line1: property.address,
+    city: property.city || undefined,
+    state: property.province || undefined,
+    postal_code: property.postal_code || undefined,
+    country: toStripeCountry(property.country),
+  };
+}
+
+/**
+ * Returns the owner's Stripe Customer id, creating + persisting it if
+ * missing, and ALWAYS syncs name/email/address from our DB onto it
+ * before an invoice is generated. Shared by the balance-invoice flow
+ * and the Premier installment cron.
+ *
+ * Why the sync: Stripe Checkout runs with `customer_update: { name:
+ * "auto", address: "auto" }` (src/app/api/stripe/checkout/route.ts —
+ * needed for Stripe Tax), so whatever name/billing address is typed on
+ * the Checkout page overwrites the Customer. A tester paying the $200
+ * upfront with their own card details left that person's name/address
+ * on the owner's Customer, and invoices snapshot the Customer's
+ * name/address at finalization → wrong "Bill to". The previous version
+ * returned an existing id untouched, so it never corrected this.
+ *
+ * Source of truth: profiles.full_name / profiles.email, and — since
+ * profiles has no mailing address — the address of the property being
+ * invoiced.
+ */
+export async function ensureStripeCustomer({
+  ownerId,
+  email,
+  name,
+  existingId,
+  billingProperty,
+}: {
+  ownerId: string;
+  email: string;
+  name?: string | null;
+  existingId?: string | null;
+  billingProperty?: BillingPropertyAddress | null;
+}): Promise<string> {
   const stripe = getStripeServer();
-  console.log("[balance-invoice-diag] Creating Stripe customer", { ownerId, email });
-  const customer = await stripe.customers.create({
+  const address = toStripeAddress(billingProperty);
+  const customerData = {
     email,
     name: name || undefined,
+    ...(address ? { address } : {}),
     metadata: { user_id: ownerId },
-  });
+  };
+
+  if (existingId) {
+    let existing: Awaited<ReturnType<typeof stripe.customers.retrieve>> | null = null;
+    try {
+      existing = await stripe.customers.retrieve(existingId);
+    } catch (err) {
+      console.error("[balance-invoice-diag] Could not retrieve existing Stripe customer — creating a new one", {
+        ownerId,
+        existingId,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+    if (existing && !existing.deleted) {
+      console.log("[balance-invoice-diag] Syncing Stripe customer billing info from DB", {
+        ownerId,
+        stripeCustomerId: existingId,
+        before: { name: existing.name, email: existing.email, address: existing.address },
+        after: { name: customerData.name, email, address },
+      });
+      await stripe.customers.update(existingId, customerData);
+      return existingId;
+    }
+  }
+
+  console.log("[balance-invoice-diag] Creating Stripe customer", { ownerId, email });
+  const customer = await stripe.customers.create(customerData);
   console.log("[balance-invoice-diag] Stripe customer created", {
     ownerId,
     stripeCustomerId: customer.id,
@@ -308,7 +387,7 @@ export async function generateBalanceInvoice(
   const { data: property, error: propErr } = await supabaseAdmin
     .from("properties")
     .select(
-      "id, owner_id, address, city, monthly_rent, service_tier, balance_invoice_id, balance_invoice_status",
+      "id, owner_id, address, city, province, postal_code, country, monthly_rent, service_tier, balance_invoice_id, balance_invoice_status",
     )
     .eq("id", propertyId)
     .single();
@@ -474,12 +553,13 @@ export async function generateBalanceInvoice(
   }
 
   // 4. Stripe customer (lazy create)
-  const stripeCustomerId = await ensureStripeCustomer(
-    owner.id as string,
-    owner.email as string,
-    owner.full_name as string | null,
-    owner.stripe_customer_id as string | null,
-  );
+  const stripeCustomerId = await ensureStripeCustomer({
+    ownerId: owner.id as string,
+    email: owner.email as string,
+    name: owner.full_name as string | null,
+    existingId: owner.stripe_customer_id as string | null,
+    billingProperty: property,
+  });
 
   // 5. InvoiceItem + Invoice + finalize + send (shared helper)
   const balanceDescription = `Balance for ${planName} — ${(percentage * 100).toFixed(0)}% of first month's rent on ${property.address}, ${property.city} (minus $${(alreadyPaidCents / 100).toFixed(2)} already paid)`;

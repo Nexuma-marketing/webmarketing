@@ -62,7 +62,7 @@ export async function GET(request: Request) {
     try {
       const { data: property } = await supabaseAdmin
         .from("properties")
-        .select("id, owner_id, address, city")
+        .select("id, owner_id, address, city, province, postal_code, country")
         .eq("id", installment.property_id as string)
         .single();
       if (!property?.owner_id) {
@@ -77,12 +77,13 @@ export async function GET(request: Request) {
         throw new Error("Owner has no email");
       }
 
-      const stripeCustomerId = await ensureStripeCustomer(
-        owner.id as string,
-        owner.email as string,
-        owner.full_name as string | null,
-        owner.stripe_customer_id as string | null,
-      );
+      const stripeCustomerId = await ensureStripeCustomer({
+        ownerId: owner.id as string,
+        email: owner.email as string,
+        name: owner.full_name as string | null,
+        existingId: owner.stripe_customer_id as string | null,
+        billingProperty: property,
+      });
 
       const amountCents = installment.amount_cents as number;
       const created = await createAndSendStripeInvoice({
