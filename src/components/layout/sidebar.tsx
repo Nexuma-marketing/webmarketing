@@ -138,7 +138,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Sales Report",
     href: "/admin/reports",
     icon: BarChart3,
-    roles: ["admin", "sales"],
+    roles: ["admin", "marketing", "sales"],
   },
   {
     label: "Services",

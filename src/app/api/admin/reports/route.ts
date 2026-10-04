@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { buildPropertyPaymentSummary } from "@/lib/property-payment-summary";
 
 // Steve 6/5 (6-2.md #28): /admin/reports (Sales Report page) was
 // returning CA$0 / 0 transactions when a sales user opened it, even
@@ -29,7 +30,7 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [paymentsRes, servicesRes, promosRes, leadsRes] = await Promise.all([
+  const [paymentsRes, servicesRes, promosRes, leadsRes, propertySummary] = await Promise.all([
     supabaseAdmin
       .from("payments")
       .select(
@@ -48,6 +49,12 @@ export async function GET() {
       .select("id, status, created_at")
       .order("created_at", { ascending: false })
       .limit(2000),
+    // Per-property payment summary (Property Owner + Investor). A
+    // failure here must not take down the rest of the report.
+    buildPropertyPaymentSummary().catch((err) => {
+      console.error("[admin-reports] Failed to build property payment summary", err);
+      return [];
+    }),
   ]);
 
   return NextResponse.json({
@@ -55,5 +62,6 @@ export async function GET() {
     services: servicesRes.data ?? [],
     promos: promosRes.data ?? [],
     leads: leadsRes.data ?? [],
+    propertySummary,
   });
 }

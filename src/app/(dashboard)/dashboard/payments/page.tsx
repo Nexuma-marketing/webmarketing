@@ -23,7 +23,8 @@ import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscrip
 import { RefundRequestButton } from "@/components/dashboard/refund-request-button";
 import { PropertyBalanceSummary, type InstallmentDisplay } from "@/components/dashboard/property-balance-summary";
 import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
-import { computeBalanceCents, PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
+import { PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
+import { resolvePropertyPlanBalance } from "@/lib/property-plan-balance";
 import { getCompletedPaymentForPropertyService } from "@/lib/payment-lookup";
 
 const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
@@ -162,19 +163,10 @@ export default async function PaymentsPage() {
       );
       if (!planPayment) return;
       const planName = (planPayment.services as { name?: string } | null)?.name || "Plan";
-      const lowerName = planName.toLowerCase();
-      const isPremierProperty = lowerName.includes("preferred") && lowerName.includes("premier");
-      const isSupportOrPremier = lowerName.includes("preferred") && (lowerName.includes("support") || lowerName.includes("premier"));
-      const percentage = lowerName.includes("low price")
-        ? 0.35
-        : lowerName.includes("founder")
-          ? 0.3
-          : isSupportOrPremier
-            ? (index === 0 ? 0.3 : 0.28)
-            : null;
-      if (percentage === null) return; // Elite/flat-fee plans have no percentage balance
       const rent = Number(prop.monthly_rent) || 0;
-      const pendingBalanceCents = computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
+      const balance = resolvePropertyPlanBalance({ planName, propertyIndex: index, monthlyRentCad: rent });
+      if (!balance) return; // Elite/flat-fee plans have no percentage balance
+      const { pendingBalanceCents, isPremier: isPremierProperty } = balance;
       planBalanceRows.push({
         propertyId: propId,
         propertyLabel: `${prop.address}, ${prop.city}`,

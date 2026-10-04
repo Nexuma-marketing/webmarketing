@@ -41,6 +41,8 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { generateCSV } from "@/lib/admin";
+import { PropertyPaymentSummaryTable } from "@/components/admin/property-payment-summary-table";
+import type { PropertyPaymentSummaryRow } from "@/lib/property-payment-summary";
 
 // Steve 5/15 Milestone 4: client asked specifically to "probar con
 // módulo de pagos en milestone 4, para obtener datos de ventas".
@@ -136,6 +138,7 @@ export default function AdminReportsPage() {
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [promos, setPromos] = useState<PromoStat[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
+  const [propertySummary, setPropertySummary] = useState<PropertyPaymentSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("1y");
   // Steve 6/10 (6-2.md #49): Stripe reconciliation state. Lets
@@ -160,11 +163,13 @@ export default function AdminReportsPage() {
       services: ServiceRow[];
       promos: PromoStat[];
       leads: LeadRow[];
+      propertySummary?: PropertyPaymentSummaryRow[];
     };
     setPayments(json.payments || []);
     setServices(json.services || []);
     setPromos(json.promos || []);
     setLeads(json.leads || []);
+    setPropertySummary(json.propertySummary || []);
     setLoading(false);
   }, []);
 
@@ -586,6 +591,9 @@ export default function AdminReportsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── Payment summary by property (Owner + Investor) ──────── */}
+      <PropertyPaymentSummaryTable rows={propertySummary} />
 
       {/* ─── Promo redemptions ───────────────────────────────────── */}
       <Card>
