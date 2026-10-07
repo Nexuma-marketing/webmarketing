@@ -51,6 +51,20 @@ export interface PropertyDetail {
   tenant_lease_signed_at: string | null;
   balance_invoice_url: string | null;
   balance_invoice_status: string | null;
+  /** Most recent completed plan payment's service name for this property; null if none. */
+  purchased_plan_name: string | null;
+  /** True only for Premier Tier — the one plan billed via plan_installments. */
+  uses_installments: boolean;
+  installments: InstallmentRow[];
+  installments_error: string | null;
+}
+
+interface InstallmentRow {
+  sequence: number;
+  due_date: string;
+  percentage: number;
+  amount_cents: number;
+  status: string;
 }
 
 interface PhotoRow {
@@ -76,6 +90,8 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
   const [signingLease, setSigningLease] = useState(false);
   const [regeneratingInvoice, setRegeneratingInvoice] = useState(false);
   const [invoiceMessage, setInvoiceMessage] = useState("");
+  const [reschedulingInstallments, setReschedulingInstallments] = useState(false);
+  const [installmentsMessage, setInstallmentsMessage] = useState("");
 
   useEffect(() => {
     if (!propertyId) {
@@ -91,6 +107,8 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     setProperty(null);
     setPhotos([]);
     setPlanDetails(null);
+    setInvoiceMessage("");
+    setInstallmentsMessage("");
 
     void (async () => {
       try {
@@ -209,6 +227,57 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     }
   }
 
+  // Re-runs the Premier Tier installment schedule for a property whose
+  // webhook run failed (see migration v66). The server recalculates
+  // from the upfront payment date, replaces only not-yet-invoiced rows
+  // and refuses for any plan other than Premier Tier.
+  async function rescheduleInstallments() {
+    if (!propertyId) return;
+    if (!window.confirm("Reschedule this property's Premier Tier installments? Installments not yet invoiced will be recalculated from the upfront payment date. Invoiced or paid installments are never changed.")) return;
+    setReschedulingInstallments(true);
+    setInstallmentsMessage("");
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/reschedule-installments`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        skipped?: string;
+        created?: InstallmentRow[];
+        kept?: InstallmentRow[];
+        deletedCount?: number;
+      };
+      if (!res.ok) {
+        setError(body.error || `Reschedule installments failed (${res.status})`);
+        return;
+      }
+      const created = body.created ?? [];
+      const kept = body.kept ?? [];
+      if (body.skipped === "no_balance") {
+        setInstallmentsMessage("No balance owed after the upfront — nothing to schedule.");
+      } else {
+        const amounts = created.map((row) => `#${row.sequence} ${formatCents(row.amount_cents)}`).join(", ");
+        setInstallmentsMessage(
+          `${created.length} installment${created.length === 1 ? "" : "s"} scheduled${amounts ? ` (${amounts})` : ""}` +
+            (body.deletedCount ? ` · ${body.deletedCount} unbilled replaced` : "") +
+            (kept.length ? ` · ${kept.length} already billed kept` : "") +
+            ".",
+        );
+      }
+      setProperty((current) =>
+        current
+          ? {
+              ...current,
+              installments: [...kept, ...created].sort((a, b) => a.sequence - b.sequence),
+              installments_error: null,
+            }
+          : current,
+      );
+      onPhotoStatusChanged?.();
+    } finally {
+      setReschedulingInstallments(false);
+    }
+  }
+
   return (
     <Dialog open={!!propertyId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-4xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
@@ -262,6 +331,33 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
                     </Button>
                     {invoiceMessage && <span className="text-xs text-green-700">{invoiceMessage}</span>}
                   </div>
+                )}
+                {property.uses_installments && (
+                  <>
+                    <div className="flex items-start gap-2 pt-1">
+                      <span className="text-xs text-muted-foreground min-w-[110px]">Installments:</span>
+                      {property.installments_error ? (
+                        <span className="text-xs text-destructive">Could not load ({property.installments_error})</span>
+                      ) : property.installments.length === 0 ? (
+                        <span className="text-xs font-medium text-amber-700">None scheduled</span>
+                      ) : (
+                        <ul className="space-y-0.5 text-xs font-medium">
+                          {property.installments.map((row) => (
+                            <li key={row.sequence}>
+                              #{row.sequence} {formatCents(row.amount_cents)} — due {new Date(row.due_date).toLocaleDateString("en-CA")} — {row.status}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground min-w-[110px]" />
+                      <Button variant="outline" size="sm" disabled={reschedulingInstallments} onClick={rescheduleInstallments}>
+                        {reschedulingInstallments ? "Rescheduling…" : "Reschedule installments"}
+                      </Button>
+                      {installmentsMessage && <span className="text-xs text-green-700">{installmentsMessage}</span>}
+                    </div>
+                  </>
                 )}
               </DetailSection>
               <DetailSection title="Owner">
@@ -341,6 +437,10 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
 
 function KV({ k, v }: { k: string; v: string }) {
   return <div className="flex gap-2 text-xs"><span className="text-muted-foreground min-w-[110px]">{k}:</span><span className="font-medium">{v}</span></div>;
+}
+
+function formatCents(cents: number) {
+  return `$${(cents / 100).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function yesNo(value: boolean) {

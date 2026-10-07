@@ -48,13 +48,22 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "no_plan", label: STATUS_LABELS.no_plan },
 ];
 
-type SortKey = "address" | "ownerName" | "plan" | "upfrontPaid" | "pendingBalance" | "totalPaid" | "status";
+type SortKey =
+  | "address"
+  | "ownerName"
+  | "plan"
+  | "upfrontPaid"
+  | "priorityListingPaid"
+  | "pendingBalance"
+  | "totalPaid"
+  | "status";
 
 const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
   { key: "address", label: "Property" },
   { key: "ownerName", label: "Owner" },
   { key: "plan", label: "Plan" },
   { key: "upfrontPaid", label: "Upfront paid", numeric: true },
+  { key: "priorityListingPaid", label: "Priority listing", numeric: true },
   { key: "pendingBalance", label: "Pending balance", numeric: true },
   { key: "totalPaid", label: "Total paid to date", numeric: true },
   { key: "status", label: "Balance status" },
@@ -63,6 +72,7 @@ const COLUMNS: { key: SortKey; label: string; numeric?: boolean }[] = [
 function sortValue(row: PropertyPaymentSummaryRow, key: SortKey): string | number {
   switch (key) {
     case "upfrontPaid":
+    case "priorityListingPaid":
     case "pendingBalance":
     case "totalPaid":
       return row[key];
@@ -137,7 +147,8 @@ export function PropertyPaymentSummaryTable({ rows }: { rows: PropertyPaymentSum
         { key: "upfrontPaid", label: "Upfront paid (CAD)" },
         { key: "pendingBalance", label: "Pending balance (CAD)" },
         { key: "balancePaid", label: "Balance paid (CAD)" },
-        { key: "otherPaid", label: "Add-ons & other paid (CAD)" },
+        { key: "priorityListingPaid", label: "Priority listing add-on paid (CAD)" },
+        { key: "otherPaid", label: "Other paid (CAD)" },
         { key: "totalPaid", label: "Total paid to date (CAD)" },
         { key: "status", label: "Balance status" },
         { key: "statusDetail", label: "Status detail" },
@@ -161,7 +172,8 @@ export function PropertyPaymentSummaryTable({ rows }: { rows: PropertyPaymentSum
         </CardTitle>
         <CardDescription>
           Property Owner and Investor properties, all time (CAD). Pending balance uses the same
-          calculation the client sees in their Payment History.
+          calculation the client sees in their Payment History. Priority listing is the $100 add-on,
+          shown separately from the plan upfront and balance.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -237,6 +249,9 @@ export function PropertyPaymentSummaryTable({ rows }: { rows: PropertyPaymentSum
                     </td>
                     <td className="py-2 pr-3">{row.plan || "—"}</td>
                     <td className="py-2 pr-3 text-right font-mono">{formatCurrency(row.upfrontPaid)}</td>
+                    <td className="py-2 pr-3 text-right font-mono">
+                      {row.priorityListingPaid > 0 ? formatCurrency(row.priorityListingPaid) : "—"}
+                    </td>
                     <td className="py-2 pr-3 text-right font-mono font-medium">
                       {row.pendingBalance > 0 ? formatCurrency(row.pendingBalance) : "—"}
                     </td>

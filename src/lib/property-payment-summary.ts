@@ -31,9 +31,11 @@ export interface PropertyPaymentSummaryRow {
   pendingBalance: number;
   /** Completed balance-invoice / Premier installment payments (CAD). */
   balancePaid: number;
-  /** Completed add-ons and other property payments, e.g. priority listing, Elite monthly maintenance (CAD). */
+  /** Completed "Priority Listing Placement" add-on payments ($100 each) attributed to this property (CAD). */
+  priorityListingPaid: number;
+  /** Completed other property payments, e.g. Elite monthly maintenance (CAD). Excludes priority listing. */
   otherPaid: number;
-  /** upfrontPaid + balancePaid + otherPaid (CAD). */
+  /** upfrontPaid + balancePaid + priorityListingPaid + otherPaid (CAD). */
   totalPaid: number;
   status: PropertyBalanceStatus;
   /** Extra context for the status, e.g. "Invoice open" or "1 of 3 installments paid". */
@@ -94,6 +96,15 @@ function friendlyPlanName(serviceName: string): string {
   if (name.includes("preferred") && name.includes("premier")) return "Premier Tier";
   if (name.includes("preferred") && name.includes("support")) return "Support Tier";
   return serviceName.replace(/^plan:\s*/i, "");
+}
+
+// The add-on is its own `services` row (migration v65, category
+// "addon") and always gets its own `payments` row carrying the
+// property's id — both when bundled into the Low Price upfront checkout
+// (webhook's metadata.addon_service_id split) and when bought
+// standalone. Matched by name pattern like the plans above.
+function isPriorityListingService(service: { name: string; category: string | null } | undefined): boolean {
+  return !!service && service.category !== "plan" && /priority listing/i.test(service.name);
 }
 
 const BALANCE_PAYMENT_TYPES = new Set(["plan_balance", "plan_installment"]);
@@ -208,6 +219,7 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
 
     let upfrontCents = 0;
     let balancePaidCents = 0;
+    let priorityListingCents = 0;
     let otherPaidCents = 0;
     let planServiceName: string | null = null;
     for (const payment of propPayments) {
@@ -218,6 +230,8 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
       } else if (service?.category === "plan") {
         upfrontCents += cents;
         if (!planServiceName) planServiceName = service.name;
+      } else if (isPriorityListingService(service)) {
+        priorityListingCents += cents;
       } else {
         otherPaidCents += cents;
       }
@@ -278,8 +292,9 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
       upfrontPaid: upfrontCents / 100,
       pendingBalance: pendingCents / 100,
       balancePaid: balancePaidCents / 100,
+      priorityListingPaid: priorityListingCents / 100,
       otherPaid: otherPaidCents / 100,
-      totalPaid: (upfrontCents + balancePaidCents + otherPaidCents) / 100,
+      totalPaid: (upfrontCents + balancePaidCents + priorityListingCents + otherPaidCents) / 100,
       status,
       statusDetail,
     };

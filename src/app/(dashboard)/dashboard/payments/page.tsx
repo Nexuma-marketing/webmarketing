@@ -22,7 +22,7 @@ import { formatCurrency, formatDate } from "@/lib/admin";
 import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscription-button";
 import { RefundRequestButton } from "@/components/dashboard/refund-request-button";
 import { PropertyBalanceSummary, type InstallmentDisplay } from "@/components/dashboard/property-balance-summary";
-import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
+import { PriorityListingCard, PRIORITY_LISTING_SERVICE_NAME } from "@/components/dashboard/priority-listing-card";
 import { PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
 import { resolvePropertyPlanBalance } from "@/lib/property-plan-balance";
 import { getCompletedPaymentForPropertyService } from "@/lib/payment-lookup";
@@ -186,7 +186,7 @@ export default async function PaymentsPage() {
     const { data: addOnSvc } = await supabase
       .from("services")
       .select("id, price, currency")
-      .eq("name", "Add-on: Priority Listing Placement (1 month)")
+      .eq("name", PRIORITY_LISTING_SERVICE_NAME)
       .eq("is_active", true)
       .maybeSingle();
     if (addOnSvc && ownerPropIds[0]) {
@@ -347,24 +347,8 @@ export default async function PaymentsPage() {
 
       {/* PROMPT2 item 7: standalone priority-listing add-on purchase
           for an owner who skipped it at checkout. */}
-      {priorityListingAddOn && !priorityListingAlreadyPaid && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Priority Listing Placement</CardTitle>
-            <CardDescription>
-              Boost your property to a priority listing position for 1 month.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PaidOrCheckout
-              alreadyPaid={false}
-              type="service"
-              serviceId={priorityListingAddOn.id}
-              propertyId={priorityListingPropertyId}
-              label={`Add priority listing — $${Number(priorityListingAddOn.price)} ${priorityListingAddOn.currency || "CAD"}`}
-            />
-          </CardContent>
-        </Card>
+      {priorityListingAddOn && priorityListingPropertyId && !priorityListingAlreadyPaid && (
+        <PriorityListingCard service={priorityListingAddOn} propertyId={priorityListingPropertyId} />
       )}
 
       {/* Active installment subscriptions */}

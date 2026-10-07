@@ -2,9 +2,10 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
-import { PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
+import { AlreadyPaidLink, PaidOrCheckout } from "@/components/dashboard/paid-or-checkout";
 import { PropertyBalanceSummary, type InstallmentDisplay } from "@/components/dashboard/property-balance-summary";
 import { computeBalanceCents, PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
+import { getPaidPlanForProperty, type OwnerPlanServiceRef } from "@/lib/payment-lookup";
 
 // PROMPT2 item 6: Support Tier & Premier Tier restructured from one
 // account-wide card into one card per property, mirroring
@@ -40,6 +41,11 @@ interface OwnerPlanPortfolioBreakdownProps {
   service?: { id: string; price: number; currency: string | null } | null;
   isPremier: boolean;
   paidServiceKeys: Set<string>;
+  // Every owner plan's service (Low Price, Founders, Support, Premier)
+  // — a property already paid under ANY of them is shown as paid here,
+  // not just one paid under this card's own `service`. See
+  // getPaidPlanForProperty.
+  planServices: OwnerPlanServiceRef[];
   balanceByProperty: Record<string, PropertyBalanceInfo>;
 }
 
@@ -49,6 +55,7 @@ export function OwnerPlanPortfolioBreakdown({
   service,
   isPremier,
   paidServiceKeys,
+  planServices,
   balanceByProperty,
 }: OwnerPlanPortfolioBreakdownProps) {
   const covered = properties.slice(0, 3);
@@ -60,7 +67,14 @@ export function OwnerPlanPortfolioBreakdown({
         const percentage = index === 0 ? 0.3 : 0.28;
         const totalFeeCents = Math.round(rent * percentage * 100);
         const pendingBalanceCents = computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
+        // Paid under this card's own plan → full paid state + balance.
+        // Paid under a different plan (e.g. Low Price, before the owner
+        // added a 2nd property) → still not chargeable again, but this
+        // card's percentage/balance don't apply to it.
         const alreadyPaid = !!service && paidServiceKeys.has(`${prop.id}:${service.id}`);
+        const paidUnderOtherPlan = alreadyPaid
+          ? null
+          : getPaidPlanForProperty(paidServiceKeys, prop.id, planServices);
         const balance = balanceByProperty[prop.id];
 
         return (
@@ -72,19 +86,33 @@ export function OwnerPlanPortfolioBreakdown({
                 </p>
                 <p className="text-xs text-muted-foreground">{prop.address}</p>
               </div>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                {(percentage * 100).toFixed(0)}% of rent
-              </span>
+              {paidUnderOtherPlan ? (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                  Paid — {paidUnderOtherPlan.label}
+                </span>
+              ) : (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  {(percentage * 100).toFixed(0)}% of rent
+                </span>
+              )}
             </div>
 
-            {rent > 0 && (
+            {paidUnderOtherPlan && (
+              <p className="text-xs text-muted-foreground">
+                This property is already covered by your {paidUnderOtherPlan.label} plan — no new upfront payment is needed.
+              </p>
+            )}
+
+            {!paidUnderOtherPlan && rent > 0 && (
               <p className="text-xs text-muted-foreground">
                 Total service fee: ~${(totalFeeCents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })} CAD
                 {" "}(${PLAN_UPFRONT_AMOUNT_CAD} upfront + balance)
               </p>
             )}
 
-            {service && rent > 0 ? (
+            {paidUnderOtherPlan ? (
+              <AlreadyPaidLink label={`Paid under ${paidUnderOtherPlan.label} ✓ — View balance`} />
+            ) : service && rent > 0 ? (
               <PaidOrCheckout
                 alreadyPaid={alreadyPaid}
                 type="service"

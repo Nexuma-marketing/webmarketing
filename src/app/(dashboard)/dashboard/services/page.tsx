@@ -48,6 +48,7 @@ import {
   getCompletedPaymentKeysForProperties,
   getCompletedPaymentForUserPymesPlan,
   getBasicTierPlanStatus,
+  buildOwnerPlanServiceRefs,
   LOW_PRICE_SERVICE_NAME,
   FOUNDERS_SERVICE_NAME,
 } from "@/lib/payment-lookup";
@@ -620,6 +621,9 @@ export default async function ServicesPage() {
     lowPriceServiceId: servicesByDbName[LOW_PRICE_SERVICE_NAME]?.id,
     foundersServiceId: servicesByDbName[FOUNDERS_SERVICE_NAME]?.id,
   });
+  // Support Tier / Premier Tier per-property cards: a property already
+  // paid under ANY owner plan must not be offered another $200 upfront.
+  const ownerPlanServiceRefs = buildOwnerPlanServiceRefs(servicesByDbName);
   const basicPlanRent = Number(basicPlanProperty?.monthly_rent) || 0;
   const foundersTotalCad = basicPlanRent * (getPlanPercentage(FOUNDERS_SERVICE_NAME) ?? 0);
   const lowPriceTotalCad = basicPlanRent * (getPlanPercentage(LOW_PRICE_SERVICE_NAME) ?? 0);
@@ -762,7 +766,14 @@ export default async function ServicesPage() {
                   ownerProperties={ownerProperties}
                   propertyId={basicPlanProperty?.id}
                   alreadyPaid={basicPlanStatus.alreadyPaid}
-                  addOnService={servicesByDbName["Add-on: Priority Listing Placement (1 month)"]}
+                  addOnService={
+                    // Already bought standalone (Dashboard home / Payment
+                    // History) → don't offer it again as a bundled checkbox.
+                    basicPlanProperty &&
+                    paidServiceKeys.has(`${basicPlanProperty.id}:${servicesByDbName["Add-on: Priority Listing Placement (1 month)"]?.id}`)
+                      ? undefined
+                      : servicesByDbName["Add-on: Priority Listing Placement (1 month)"]
+                  }
                   notSelectedNote={foundersActiveInPlanCard ? "Not selected — you're saving with Founders" : undefined}
                 />
               )}
@@ -810,6 +821,7 @@ export default async function ServicesPage() {
                   service={servicesByDbName["Plan: Owner Preferred — Support Tier"]}
                   isPremier={false}
                   paidServiceKeys={paidServiceKeys}
+                  planServices={ownerPlanServiceRefs}
                   balanceByProperty={balanceByProperty}
                 />
               )}
@@ -982,6 +994,7 @@ export default async function ServicesPage() {
                   service={servicesByDbName["Plan: Owner Preferred — Premier Tier"]}
                   isPremier
                   paidServiceKeys={paidServiceKeys}
+                  planServices={ownerPlanServiceRefs}
                   balanceByProperty={balanceByProperty}
                 />
               </div>

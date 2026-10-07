@@ -22,6 +22,7 @@ import { OWNER_PRIMARY_PLAN } from "@/lib/owner-plan-display";
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pricing-card";
 import { FoundersActivePlanCard } from "@/components/dashboard/founders-active-plan-card";
+import { PriorityListingCard, PRIORITY_LISTING_SERVICE_NAME } from "@/components/dashboard/priority-listing-card";
 import { getPlanPercentage } from "@/lib/plan-percentage";
 import {
   getCompletedPaymentKeysForProperties,
@@ -207,7 +208,7 @@ export default async function DashboardPage() {
         // can see both service ids.
         LOW_PRICE_SERVICE_NAME,
         FOUNDERS_SERVICE_NAME,
-        "Add-on: Priority Listing Placement (1 month)",
+        PRIORITY_LISTING_SERVICE_NAME,
         ...(isInvestor ? Object.values(ELITE_SUB_TIERS).map((t) => t.dbServiceName) : []),
       ].filter(Boolean) as string[])
     : [];
@@ -262,6 +263,17 @@ export default async function DashboardPage() {
   // replaces the Founders urgency banner further down.
   const foundersActive = isOwnerNotInvestor && basicPlanStatus.activePlan === "founders";
   const foundersActiveInPlanCard = foundersActive && !!ownerPlan && !!primaryPlan && ownerTier === "basic";
+  // Priority Listing Placement add-on — same offer as Payment History
+  // (Property Owner roles, attributed to the owner's first property,
+  // hidden once purchased for it). Shown here too so it stays reachable
+  // from Dashboard home after the plan upfront is paid, when the Low
+  // Price card's bundled checkbox is no longer rendered.
+  const priorityListingAddOn = isOwnerNotInvestor ? planServicesByName[PRIORITY_LISTING_SERVICE_NAME] : undefined;
+  const priorityListingPropertyId: string | undefined = ownerProperties[0]?.id;
+  const priorityListingAlreadyPaid =
+    !!priorityListingAddOn &&
+    !!priorityListingPropertyId &&
+    paidServiceKeys.has(`${priorityListingPropertyId}:${priorityListingAddOn.id}`);
   const pymesAlreadyPaid = pymesPlanRecord?.id
     ? !!(await getCompletedPaymentForUserPymesPlan(supabase, user.id, pymesPlanRecord.id))
     : false;
@@ -493,7 +505,7 @@ export default async function DashboardPage() {
                 ownerProperties={ownerProperties}
                 propertyId={basicPlanProperty?.id}
                 alreadyPaid={basicPlanStatus.alreadyPaid}
-                addOnService={planServicesByName["Add-on: Priority Listing Placement (1 month)"]}
+                addOnService={priorityListingAlreadyPaid ? undefined : priorityListingAddOn}
                 notSelectedNote={foundersActiveInPlanCard ? "Not selected — you're saving with Founders" : undefined}
               />
             )}
@@ -540,6 +552,10 @@ export default async function DashboardPage() {
             />
           </CardContent>
         </Card>
+      )}
+
+      {priorityListingAddOn && priorityListingPropertyId && !priorityListingAlreadyPaid && (
+        <PriorityListingCard service={priorityListingAddOn} propertyId={priorityListingPropertyId} />
       )}
 
       {foundersActive && !foundersActiveInPlanCard && (

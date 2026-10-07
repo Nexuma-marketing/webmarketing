@@ -258,3 +258,54 @@ export function getBasicTierPlanStatus(
     activePlan: foundersPaid ? "founders" : lowPricePaid ? "low_price" : null,
   };
 }
+
+// Support Tier and Premier Tier are per-property cards too
+// (OwnerPlanPortfolioBreakdown), and an owner who adds a 2nd property
+// moves from the basic tier's cards to those — so a property already
+// paid under Low Price/Founders must not be offered a fresh $200
+// upfront there, and a property paid under Support must not be offered
+// one under Premier (or vice versa). Same idea as
+// getBasicTierPlanStatus, generalized to every owner plan.
+export const SUPPORT_TIER_SERVICE_NAME = "Plan: Owner Preferred — Support Tier";
+export const PREMIER_TIER_SERVICE_NAME = "Plan: Owner Preferred — Premier Tier";
+
+export interface OwnerPlanServiceRef {
+  id: string;
+  /** Short customer-facing plan name, e.g. "Low Price". */
+  label: string;
+}
+
+/**
+ * Builds the list getPaidPlanForProperty checks, from a services-by-
+ * DB-name lookup. Order = precedence when a property somehow has more
+ * than one plan paid: the later upgrade wins (Premier/Support are
+ * bought after a property outgrows the basic tier; Founders over Low
+ * Price as in getBasicTierPlanStatus).
+ */
+export function buildOwnerPlanServiceRefs(
+  servicesByDbName: Record<string, { id: string } | null | undefined>,
+): OwnerPlanServiceRef[] {
+  return [
+    { name: PREMIER_TIER_SERVICE_NAME, label: "Premier Tier" },
+    { name: SUPPORT_TIER_SERVICE_NAME, label: "Support Tier" },
+    { name: FOUNDERS_SERVICE_NAME, label: "Founders Package" },
+    { name: LOW_PRICE_SERVICE_NAME, label: "Low Price" },
+  ].flatMap(({ name, label }) => {
+    const id = servicesByDbName[name]?.id;
+    return id ? [{ id, label }] : [];
+  });
+}
+
+/**
+ * Which owner plan (if any) this property already has a completed
+ * payment for. Works off the same `paidServiceKeys` set as
+ * getBasicTierPlanStatus, so no extra query is needed.
+ */
+export function getPaidPlanForProperty(
+  paidServiceKeys: Set<string>,
+  propertyId: string | null | undefined,
+  planServices: OwnerPlanServiceRef[],
+): OwnerPlanServiceRef | null {
+  if (!propertyId) return null;
+  return planServices.find((plan) => paidServiceKeys.has(`${propertyId}:${plan.id}`)) ?? null;
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getPropertyPlanName, isPremierTierPlan } from "@/lib/balance-invoice";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +27,29 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: propertyError?.message || "Property not found" }, { status: propertyError?.code === "PGRST116" ? 404 : 500 });
   }
 
-  const [ownerResult, photosResult] = await Promise.all([
+  // The purchased plan is not a column on `properties` (service_tier is
+  // only the property-count bucket) — it is the most recent completed
+  // plan payment scoped to the property. Drives the modal's Premier-only
+  // "Reschedule installments" action.
+  const [ownerResult, photosResult, purchasedPlanName, installmentsResult] = await Promise.all([
     property.owner_id
       ? supabaseAdmin.from("profiles").select("full_name, email, phone").eq("id", property.owner_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     supabaseAdmin.from("property_images").select("id, image_url, room_category, status, uploaded_at").eq("property_id", id).order("uploaded_at", { ascending: false }),
+    getPropertyPlanName(id),
+    supabaseAdmin.from("plan_installments").select("sequence, due_date, percentage, amount_cents, status").eq("property_id", id).order("sequence", { ascending: true }),
   ]);
   if (ownerResult.error) return NextResponse.json({ error: `owner fetch failed: ${ownerResult.error.message}` }, { status: 500 });
   if (photosResult.error) return NextResponse.json({ error: `property_images fetch failed: ${photosResult.error.message}` }, { status: 500 });
+
+  // Not fatal for the rest of the modal — but logged, since a silent
+  // failure here is exactly how the missing grant went unnoticed.
+  if (installmentsResult.error) {
+    console.error("[premier-installments] Admin property detail: failed to load installments", {
+      propertyId: id,
+      error: installmentsResult.error,
+    });
+  }
 
   return NextResponse.json({
     property: {
@@ -49,6 +65,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       owner_name: ownerResult.data?.full_name || "Unknown",
       owner_email: ownerResult.data?.email || "",
       owner_phone: ownerResult.data?.phone || "",
+      purchased_plan_name: purchasedPlanName,
+      uses_installments: isPremierTierPlan(purchasedPlanName),
+      installments: installmentsResult.data || [],
+      installments_error: installmentsResult.error?.message || null,
     },
     photos: photosResult.data || [],
   });

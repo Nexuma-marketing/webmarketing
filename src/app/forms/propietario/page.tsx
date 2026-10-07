@@ -1913,11 +1913,23 @@ export default function OwnerFormPage() {
 
             {/* ═══ Step 5: Property Photos (Owner) ═══ */}
             {step === 5 && !isInvestor && (
-              <ImageUpload
-                images={propertyImages}
-                onImagesChange={setPropertyImages}
-                maxImages={20}
-              />
+              <div className="space-y-4">
+                {/* Same notice as add-property's Step 3 and the investor
+                    branch below. A Low Price owner (single property)
+                    only ever uploads photos through this branch, which
+                    enforced the rule in nextStep() but never stated it. */}
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-medium text-amber-800">Required to continue</p>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Upload at least one photo each of the Living Room, Bedroom, Kitchen, Bathroom, and Exterior.
+                  </p>
+                </div>
+                <ImageUpload
+                  images={propertyImages}
+                  onImagesChange={setPropertyImages}
+                  maxImages={20}
+                />
+              </div>
             )}
 
             {/* ═══ Step 5: Per-property photos (Investor #11, #12) ═══ */}
