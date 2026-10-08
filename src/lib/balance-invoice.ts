@@ -515,12 +515,40 @@ export async function generateBalanceInvoice(
     };
   }
 
-  const percentage = getPlanPercentage(planName);
+  let percentage = getPlanPercentage(planName);
   if (percentage === null) {
     return {
       success: false,
       error: `Plan "${planName}" does not use a percentage-balance model.`,
     };
+  }
+
+  // Support/Premier ("Owner Preferred") rate depends on the property's
+  // position among ALL of the owner's properties by created_at — 30%
+  // for #1, 28% for #2/#3 — whatever plan the earlier properties were
+  // paid under. getPlanPercentage() is flat per plan name (Support was
+  // always 30%), so a 2nd/3rd Support property was invoiced at 30%
+  // while its card, Payment History and the Premier installments
+  // (premier-installments.ts) all used 28%. Low Price / Founders are
+  // untouched.
+  if (/preferred/i.test(planName)) {
+    const { data: ownerProperties, error: rankError } = await supabaseAdmin
+      .from("properties")
+      .select("id")
+      .eq("owner_id", property.owner_id as string)
+      .order("created_at", { ascending: true });
+    const rank = (ownerProperties || []).findIndex((p) => p.id === propertyId);
+    console.log("[balance-invoice-diag] Property rank resolved", { propertyId, rank, error: rankError });
+    if (rankError || rank === -1) {
+      return { success: false, error: "Could not resolve this property's position among the owner's properties." };
+    }
+    if (rank > 2) {
+      return {
+        success: false,
+        error: "Support/Premier rates only cover an owner's first 3 properties — this property is outside that range.",
+      };
+    }
+    percentage = rank === 0 ? 0.3 : 0.28;
   }
 
   const monthlyRent = Number(property.monthly_rent);

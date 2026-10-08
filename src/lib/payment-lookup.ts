@@ -113,7 +113,22 @@ export async function getCompletedUpfrontForProperty(
     .eq("status", "completed")
     .in("payment_type", ["one_time", "plan_switch_noop"])
     .order("created_at", { ascending: false });
-  const rows = (data as CompletedPaymentRow[] | null) ?? [];
+  // Only plan payments count as "upfront already paid". The $100
+  // Priority Listing add-on is also a completed one_time row on the
+  // property, and was being netted against the plan fee. A row with no
+  // service_id, or whose service can't be resolved (old payments, or a
+  // failed services read), still counts — it is only dropped when its
+  // service is positively known to be a non-plan category.
+  const dropNonPlanRows = async (input: CompletedPaymentRow[]): Promise<CompletedPaymentRow[]> => {
+    const serviceIds = Array.from(new Set(input.map((row) => row.service_id).filter((id): id is string => !!id)));
+    if (serviceIds.length === 0) return input;
+    const { data: services } = await supabase.from("services").select("id, category").in("id", serviceIds);
+    const nonPlanIds = new Set(
+      (services || []).filter((svc) => svc.category && svc.category !== "plan").map((svc) => svc.id as string),
+    );
+    return input.filter((row) => !row.service_id || !nonPlanIds.has(row.service_id));
+  };
+  const rows = await dropNonPlanRows((data as CompletedPaymentRow[] | null) ?? []);
   let totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
 
   if (totalAmount === 0) {
@@ -136,7 +151,8 @@ export async function getCompletedUpfrontForProperty(
           .is("property_id", null)
           .eq("status", "completed")
           .in("payment_type", ["one_time", "plan_switch_noop"]);
-        totalAmount = (legacyRows || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+        const legacyPlanRows = await dropNonPlanRows((legacyRows as CompletedPaymentRow[] | null) ?? []);
+        totalAmount = legacyPlanRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
       }
     }
   }
