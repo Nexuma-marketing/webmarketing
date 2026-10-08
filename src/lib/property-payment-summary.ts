@@ -200,6 +200,17 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
     }
   }
 
+  // Each owner's most recent completed plan payment on any property —
+  // what generateBalanceInvoice prices an unpaid balance with (see
+  // resolvePropertyPlanBalance's plan-change rule). `payments` is
+  // newest-first, so the first plan payment seen per user is the latest.
+  const latestPlanNameByUser = new Map<string, string>();
+  for (const payment of payments) {
+    if (!payment.user_id || !payment.service_id || latestPlanNameByUser.has(payment.user_id)) continue;
+    const service = servicesById.get(payment.service_id);
+    if (service?.category === "plan") latestPlanNameByUser.set(payment.user_id, service.name);
+  }
+
   const installmentsByProperty = new Map<string, InstallmentRecord[]>();
   for (const inst of installments) {
     const list = installmentsByProperty.get(inst.property_id) ?? [];
@@ -238,6 +249,7 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
     }
 
     let pendingCents = 0;
+    let effectivePlanName = planServiceName;
     let status: PropertyBalanceStatus = "no_plan";
     let statusDetail: string | null = null;
 
@@ -247,7 +259,10 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
         planName: planServiceName,
         propertyIndex,
         monthlyRentCad: rent,
+        ownerLatestPlanName: prop.owner_id ? latestPlanNameByUser.get(prop.owner_id) ?? null : null,
+        balancePaid: prop.balance_invoice_status === "paid",
       });
+      if (balance) effectivePlanName = balance.effectivePlanName;
       const propInstallments = (installmentsByProperty.get(prop.id) ?? []).filter(
         (inst) => inst.status !== "voided",
       );
@@ -288,7 +303,13 @@ export async function buildPropertyPaymentSummary(): Promise<PropertyPaymentSumm
       address: [prop.address, prop.city].filter(Boolean).join(", ") || "—",
       ownerName: owner?.full_name || owner?.email || "Unknown owner",
       ownerEmail: owner?.email ?? null,
-      plan: planServiceName ? friendlyPlanName(planServiceName) : null,
+      // The plan the balance is billed under; when that differs from
+      // the plan the upfront was paid as, both are shown.
+      plan: !planServiceName
+        ? null
+        : effectivePlanName && effectivePlanName !== planServiceName
+          ? `${friendlyPlanName(effectivePlanName)} (upfront paid as ${friendlyPlanName(planServiceName)})`
+          : friendlyPlanName(planServiceName),
       upfrontPaid: upfrontCents / 100,
       pendingBalance: pendingCents / 100,
       balancePaid: balancePaidCents / 100,

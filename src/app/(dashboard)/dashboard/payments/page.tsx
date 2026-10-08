@@ -153,6 +153,14 @@ export default async function PaymentsPage() {
     // owner only — see payment-lookup.ts's docstrings for the same
     // pattern used elsewhere.
     const isSingleProperty = ownerPropIds.length === 1;
+    // Owner's most recent completed plan payment on any property —
+    // what generateBalanceInvoice prices an unpaid balance with (see
+    // resolvePropertyPlanBalance's plan-change rule). `payments` is
+    // already newest-first.
+    const ownerLatestPlanName =
+      ((payments || []).find(
+        (p) => p.status === "completed" && (p.services as { category?: string } | null)?.category === "plan",
+      )?.services as { name?: string } | null | undefined)?.name ?? null;
     (ownerProperties || []).forEach((prop, index) => {
       const propId = prop.id as string;
       const planPayment = (payments || []).find(
@@ -164,13 +172,19 @@ export default async function PaymentsPage() {
       if (!planPayment) return;
       const planName = (planPayment.services as { name?: string } | null)?.name || "Plan";
       const rent = Number(prop.monthly_rent) || 0;
-      const balance = resolvePropertyPlanBalance({ planName, propertyIndex: index, monthlyRentCad: rent });
+      const balance = resolvePropertyPlanBalance({
+        planName,
+        propertyIndex: index,
+        monthlyRentCad: rent,
+        ownerLatestPlanName,
+        balancePaid: prop.balance_invoice_status === "paid",
+      });
       if (!balance) return; // Elite/flat-fee plans have no percentage balance
       const { pendingBalanceCents, isPremier: isPremierProperty } = balance;
       planBalanceRows.push({
         propertyId: propId,
         propertyLabel: `${prop.address}, ${prop.city}`,
-        planName,
+        planName: balance.effectivePlanName,
         upfrontPaidCents: PLAN_UPFRONT_AMOUNT_CAD * 100,
         pendingBalanceCents,
         balanceInvoiceUrl: isPremierProperty ? null : (prop.balance_invoice_url as string | null),

@@ -18,18 +18,59 @@ export interface PropertyPlanBalance {
   pendingBalanceCents: number;
   /** Premier Tier bills its balance as scheduled installments, never one lump invoice. */
   isPremier: boolean;
+  /**
+   * The plan whose rules price this balance. Equals `planName` except
+   * for the plan-change case described on resolvePropertyPlanBalance.
+   */
+  effectivePlanName: string;
 }
 
-/** Returns null for plans with no percentage balance (Elite / flat-fee). */
+function isPreferredPlan(lowerName: string): boolean {
+  return lowerName.includes("preferred") && (lowerName.includes("support") || lowerName.includes("premier"));
+}
+
+/**
+ * Returns null for plans with no percentage balance (Elite / flat-fee).
+ *
+ * Plan-change rule — mirrors generateBalanceInvoice
+ * (src/lib/balance-invoice.ts), which is the source of truth for what
+ * is actually billed: it prices a property's balance with the OWNER's
+ * most recent completed plan payment, not the plan the property's own
+ * upfront was paid under. So when a property's upfront was Low Price /
+ * Founders, its balance is still unpaid, and the owner's latest plan
+ * payment is now Support/Premier (bought for another property), the
+ * balance follows the Preferred position rate (30% for #1, 28% for
+ * #2/#3) instead of 35% / 30%. Pass `ownerLatestPlanName` and
+ * `balancePaid` to apply it; every other combination is unchanged.
+ */
 export function resolvePropertyPlanBalance(args: {
   planName: string;
   propertyIndex: number;
   monthlyRentCad: number;
+  /** Service name of the owner's most recent completed plan payment, any property. */
+  ownerLatestPlanName?: string | null;
+  /** True once this property's balance invoice is paid — its plan is then final. */
+  balancePaid?: boolean;
 }): PropertyPlanBalance | null {
-  const lowerName = args.planName.toLowerCase();
-  const isPremier = lowerName.includes("preferred") && lowerName.includes("premier");
-  const isSupportOrPremier =
-    lowerName.includes("preferred") && (lowerName.includes("support") || lowerName.includes("premier"));
+  const ownLowerName = args.planName.toLowerCase();
+  const isBasicPlan = ownLowerName.includes("low price") || ownLowerName.includes("founder");
+  const ownerLatestLower = (args.ownerLatestPlanName || "").toLowerCase();
+  const switchedToPreferred =
+    isBasicPlan &&
+    !args.balancePaid &&
+    isPreferredPlan(ownerLatestLower) &&
+    // Preferred rates only cover the owner's first 3 properties; the
+    // invoice refuses beyond that, so leave those as they were.
+    args.propertyIndex >= 0 &&
+    args.propertyIndex <= 2;
+  const effectivePlanName = switchedToPreferred ? (args.ownerLatestPlanName as string) : args.planName;
+  const lowerName = effectivePlanName.toLowerCase();
+  // Installments vs lump invoice is decided by the property's OWN plan
+  // (tenant-signed-lease route's getPropertyPlanName), so a Low Price
+  // property re-rated by a Premier purchase elsewhere still gets one
+  // lump-sum balance invoice.
+  const isPremier = ownLowerName.includes("preferred") && ownLowerName.includes("premier");
+  const isSupportOrPremier = isPreferredPlan(lowerName);
   const percentage = lowerName.includes("low price")
     ? 0.35
     : lowerName.includes("founder")
@@ -42,5 +83,6 @@ export function resolvePropertyPlanBalance(args: {
     percentage,
     pendingBalanceCents: computeBalanceCents({ monthlyRentCad: args.monthlyRentCad, planPercentage: percentage }),
     isPremier,
+    effectivePlanName,
   };
 }
