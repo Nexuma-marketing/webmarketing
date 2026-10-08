@@ -236,17 +236,22 @@ export default function AdminReportsPage() {
   // ─── Revenue cards ─────────────────────────────────────────────
   const stats = useMemo(() => {
     const completed = filteredPayments.filter((p) => p.status === "completed");
-    const pending = filteredPayments.filter((p) => p.status === "pending");
     const refunded = filteredPayments.filter((p) => p.status === "refunded");
 
     const revenue = completed.reduce((s, p) => s + Number(p.amount), 0);
-    const pendingAmt = pending.reduce((s, p) => s + Number(p.amount), 0);
+    // Pending = what's still owed on property plans, from the same rows
+    // as "Payment summary by property" below (all time, not period-
+    // filtered), so the tile and the table always agree. It no longer
+    // sums payments with status "pending": no flow writes those rows,
+    // and adding them on top could count an in-flight balance twice.
+    const pendingAmt = propertySummary.reduce((s, row) => s + row.pendingBalance, 0);
+    const pendingProperties = propertySummary.filter((row) => row.pendingBalance > 0).length;
     const refundedAmt = refunded.reduce((s, p) => s + Number(p.amount), 0);
     const txCount = completed.length;
     const avgTx = txCount > 0 ? revenue / txCount : 0;
     const uniqueCustomers = new Set(completed.map((p) => p.user_id)).size;
-    return { revenue, pendingAmt, refundedAmt, txCount, avgTx, uniqueCustomers };
-  }, [filteredPayments]);
+    return { revenue, pendingAmt, pendingProperties, refundedAmt, txCount, avgTx, uniqueCustomers };
+  }, [filteredPayments, propertySummary]);
 
   // ─── Monthly trend (last 12 months regardless of period filter) ──
   const monthlyTrend = useMemo(() => {
@@ -472,7 +477,7 @@ export default function AdminReportsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Pending & refunded</CardTitle>
+            <CardTitle className="text-sm font-medium">Pending balance & refunds</CardTitle>
             <CreditCard className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent>
@@ -480,7 +485,9 @@ export default function AdminReportsPage() {
               {formatCurrency(stats.pendingAmt)}
             </p>
             <p className="text-xs text-muted-foreground">
-              pending · {formatCurrency(stats.refundedAmt)} refunded
+              pending across {stats.pendingProperties}{" "}
+              {stats.pendingProperties === 1 ? "property" : "properties"} (all time) ·{" "}
+              {formatCurrency(stats.refundedAmt)} refunded
             </p>
           </CardContent>
         </Card>
