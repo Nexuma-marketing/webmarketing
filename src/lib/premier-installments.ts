@@ -1,6 +1,7 @@
+import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeBalanceCents } from "@/lib/plan-percentage";
-import { isPremierTierPlan } from "@/lib/balance-invoice";
+import { isPremierTierPlan, ensureStripeCustomer, createAndSendStripeInvoice } from "@/lib/balance-invoice";
 
 // PROMPT2 item 5: Premier Tier's calendar-based installment schedule.
 // Called from the Stripe webhook's checkout.session.completed handler,
@@ -355,4 +356,200 @@ export async function reschedulePremierInstallments(propertyId: string): Promise
     error,
   });
   return { ...base, success: !error, httpStatus: error ? 500 : 200, created, error };
+}
+
+export interface ProcessInstallmentResult {
+  installmentId: string;
+  success: boolean;
+  error?: string;
+  sequence?: number;
+  amountCents?: number;
+  invoiceId?: string;
+  hostedInvoiceUrl?: string | null;
+  /** Row was already claimed by a concurrent run (cron vs admin button, or a double click). */
+  skipped?: "already_claimed";
+}
+
+/**
+ * Invoices every plan_installments row that is `scheduled` with a
+ * due_date that has already arrived — moved verbatim from the daily
+ * process-installments cron so the cron and the admin "Process due
+ * installments" button run the exact same code. `propertyId` narrows
+ * the run to one property (admin button); the cron passes nothing.
+ * Never gated by "Tenant signed lease" (see header comment).
+ *
+ * Concurrency: before touching Stripe each row is claimed atomically
+ * (UPDATE ... WHERE status='scheduled' AND stripe_invoice_id IS NULL)
+ * by writing a temporary `claiming:<uuid>` marker into
+ * stripe_invoice_id. Only the run whose UPDATE matched the row
+ * invoices it; any concurrent run skips it. If Stripe throws, the
+ * marker is cleared so the row stays a plain `scheduled` row the next
+ * run can retry — it is never marked `invoiced` without a real invoice.
+ */
+export async function processDueInstallments(
+  opts: { propertyId?: string } = {},
+): Promise<{ error?: string; results: ProcessInstallmentResult[] }> {
+  const { propertyId } = opts;
+  const nowIso = new Date().toISOString();
+
+  let dueQuery = supabaseAdmin
+    .from("plan_installments")
+    .select("id, property_id, service_id, sequence, due_date, amount_cents")
+    .eq("status", "scheduled")
+    .lte("due_date", nowIso);
+  if (propertyId) dueQuery = dueQuery.eq("property_id", propertyId);
+  const { data: dueInstallments, error: dueError } = await dueQuery;
+
+  console.log("[balance-invoice-diag] Due installments query completed", {
+    count: dueInstallments?.length ?? 0,
+    error: dueError,
+  });
+  console.log("[premier-installments] Due installments selected", {
+    propertyId: propertyId ?? "all",
+    count: dueInstallments?.length ?? 0,
+    error: dueError,
+  });
+
+  if (dueError) {
+    return { error: dueError.message, results: [] };
+  }
+
+  const results: ProcessInstallmentResult[] = [];
+
+  for (const installment of dueInstallments ?? []) {
+    const installmentId = installment.id as string;
+    const claimToken = `claiming:${randomUUID()}`;
+    let invoiceCreated = false;
+    try {
+      const { data: claimed, error: claimError } = await supabaseAdmin
+        .from("plan_installments")
+        .update({ stripe_invoice_id: claimToken, updated_at: new Date().toISOString() })
+        .eq("id", installmentId)
+        .eq("status", "scheduled")
+        .is("stripe_invoice_id", null)
+        .select("id");
+      if (claimError) throw new Error(`Could not claim installment: ${claimError.message}`);
+      if (!claimed || claimed.length === 0) {
+        console.log("[premier-installments] Installment already claimed by another run, skipping", {
+          installmentId,
+        });
+        results.push({
+          installmentId,
+          success: false,
+          skipped: "already_claimed",
+          sequence: installment.sequence as number,
+          error: "Already being invoiced by another run",
+        });
+        continue;
+      }
+
+      const { data: property } = await supabaseAdmin
+        .from("properties")
+        .select("id, owner_id, address, city, province, postal_code, country")
+        .eq("id", installment.property_id as string)
+        .single();
+      if (!property?.owner_id) {
+        throw new Error("Property or owner_id not found");
+      }
+      const { data: owner } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, full_name, stripe_customer_id")
+        .eq("id", property.owner_id as string)
+        .single();
+      if (!owner?.email) {
+        throw new Error("Owner has no email");
+      }
+
+      const stripeCustomerId = await ensureStripeCustomer({
+        ownerId: owner.id as string,
+        email: owner.email as string,
+        name: owner.full_name as string | null,
+        existingId: owner.stripe_customer_id as string | null,
+        billingProperty: property,
+      });
+
+      const amountCents = installment.amount_cents as number;
+      const created = await createAndSendStripeInvoice({
+        stripeCustomerId,
+        amountCents,
+        itemDescription: `Premier Tier installment ${installment.sequence} — ${property.address}, ${property.city}`,
+        invoiceDescription: `Premier Tier installment ${installment.sequence} for ${property.address}`,
+        metadata: {
+          kind: "plan_installment",
+          installment_id: installmentId,
+          property_id: property.id as string,
+          owner_id: property.owner_id as string,
+          sequence: String(installment.sequence),
+        },
+      });
+      invoiceCreated = true;
+
+      const { error: updateError } = await supabaseAdmin
+        .from("plan_installments")
+        .update({
+          status: "invoiced",
+          stripe_invoice_id: created.invoiceId,
+          hosted_invoice_url: created.hostedInvoiceUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", installmentId);
+      if (updateError) {
+        // The invoice exists and was emailed — keep the claim marker so
+        // no later run invoices this row a second time.
+        console.error("[premier-installments] CRITICAL: invoice sent but row update failed — fix row manually", {
+          installmentId,
+          invoiceId: created.invoiceId,
+          hostedInvoiceUrl: created.hostedInvoiceUrl,
+          error: updateError.message,
+        });
+        throw new Error(`Invoice ${created.invoiceId} sent but row update failed: ${updateError.message}`);
+      }
+
+      console.log("[balance-invoice-diag] Installment invoiced", {
+        installmentId,
+        invoiceId: created.invoiceId,
+        amountCents,
+      });
+      results.push({
+        installmentId,
+        success: true,
+        sequence: installment.sequence as number,
+        amountCents,
+        invoiceId: created.invoiceId,
+        hostedInvoiceUrl: created.hostedInvoiceUrl,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[balance-invoice-diag] CRITICAL: failed to invoice installment", {
+        installmentId,
+        error: message,
+      });
+      if (!invoiceCreated) {
+        // No invoice was returned — release the claim so the row is a
+        // plain `scheduled` row again. Matched on our own token so a
+        // row we never claimed is not touched.
+        const { error: releaseError } = await supabaseAdmin
+          .from("plan_installments")
+          .update({ stripe_invoice_id: null, updated_at: new Date().toISOString() })
+          .eq("id", installmentId)
+          .eq("stripe_invoice_id", claimToken);
+        if (releaseError) {
+          console.error("[premier-installments] CRITICAL: failed to release installment claim", {
+            installmentId,
+            claimToken,
+            error: releaseError.message,
+          });
+        }
+      }
+      results.push({
+        installmentId,
+        success: false,
+        error: message,
+        sequence: installment.sequence as number,
+        amountCents: installment.amount_cents as number,
+      });
+    }
+  }
+
+  return { results };
 }

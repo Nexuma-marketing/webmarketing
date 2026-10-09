@@ -92,6 +92,9 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
   const [invoiceMessage, setInvoiceMessage] = useState("");
   const [reschedulingInstallments, setReschedulingInstallments] = useState(false);
   const [installmentsMessage, setInstallmentsMessage] = useState("");
+  const [processingInstallments, setProcessingInstallments] = useState(false);
+  const [processMessage, setProcessMessage] = useState("");
+  const [processErrors, setProcessErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (!propertyId) {
@@ -109,6 +112,8 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     setPlanDetails(null);
     setInvoiceMessage("");
     setInstallmentsMessage("");
+    setProcessMessage("");
+    setProcessErrors([]);
 
     void (async () => {
       try {
@@ -278,6 +283,51 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
     }
   }
 
+  // Runs the daily process-installments cron logic now, for this
+  // property only (Vercel crons never run on Preview deployments).
+  // Server-side it invoices only rows already `scheduled` and due.
+  async function processDueInstallments() {
+    if (!propertyId) return;
+    if (!window.confirm("Invoice this property's due Premier Tier installments now? A Stripe invoice will be created and emailed to the owner for each installment whose due date has passed. Future installments are not touched.")) return;
+    setProcessingInstallments(true);
+    setProcessMessage("");
+    setProcessErrors([]);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/properties/${propertyId}/process-installments`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        results?: { success: boolean; sequence?: number; amountCents?: number; error?: string }[];
+        installments?: InstallmentRow[] | null;
+      };
+      if (!res.ok) {
+        setError(body.error || `Process due installments failed (${res.status})`);
+        return;
+      }
+      const results = body.results ?? [];
+      const ok = results.filter((r) => r.success);
+      const amounts = ok.map((r) => `#${r.sequence} ${formatCents(r.amountCents ?? 0)}`).join(", ");
+      setProcessMessage(
+        results.length === 0
+          ? "No due installments to invoice."
+          : `${ok.length} of ${results.length} installment${results.length === 1 ? "" : "s"} invoiced${amounts ? ` (${amounts})` : ""}.`,
+      );
+      setProcessErrors(results.filter((r) => !r.success).map((r) => `#${r.sequence}: ${r.error || "Unknown error"}`));
+      const installments = body.installments;
+      if (installments) {
+        setProperty((current) => (current ? { ...current, installments, installments_error: null } : current));
+      }
+      onPhotoStatusChanged?.();
+    } finally {
+      setProcessingInstallments(false);
+    }
+  }
+
+  const hasDueInstallments =
+    property != null &&
+    property.uses_installments &&
+    (property.installments ?? []).some((row) => row.status === "scheduled" && new Date(row.due_date).getTime() <= Date.now());
+
   return (
     <Dialog open={!!propertyId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-4xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
@@ -357,6 +407,24 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
                       </Button>
                       {installmentsMessage && <span className="text-xs text-green-700">{installmentsMessage}</span>}
                     </div>
+                    {(hasDueInstallments || processMessage || processErrors.length > 0) && (
+                      <div className="flex flex-wrap items-start gap-2">
+                        <span className="text-xs text-muted-foreground min-w-[110px]" />
+                        {hasDueInstallments && (
+                          <Button variant="outline" size="sm" disabled={processingInstallments} onClick={processDueInstallments}>
+                            {processingInstallments ? "Processing…" : "Process due installments"}
+                          </Button>
+                        )}
+                        {processMessage && <span className="text-xs text-green-700">{processMessage}</span>}
+                        {processErrors.length > 0 && (
+                          <ul className="w-full space-y-0.5 text-xs text-destructive">
+                            {processErrors.map((msg) => (
+                              <li key={msg}>{msg}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </DetailSection>
