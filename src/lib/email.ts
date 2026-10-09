@@ -192,12 +192,12 @@ async function sendOne(args: {
   subject: string;
   html: string;
   notifyCommercial?: boolean;
-}): Promise<void> {
+}): Promise<boolean> {
   emailMetrics.attempts += 1;
   if (!process.env.RESEND_API_KEY) {
     emailMetrics.skippedNoApiKey += 1;
     emailMetrics.lastError = "RESEND_API_KEY not configured";
-    return;
+    return false;
   }
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
@@ -210,10 +210,12 @@ async function sendOne(args: {
     });
     emailMetrics.succeeded += 1;
     emailMetrics.lastSuccessAt = new Date().toISOString();
+    return true;
   } catch (err) {
     emailMetrics.failed += 1;
     emailMetrics.lastError = err instanceof Error ? err.message : String(err);
     console.error("payment email failed:", err);
+    return false;
   }
 }
 
@@ -280,6 +282,11 @@ export async function sendPaymentReceiptEmail(args: {
 // never instead of — Stripe's own hosted-invoice email, since the
 // customer must never have to rely on finding that email (item 3: the
 // dashboard is the primary, always-available way to pay).
+//
+// Also used for Premier Tier installments (processDueInstallments in
+// src/lib/premier-installments.ts): passing `installment` switches the
+// wording to "Installment N of M" and `payUrl` points the button at the
+// Stripe hosted invoice. Without them the email is unchanged.
 export async function sendBalanceInvoiceAvailableEmail(args: {
   to: string;
   customerName: string;
@@ -287,22 +294,30 @@ export async function sendBalanceInvoiceAvailableEmail(args: {
   amountCents: number;
   currency?: string;
   dueDate?: string | null;
-}): Promise<void> {
+  installment?: { sequence: number; total: number } | null;
+  payUrl?: string | null;
+}): Promise<boolean> {
   const amount = formatCurrency(args.amountCents, args.currency || "CAD");
   const dueLabel = args.dueDate
     ? new Date(args.dueDate).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })
     : null;
-  await sendOne({
+  const installmentLabel = args.installment
+    ? `Installment ${args.installment.sequence} of ${args.installment.total}`
+    : null;
+  const payUrl = args.payUrl || `${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments`;
+  return sendOne({
     to: args.to,
     notifyCommercial: true,
-    subject: `Your remaining balance is now payable — ${args.propertyLabel}`,
+    subject: installmentLabel
+      ? `${installmentLabel} is now payable — ${args.propertyLabel}`
+      : `Your remaining balance is now payable — ${args.propertyLabel}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#16a34a">Your remaining balance is ready, ${args.customerName}</h2>
-        <p>The remaining balance for <strong>${args.propertyLabel}</strong> is now payable: <strong>${amount}</strong>.</p>
+        <h2 style="color:#16a34a">${installmentLabel ? `${installmentLabel} is ready` : "Your remaining balance is ready"}, ${args.customerName}</h2>
+        <p>${installmentLabel ? `${installmentLabel} of the balance` : "The remaining balance"} for <strong>${args.propertyLabel}</strong> is now payable: <strong>${amount}</strong>.</p>
         ${dueLabel ? `<p>Due by <strong>${dueLabel}</strong>.</p>` : ""}
-        <p>You'll also receive a separate invoice email directly from Stripe — but you don't need to wait for it or search for it. You can pay any time from your Payment History:</p>
-        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">Pay remaining balance</a></p>
+        <p>You'll also receive a separate invoice email directly from Stripe — but you don't need to wait for it or search for it. You can pay any time from ${args.payUrl ? "the link below or " : ""}your Payment History:</p>
+        <p><a href="${payUrl}" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">${installmentLabel ? `Pay installment ${args.installment!.sequence}` : "Pay remaining balance"}</a></p>
         ${brandFooter()}
       </div>
     `,

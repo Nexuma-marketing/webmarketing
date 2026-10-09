@@ -65,6 +65,7 @@ interface InstallmentRow {
   percentage: number;
   amount_cents: number;
   status: string;
+  hosted_invoice_url?: string | null;
 }
 
 interface PhotoRow {
@@ -297,7 +298,7 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
       const res = await fetch(`/api/admin/properties/${propertyId}/process-installments`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
-        results?: { success: boolean; sequence?: number; amountCents?: number; error?: string }[];
+        results?: { success: boolean; sequence?: number; amountCents?: number; error?: string; emailSent?: boolean }[];
         installments?: InstallmentRow[] | null;
       };
       if (!res.ok) {
@@ -312,7 +313,12 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
           ? "No due installments to invoice."
           : `${ok.length} of ${results.length} installment${results.length === 1 ? "" : "s"} invoiced${amounts ? ` (${amounts})` : ""}.`,
       );
-      setProcessErrors(results.filter((r) => !r.success).map((r) => `#${r.sequence}: ${r.error || "Unknown error"}`));
+      setProcessErrors([
+        ...results.filter((r) => !r.success).map((r) => `#${r.sequence}: ${r.error || "Unknown error"}`),
+        ...ok
+          .filter((r) => !r.emailSent)
+          .map((r) => `#${r.sequence}: invoiced, but the app email to the owner was not sent (see server logs)`),
+      ]);
       const installments = body.installments;
       if (installments) {
         setProperty((current) => (current ? { ...current, installments, installments_error: null } : current));
@@ -395,6 +401,14 @@ export function PropertyDetailModal({ propertyId, onClose, onPhotoStatusChanged 
                           {property.installments.map((row) => (
                             <li key={row.sequence}>
                               #{row.sequence} {formatCents(row.amount_cents)} — due {new Date(row.due_date).toLocaleDateString("en-CA")} — {row.status}
+                              {(row.status === "invoiced" || row.status === "paid") && row.hosted_invoice_url && (
+                                <>
+                                  {" "}
+                                  <a href={row.hosted_invoice_url} target="_blank" rel="noopener noreferrer" className="text-primary underline inline-flex items-center gap-1">
+                                    open <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </>
+                              )}
                             </li>
                           ))}
                         </ul>

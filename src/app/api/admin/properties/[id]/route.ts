@@ -37,7 +37,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       : Promise.resolve({ data: null, error: null }),
     supabaseAdmin.from("property_images").select("id, image_url, room_category, status, uploaded_at").eq("property_id", id).order("uploaded_at", { ascending: false }),
     getPropertyPlanName(id),
-    supabaseAdmin.from("plan_installments").select("sequence, due_date, percentage, amount_cents, status").eq("property_id", id).order("sequence", { ascending: true }),
+    supabaseAdmin.from("plan_installments").select("sequence, due_date, percentage, amount_cents, status, hosted_invoice_url").eq("property_id", id).order("sequence", { ascending: true }),
   ]);
   if (ownerResult.error) return NextResponse.json({ error: `owner fetch failed: ${ownerResult.error.message}` }, { status: 500 });
   if (photosResult.error) return NextResponse.json({ error: `property_images fetch failed: ${photosResult.error.message}` }, { status: 500 });

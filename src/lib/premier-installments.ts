@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeBalanceCents } from "@/lib/plan-percentage";
 import { isPremierTierPlan, ensureStripeCustomer, createAndSendStripeInvoice } from "@/lib/balance-invoice";
+import { sendBalanceInvoiceAvailableEmail } from "@/lib/email";
 
 // PROMPT2 item 5: Premier Tier's calendar-based installment schedule.
 // Called from the Stripe webhook's checkout.session.completed handler,
@@ -366,6 +367,8 @@ export interface ProcessInstallmentResult {
   amountCents?: number;
   invoiceId?: string;
   hostedInvoiceUrl?: string | null;
+  /** App (Resend) email to the owner + commercial BCC went out. Only set on success. */
+  emailSent?: boolean;
   /** Row was already claimed by a concurrent run (cron vs admin button, or a double click). */
   skipped?: "already_claimed";
 }
@@ -510,6 +513,47 @@ export async function processDueInstallments(
         invoiceId: created.invoiceId,
         amountCents,
       });
+
+      // Same app email as the lump-sum balance flow (owner + commercial
+      // BCC), sent in addition to Stripe's own invoice email. Runs only
+      // after the row is already `invoiced`, and never throws: a failed
+      // email must not re-bill or un-bill the installment.
+      let emailSent = false;
+      try {
+        let totalQuery = supabaseAdmin
+          .from("plan_installments")
+          .select("id", { count: "exact", head: true })
+          .eq("property_id", property.id as string);
+        totalQuery = installment.service_id
+          ? totalQuery.eq("service_id", installment.service_id as string)
+          : totalQuery.is("service_id", null);
+        const { count: totalInstallments } = await totalQuery;
+        const sent = await sendBalanceInvoiceAvailableEmail({
+          to: owner.email as string,
+          customerName: (owner.full_name as string) || "there",
+          propertyLabel: `${property.address}, ${property.city}`,
+          amountCents,
+          dueDate: new Date(created.dueDateUnix * 1000).toISOString(),
+          installment: {
+            sequence: installment.sequence as number,
+            total: totalInstallments || (installment.sequence as number),
+          },
+          payUrl: created.hostedInvoiceUrl,
+        });
+        emailSent = sent;
+        if (sent) {
+          console.log("[premier-installments] Installment email sent", { installmentId, to: owner.email });
+        } else {
+          console.error("[premier-installments] Installment email NOT sent (see payment email failed / RESEND_API_KEY)", {
+            installmentId,
+          });
+        }
+      } catch (emailErr) {
+        console.error("[premier-installments] Installment email failed — invoice unaffected", {
+          installmentId,
+          error: emailErr instanceof Error ? emailErr.message : emailErr,
+        });
+      }
       results.push({
         installmentId,
         success: true,
@@ -517,6 +561,7 @@ export async function processDueInstallments(
         amountCents,
         invoiceId: created.invoiceId,
         hostedInvoiceUrl: created.hostedInvoiceUrl,
+        emailSent,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

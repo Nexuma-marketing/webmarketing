@@ -52,7 +52,7 @@ export async function POST(
   // Fresh list so the modal shows the new statuses without a reload.
   const { data: installments } = await supabaseAdmin
     .from("plan_installments")
-    .select("sequence, due_date, percentage, amount_cents, status")
+    .select("sequence, due_date, percentage, amount_cents, status, hosted_invoice_url")
     .eq("property_id", propertyId)
     .order("sequence", { ascending: true });
 
