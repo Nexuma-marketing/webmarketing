@@ -34,6 +34,16 @@ const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destru
   refunded: { variant: "outline", label: "Refunded" },
 };
 
+// "Plan: Owner Preferred — Support Tier" → "Support Tier", etc.
+function shortPlanName(serviceName: string): string {
+  const name = serviceName.toLowerCase();
+  if (name.includes("founder")) return "Founder Package";
+  if (name.includes("low price")) return "Low Price";
+  if (name.includes("preferred") && name.includes("premier")) return "Premier Tier";
+  if (name.includes("preferred") && name.includes("support")) return "Support Tier";
+  return serviceName.replace(/^plan:\s*/i, "");
+}
+
 export default async function PaymentsPage() {
   const supabase = await createClient();
   const {
@@ -119,6 +129,10 @@ export default async function PaymentsPage() {
   let priorityListingAddOn: { id: string; price: number; currency: string | null } | null = null;
   let priorityListingPropertyId: string | undefined;
   let priorityListingAlreadyPaid = false;
+  // "All Payments" labels for plan_installment rows: the Stripe invoice
+  // id the webhook stores in payments.stripe_session_id → that
+  // installment's "N of M" (M = the property's non-voided installments).
+  const installmentByInvoiceId: Record<string, { sequence: number; total: number }> = {};
 
   if (isOwnerRole) {
     const { data: ownerProperties } = await supabase
@@ -131,7 +145,7 @@ export default async function PaymentsPage() {
     const { data: installmentRows } = ownerPropIds.length > 0
       ? await supabase
           .from("plan_installments")
-          .select("property_id, sequence, due_date, amount_cents, status, hosted_invoice_url")
+          .select("property_id, sequence, due_date, amount_cents, status, hosted_invoice_url, stripe_invoice_id")
           .in("property_id", ownerPropIds)
       : { data: [] as Record<string, unknown>[] };
     const installmentsByProperty: Record<string, InstallmentDisplay[]> = {};
@@ -145,6 +159,13 @@ export default async function PaymentsPage() {
         status: row.status as InstallmentDisplay["status"],
         hostedInvoiceUrl: row.hosted_invoice_url as string | null,
       });
+    }
+    for (const row of installmentRows || []) {
+      if (!row.stripe_invoice_id) continue;
+      const total = (installmentsByProperty[row.property_id as string] ?? []).filter(
+        (inst) => inst.status !== "voided",
+      ).length;
+      installmentByInvoiceId[row.stripe_invoice_id as string] = { sequence: row.sequence as number, total };
     }
 
     // Backward-compat: pre-existing Low Price/Founders/Support/Premier
@@ -223,6 +244,11 @@ export default async function PaymentsPage() {
       priorityListingAlreadyPaid = !!paid;
     }
   }
+
+  // "All Payments" labels for plan_balance rows: same plan the Plan
+  // Balances card shows for that property.
+  const planNameByProperty: Record<string, string> = {};
+  for (const row of planBalanceRows) planNameByProperty[row.propertyId] = shortPlanName(row.planName);
 
   const totalPaid = payments
     ?.filter((p) => p.status === "completed")
@@ -456,12 +482,28 @@ export default async function PaymentsPage() {
                     const paymentProperty = payment.property_id
                       ? propertiesById[payment.property_id]
                       : undefined;
+                    const propertySuffix = paymentProperty
+                      ? ` — ${paymentProperty.address}, ${paymentProperty.city}`
+                      : "";
+                    // Balance / installment rows carry no service_id, so
+                    // label them by payment_type instead of falling
+                    // through to the Elite maintenance label below.
+                    const installmentInfo =
+                      payment.payment_type === "plan_installment" && payment.stripe_session_id
+                        ? installmentByInvoiceId[payment.stripe_session_id as string]
+                        : undefined;
+                    const balancePlanName =
+                      payment.property_id ? planNameByProperty[payment.property_id as string] : undefined;
                     const serviceName =
                       payment.services?.name ||
                       payment.pymes_plans?.name ||
-                      (paymentProperty
-                        ? `Elite maintenance — ${paymentProperty.address}, ${paymentProperty.city}`
-                        : "—");
+                      (payment.payment_type === "plan_installment"
+                        ? `Premier Tier installment${installmentInfo ? ` ${installmentInfo.sequence} of ${installmentInfo.total}` : ""}${propertySuffix}`
+                        : payment.payment_type === "plan_balance"
+                          ? `${balancePlanName ? `${balancePlanName} balance` : "Plan balance"}${propertySuffix}`
+                          : paymentProperty
+                            ? `Elite maintenance — ${paymentProperty.address}, ${paymentProperty.city}`
+                            : "—");
                     const badge = STATUS_BADGES[payment.status] || STATUS_BADGES.pending;
 
                     return (
@@ -479,7 +521,9 @@ export default async function PaymentsPage() {
                         <TableCell>
                           {payment.installment_number
                             ? `${payment.installment_number} of ${payment.total_installments || "—"}`
-                            : "—"}
+                            : installmentInfo
+                              ? `${installmentInfo.sequence} of ${installmentInfo.total}`
+                              : "—"}
                         </TableCell>
                         <TableCell>
                           <Badge variant={badge.variant}>{badge.label}</Badge>
