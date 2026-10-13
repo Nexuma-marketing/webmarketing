@@ -540,7 +540,7 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-lg">Your Portfolio</CardTitle>
             <CardDescription>
-              Each property is billed individually — one-time portfolio fee + monthly maintenance fee.
+              Each property is billed individually — one-time portfolio fee + monthly platform fee.
             </CardDescription>
           </CardHeader>
           <CardContent>

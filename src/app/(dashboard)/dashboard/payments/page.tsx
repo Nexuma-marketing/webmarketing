@@ -297,7 +297,7 @@ export default async function PaymentsPage() {
             p.pymes_plans?.name ||
             p.services?.name ||
             (p.property_id && propertiesById[p.property_id]
-              ? `Elite maintenance — ${propertiesById[p.property_id].address}, ${propertiesById[p.property_id].city}`
+              ? `Monthly platform fee — ${propertiesById[p.property_id].address}, ${propertiesById[p.property_id].city}`
               : "Installment plan"),
           totalInstallments: Number(p.total_installments) || 0,
           completedCount: 0,
@@ -487,7 +487,7 @@ export default async function PaymentsPage() {
                       : "";
                     // Balance / installment rows carry no service_id, so
                     // label them by payment_type instead of falling
-                    // through to the Elite maintenance label below.
+                    // through to the Elite platform-fee label below.
                     const installmentInfo =
                       payment.payment_type === "plan_installment" && payment.stripe_session_id
                         ? installmentByInvoiceId[payment.stripe_session_id as string]
@@ -501,9 +501,11 @@ export default async function PaymentsPage() {
                         ? `Premier Tier installment${installmentInfo ? ` ${installmentInfo.sequence} of ${installmentInfo.total}` : ""}${propertySuffix}`
                         : payment.payment_type === "plan_balance"
                           ? `${balancePlanName ? `${balancePlanName} balance` : "Plan balance"}${propertySuffix}`
-                          : paymentProperty
-                            ? `Elite maintenance — ${paymentProperty.address}, ${paymentProperty.city}`
-                            : "—");
+                          : payment.payment_type === "subscription_canceled" && paymentProperty
+                            ? `Monthly platform fee (canceled) — ${paymentProperty.address}, ${paymentProperty.city}`
+                            : paymentProperty
+                              ? `Monthly platform fee — ${paymentProperty.address}, ${paymentProperty.city}`
+                              : "—");
                     const badge = STATUS_BADGES[payment.status] || STATUS_BADGES.pending;
 
                     return (
@@ -516,7 +518,9 @@ export default async function PaymentsPage() {
                           {formatCurrency(Number(payment.amount))}
                         </TableCell>
                         <TableCell className="capitalize">
-                          {payment.payment_type?.replace("_", " ") || "One-time"}
+                          {payment.payment_type === "elite_maintenance"
+                            ? "Platform fee"
+                            : payment.payment_type?.replace("_", " ") || "One-time"}
                         </TableCell>
                         <TableCell>
                           {payment.installment_number

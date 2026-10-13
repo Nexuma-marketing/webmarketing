@@ -373,7 +373,7 @@ export async function POST(request: Request) {
               recurring: { interval: "month", interval_count: 1 },
               tax_behavior: "exclusive",
               product_data: {
-                name: `Elite ${tier.name} — Monthly Maintenance Fee`,
+                name: `Elite ${tier.name} — Monthly Platform Fee`,
               },
             });
 

@@ -97,7 +97,7 @@ export function ElitePortfolioBreakdown({
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Monthly maintenance</p>
+                    <p className="text-xs text-muted-foreground">Monthly platform fee</p>
                     <p className="text-sm font-semibold">${tier.monthlyFee.toLocaleString()} CAD/mo</p>
                   </div>
                   {cfpMonthly != null && (
@@ -155,7 +155,7 @@ export function ElitePortfolioBreakdown({
                     <p className="text-[11px] text-muted-foreground">
                       Completing this purchase also enrolls this property in an
                       automatic recurring charge of ${tier.monthlyFee} CAD/month
-                      (maintenance fee), billed monthly until canceled.
+                      (monthly platform fee), billed monthly until canceled.
                     </p>
                   </div>
                 ) : (
