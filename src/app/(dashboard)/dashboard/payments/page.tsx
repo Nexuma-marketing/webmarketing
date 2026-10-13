@@ -180,7 +180,20 @@ export default async function PaymentsPage() {
         balancePaid: prop.balance_invoice_status === "paid",
       });
       if (!balance) return; // Elite/flat-fee plans have no percentage balance
-      const { pendingBalanceCents, isPremier: isPremierProperty } = balance;
+      const { isPremier: isPremierProperty } = balance;
+      // Premier with a schedule: what's still owed is the unpaid
+      // installments — same rule as the Sales Report
+      // (property-payment-summary.ts). Everything else keeps the
+      // rent × % − upfront figure.
+      const activeInstallments = isPremierProperty
+        ? (installmentsByProperty[propId] ?? []).filter((inst) => inst.status !== "voided")
+        : [];
+      const pendingBalanceCents =
+        activeInstallments.length > 0
+          ? activeInstallments
+              .filter((inst) => inst.status !== "paid")
+              .reduce((sum, inst) => sum + (Number(inst.amountCents) || 0), 0)
+          : balance.pendingBalanceCents;
       planBalanceRows.push({
         propertyId: propId,
         propertyLabel: `${prop.address}, ${prop.city}`,

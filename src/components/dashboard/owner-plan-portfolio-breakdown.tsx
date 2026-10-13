@@ -66,7 +66,6 @@ export function OwnerPlanPortfolioBreakdown({
         const rent = Number(prop.monthly_rent) || 0;
         const percentage = index === 0 ? 0.3 : 0.28;
         const totalFeeCents = Math.round(rent * percentage * 100);
-        const pendingBalanceCents = computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
         // Paid under this card's own plan → full paid state + balance.
         // Paid under a different plan (e.g. Low Price, before the owner
         // added a 2nd property) → still not chargeable again, but this
@@ -76,6 +75,18 @@ export function OwnerPlanPortfolioBreakdown({
           ? null
           : getPaidPlanForProperty(paidServiceKeys, prop.id, planServices);
         const balance = balanceByProperty[prop.id];
+        // Premier with a schedule: what's still owed is the unpaid
+        // installments — same rule as Payment History and the Sales
+        // Report. Otherwise the rent × % − upfront figure.
+        const activeInstallments = isPremier
+          ? (balance?.installments ?? []).filter((inst) => inst.status !== "voided")
+          : [];
+        const pendingBalanceCents =
+          activeInstallments.length > 0
+            ? activeInstallments
+                .filter((inst) => inst.status !== "paid")
+                .reduce((sum, inst) => sum + (Number(inst.amountCents) || 0), 0)
+            : computeBalanceCents({ monthlyRentCad: rent, planPercentage: percentage });
 
         return (
           <div key={prop.id} className="rounded-lg border bg-card p-4 space-y-3">
