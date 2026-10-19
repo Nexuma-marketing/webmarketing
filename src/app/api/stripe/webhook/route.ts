@@ -339,6 +339,9 @@ export async function POST(request: Request) {
                   pymes_plan_id: metadata.pymes_plan_id,
                   total_installments: String(installmentMonths),
                 },
+              }, {
+                // A re-delivered event must not start a second subscription.
+                idempotencyKey: `pymes_sub_${session.id}`,
               });
             }
           }
@@ -393,6 +396,9 @@ export async function POST(request: Request) {
                 property_id: metadata.property_id,
                 elite_tier: metadata.elite_tier,
               },
+            }, {
+              // A re-delivered event must not start a second subscription.
+              idempotencyKey: `elite_sub_${session.id}`,
             });
           }
         }

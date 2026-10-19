@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, APP_URL } from "@/lib/stripe";
 import { ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 import { computeNetAmountDueCents } from "@/lib/plan-switch";
+import { FOUNDERS_SERVICE_NAME, LOW_PRICE_SERVICE_NAME } from "@/lib/payment-lookup";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -114,6 +115,57 @@ async function validatePromoCode(
   };
 }
 
+// Roles whose plans are bought per property (owner plans + Elite).
+const PROPERTY_PLAN_ROLES = new Set(["propietario", "propietario_preferido", "inversionista"]);
+
+/**
+ * Names of the plan-category services this property already has a
+ * completed payment for (refunded/failed rows don't count; add-ons
+ * aren't plans). Same legacy fallback as
+ * getCompletedPaymentForPropertyService: pre-restructure plan payments
+ * have property_id = null and count for the property only when its
+ * owner has exactly one property. Returns null if a lookup failed, so
+ * the caller can refuse instead of charging blind.
+ */
+async function getPaidPlanNamesForProperty(propertyId: string, ownerId: string): Promise<string[] | null> {
+  const planNamesFor = async (serviceIds: string[]): Promise<string[] | null> => {
+    if (serviceIds.length === 0) return [];
+    const { data: services, error } = await supabaseAdmin
+      .from("services")
+      .select("id, name, category")
+      .in("id", serviceIds);
+    if (error) return null;
+    return (services || []).filter((svc) => svc.category === "plan").map((svc) => svc.name as string);
+  };
+
+  const { data: rows, error } = await supabaseAdmin
+    .from("payments")
+    .select("service_id")
+    .eq("property_id", propertyId)
+    .eq("status", "completed")
+    .not("service_id", "is", null);
+  if (error) return null;
+  const paid = await planNamesFor(Array.from(new Set((rows || []).map((r) => r.service_id as string))));
+  if (paid === null || paid.length > 0) return paid;
+
+  const { count, error: countError } = await supabaseAdmin
+    .from("properties")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", ownerId);
+  if (countError) return null;
+  if (count !== 1) return [];
+
+  const { data: legacyRows, error: legacyError } = await supabaseAdmin
+    .from("payments")
+    .select("service_id")
+    .eq("user_id", ownerId)
+    .is("property_id", null)
+    .eq("status", "completed")
+    .not("service_id", "is", null);
+  if (legacyError) return null;
+  return planNamesFor(Array.from(new Set((legacyRows || []).map((r) => r.service_id as string))));
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -163,7 +215,7 @@ export async function POST(request: Request) {
 
         const { data: service } = await supabase
           .from("services")
-          .select("id, name, description, price, currency")
+          .select("id, name, description, price, currency, category")
           .eq("id", serviceId)
           .single();
 
@@ -215,6 +267,46 @@ export async function POST(request: Request) {
             eliteTierForSubscription = property.elite_tier as string;
           }
         }
+
+        // Double-charge protection (BUGFIX_DOUBLE_CHARGE_STAGE1.md): a
+        // property's plan is assigned by the system and paid once. The
+        // pages already hide "Pay" once paid, but that never stopped a
+        // second tab, a stale page or a direct POST. Only exception: the
+        // documented Low Price → Founders upgrade (netAgainstExisting).
+        if (service.category === "plan" && userRole && PROPERTY_PLAN_ROLES.has(userRole)) {
+          if (!propertyId) {
+            return NextResponse.json(
+              { error: "A property is required to purchase a plan" },
+              { status: 400 },
+            );
+          }
+          const paidPlanNames = await getPaidPlanNamesForProperty(propertyId, user.id);
+          if (paidPlanNames === null) {
+            return NextResponse.json(
+              { error: "We couldn't verify this property's payments. Please try again in a moment." },
+              { status: 503 },
+            );
+          }
+          if (paidPlanNames.length > 0) {
+            const isFoundersUpgrade =
+              !!netAgainstExisting &&
+              service.name === FOUNDERS_SERVICE_NAME &&
+              paidPlanNames.every((name) => name === LOW_PRICE_SERVICE_NAME);
+            if (!isFoundersUpgrade) {
+              console.warn("[stripe-checkout] Blocked plan checkout for an already-paid property", {
+                userId: user.id,
+                propertyId,
+                requestedService: service.name,
+                paidPlanNames,
+              });
+              return NextResponse.json(
+                { error: "This property already has a paid plan" },
+                { status: 409 },
+              );
+            }
+          }
+        }
+
         const eliteTierInfo = eliteTierForSubscription
           ? ELITE_SUB_TIERS[eliteTierForSubscription]
           : null;

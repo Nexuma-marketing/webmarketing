@@ -48,10 +48,15 @@ export function CheckoutButton({
   const [showPromo, setShowPromo] = useState(false);
   const [promoCode, setPromoCode] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
+  // Any other refusal from the checkout route (e.g. 409 "This property
+  // already has a paid plan") — shown under the button instead of only
+  // going to the console.
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   async function handleCheckout() {
     setLoading(true);
     setPromoError(null);
+    setCheckoutError(null);
 
     try {
       const res = await fetch("/api/stripe/checkout", {
@@ -81,16 +86,18 @@ export function CheckoutButton({
       } else {
         // If the API rejected the promo code, surface the error inline so
         // the user can fix it without losing the rest of the purchase
-        // intent. Other errors still log to console.
-        if (data.error && promoCode) {
+        // intent. Other errors are shown under the button.
+        console.error("Checkout error:", data.error);
+        if (data.error && promoCode && res.status === 400) {
           setPromoError(data.error);
         } else {
-          console.error("Checkout error:", data.error);
+          setCheckoutError(data.error || "We couldn't start the checkout. Please try again.");
         }
         setLoading(false);
       }
     } catch (err) {
       console.error("Checkout failed:", err);
+      setCheckoutError("We couldn't start the checkout. Please try again.");
       setLoading(false);
     }
   }
@@ -117,6 +124,10 @@ export function CheckoutButton({
           </>
         )}
       </Button>
+
+      {checkoutError && (
+        <p role="alert" className="text-xs text-red-600">{checkoutError}</p>
+      )}
 
       {showPromo ? (
         <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2 space-y-1.5">
