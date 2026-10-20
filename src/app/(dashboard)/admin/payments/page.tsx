@@ -167,6 +167,16 @@ export default function AdminPaymentsPage() {
       header: "Type",
       cell: ({ row }) => {
         const type = row.getValue("payment_type") as string | null;
+        // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: marker row written when an
+        // Elite/PYME monthly subscription couldn't be created; the daily
+        // reconcile flips it to "canceled" once resolved/dismissed.
+        if (type === "subscription_setup_failed") {
+          return row.original.status === "failed" ? (
+            <span className="font-medium text-destructive">Subscription setup failed — action needed</span>
+          ) : (
+            <span className="text-muted-foreground">Subscription setup failed — resolved</span>
+          );
+        }
         return (
           <span className="capitalize">{type?.replace("_", " ") || "One-time"}</span>
         );

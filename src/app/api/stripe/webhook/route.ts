@@ -10,6 +10,7 @@ import {
 import { ELITE_SUB_TIERS } from "@/lib/constants";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { schedulePremierInstallments } from "@/lib/premier-installments";
+import { startSubscriptionAfterCheckout } from "@/lib/subscription-setup";
 import type Stripe from "stripe";
 
 // Steve 5/20 Milestone 4: helper to load the customer's profile +
@@ -291,7 +292,13 @@ export async function POST(request: Request) {
           }
         }
 
-        // If upfront PYMES payment, create installment subscription
+        // If upfront PYMES payment, create installment subscription.
+        // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: created via the shared
+        // helper with the card saved at checkout and the first
+        // installment one month after this payment (trial_end). The
+        // helper never throws — on failure it logs CRITICAL, writes a
+        // subscription_setup_failed marker row and alerts commercial,
+        // so the lead update and receipt email below always run.
         if (
           paymentType === "upfront" &&
           metadata.pymes_plan_id &&
@@ -301,106 +308,45 @@ export async function POST(request: Request) {
           const installmentMonths = Number(metadata.installment_months) || 0;
 
           if (installmentAmount > 0 && installmentMonths > 0) {
-            const price = await stripe.prices.create({
-              currency: "cad",
-              unit_amount: Math.round(installmentAmount * 100),
-              recurring: { interval: "month", interval_count: 1 },
-              // Steve 5/20 Milestone 4: tax-exclusive so Stripe Tax
-              // adds 5% GST on top of each monthly installment.
-              tax_behavior: "exclusive",
-              product_data: {
-                name: `${metadata.plan_type} Plan — Monthly Installment`,
+            await startSubscriptionAfterCheckout(
+              {
+                kind: "pymes",
+                userId,
+                pymesPlanId: metadata.pymes_plan_id,
+                planType: metadata.plan_type || "PYME",
+                installmentAmount,
+                installmentMonths,
               },
-            });
-
-            const customerId =
-              typeof session.customer === "string"
-                ? session.customer
-                : session.customer?.id;
-
-            if (customerId) {
-              // Steve 6/10 (6-2.md #51): same GST workaround as the
-              // checkout sessions — if STRIPE_GST_RATE_ID is set, apply
-              // the manual 5% rate to the subscription. Otherwise fall
-              // back to automatic_tax (will yield 0 until Alex adds a
-              // CRA registration in Stripe Dashboard).
-              const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
-              await stripe.subscriptions.create({
-                customer: customerId,
-                items: [
-                  {
-                    price: price.id,
-                    ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
-                  },
-                ],
-                ...(gstRateId ? {} : { automatic_tax: { enabled: true } }),
-                metadata: {
-                  user_id: userId,
-                  pymes_plan_id: metadata.pymes_plan_id,
-                  total_installments: String(installmentMonths),
-                },
-              }, {
-                // A re-delivered event must not start a second subscription.
-                idempotencyKey: `pymes_sub_${session.id}`,
-              });
-            }
+              session,
+              event.created,
+            );
           }
         }
 
         // Steve: Elite Assets & Legacy — the one-time portfolio fee for
         // a specific property just succeeded. Start that property's
-        // monthly maintenance-fee subscription. Deliberately a separate
-        // code path from the PYMES installment block above (does not
-        // reuse or modify it) — Elite recurs indefinitely per property
-        // with no fixed installment count, attributed via property_id
-        // instead of pymes_plan_id. `metadata.elite_tier` is only ever
-        // set server-side in /api/stripe/checkout after verifying the
-        // property is actually assigned that tier, so it's safe to
-        // trust here.
+        // monthly platform-fee subscription. Elite recurs indefinitely
+        // per property with no fixed installment count, attributed via
+        // property_id instead of pymes_plan_id. `metadata.elite_tier`
+        // is only ever set server-side in /api/stripe/checkout from the
+        // purchased Elite service, so it's safe to trust here. Same
+        // shared helper / failure handling as PYME above.
         if (
           paymentType === "one_time" &&
           metadata.property_id &&
           metadata.elite_tier &&
           ELITE_SUB_TIERS[metadata.elite_tier]
         ) {
-          const tier = ELITE_SUB_TIERS[metadata.elite_tier];
-          const customerId =
-            typeof session.customer === "string"
-              ? session.customer
-              : session.customer?.id;
-
-          if (customerId) {
-            const monthlyPrice = await stripe.prices.create({
-              currency: "cad",
-              unit_amount: Math.round(tier.monthlyFee * 100),
-              recurring: { interval: "month", interval_count: 1 },
-              tax_behavior: "exclusive",
-              product_data: {
-                name: `Elite ${tier.name} — Monthly Platform Fee`,
-              },
-            });
-
-            const gstRateId = process.env.STRIPE_GST_RATE_ID || null;
-            await stripe.subscriptions.create({
-              customer: customerId,
-              items: [
-                {
-                  price: monthlyPrice.id,
-                  ...(gstRateId ? { tax_rates: [gstRateId] } : {}),
-                },
-              ],
-              ...(gstRateId ? {} : { automatic_tax: { enabled: true } }),
-              metadata: {
-                kind: "elite_maintenance",
-                user_id: userId,
-                property_id: metadata.property_id,
-                elite_tier: metadata.elite_tier,
-              },
-            }, {
-              // A re-delivered event must not start a second subscription.
-              idempotencyKey: `elite_sub_${session.id}`,
-            });
-          }
+          await startSubscriptionAfterCheckout(
+            {
+              kind: "elite",
+              userId,
+              propertyId: metadata.property_id,
+              eliteTier: metadata.elite_tier,
+            },
+            session,
+            event.created,
+          );
         }
 
         // Update lead status
@@ -572,6 +518,19 @@ export async function POST(request: Request) {
           typeof subDetails.subscription === "string"
             ? subDetails.subscription
             : subDetails.subscription.id;
+
+        // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: Elite/PYME subscriptions
+        // start with a trial, so Stripe issues a $0 invoice at creation
+        // and reports it as paid. It is not a charge: recording it would
+        // add a $0 platform-fee row, or count as PYME installment #1 and
+        // cancel the plan one installment early.
+        if (invoice.billing_reason === "subscription_create" && !invoice.amount_paid) {
+          console.log("[webhook-diag] Skipping $0 trial-start subscription invoice", {
+            invoiceId: invoice.id,
+            subscriptionId,
+          });
+          break;
+        }
 
         const subscription =
           await stripe.subscriptions.retrieve(subscriptionId);

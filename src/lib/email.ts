@@ -188,7 +188,7 @@ function brandFooter(): string {
 // cancellations / failed payments without seeing the customer's
 // To: header.
 async function sendOne(args: {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   notifyCommercial?: boolean;
@@ -203,7 +203,7 @@ async function sendOne(args: {
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [args.to],
+      to: Array.isArray(args.to) ? args.to : [args.to],
       bcc: args.notifyCommercial ? commercialRecipients() : undefined,
       subject: args.subject,
       html: args.html,
@@ -217,6 +217,53 @@ async function sendOne(args: {
     console.error("payment email failed:", err);
     return false;
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: internal alert sent straight to
+// the commercial team (same COMMERCIAL_AREA_EMAIL recipients as the
+// payment-email BCC) when an Elite/PYME monthly subscription could not
+// be created, or by the daily subscription reconcile. Each item is one
+// case rendered as a label/value table.
+export async function sendCommercialAlertEmail(args: {
+  subject: string;
+  intro: string;
+  items: Array<Record<string, string>>;
+}): Promise<void> {
+  const recipients = commercialRecipients();
+  if (recipients.length === 0 || args.items.length === 0) return;
+  const tables = args.items
+    .map(
+      (item) => `
+        <table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:13px;border:1px solid #e5e7eb">
+          ${Object.entries(item)
+            .map(
+              ([label, value]) =>
+                `<tr><td style="padding:6px 8px;color:#6b7280;white-space:nowrap">${escapeHtml(label)}</td><td style="padding:6px 8px">${escapeHtml(value)}</td></tr>`,
+            )
+            .join("")}
+        </table>`,
+    )
+    .join("");
+  await sendOne({
+    to: recipients,
+    subject: args.subject,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">
+        <h2 style="color:#dc2626">${escapeHtml(args.subject)}</h2>
+        <p>${escapeHtml(args.intro)}</p>
+        ${tables}
+        <p style="font-size:12px;color:#6b7280">See /admin/payments and the server logs ([elite-sub], [pymes-sub], [subscription-reconcile]).</p>
+      </div>
+    `,
+  });
 }
 
 export async function sendPaymentReceiptEmail(args: {

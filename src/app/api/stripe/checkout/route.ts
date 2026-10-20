@@ -5,6 +5,7 @@ import { stripe, APP_URL } from "@/lib/stripe";
 import { ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 import { computeNetAmountDueCents } from "@/lib/plan-switch";
 import { FOUNDERS_SERVICE_NAME, LOW_PRICE_SERVICE_NAME } from "@/lib/payment-lookup";
+import { eliteTierForServiceName } from "@/lib/subscription-setup";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -234,19 +235,21 @@ export async function POST(request: Request) {
         // app) and stamp the session so the specific property is
         // identifiable from the Stripe dashboard/webhook metadata.
         let propertyLabel = "";
-        // Set only when this "service" purchase is the Elite one-time
-        // portfolio fee for a property that is actually assigned that
-        // tier (derived server-side from the property row, never from
-        // client input) — the webhook uses this to start the matching
-        // monthly maintenance-fee subscription. Left undefined for
-        // every other checkout (owner plans, add-ons, etc.), which are
-        // unaffected.
+        // Set only when this "service" purchase is an Elite one-time
+        // portfolio fee for an ownership-checked property — the webhook
+        // uses this to start the matching monthly platform-fee
+        // subscription. Derived server-side from the purchased SERVICE
+        // (BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md), not from
+        // properties.elite_tier, which profileOwner rewrites and can be
+        // NULL for a property that just paid an Elite fee. Left
+        // undefined for every other checkout (owner plans, add-ons,
+        // etc.), which are unaffected.
         let eliteTierForSubscription: string | undefined;
         let propertyMonthlyRent = 0;
         if (propertyId) {
           const { data: property } = await supabase
             .from("properties")
-            .select("id, address, city, elite_tier, monthly_rent")
+            .select("id, address, city, monthly_rent")
             .eq("id", propertyId)
             .eq("owner_id", user.id)
             .single();
@@ -260,12 +263,7 @@ export async function POST(request: Request) {
           propertyLabel = `${property.address}, ${property.city}`;
           propertyMonthlyRent = Number(property.monthly_rent) || 0;
 
-          const assignedTier = property.elite_tier
-            ? ELITE_SUB_TIERS[property.elite_tier as string]
-            : null;
-          if (assignedTier && assignedTier.dbServiceName === service.name) {
-            eliteTierForSubscription = property.elite_tier as string;
-          }
+          eliteTierForSubscription = eliteTierForServiceName(service.name) ?? undefined;
         }
 
         // Double-charge protection (BUGFIX_DOUBLE_CHARGE_STAGE1.md): a
@@ -330,7 +328,7 @@ export async function POST(request: Request) {
         // Checkout line-item description the customer sees before
         // paying, not just in our own UI copy.
         let descriptionSuffix = eliteTierInfo
-          ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically each month until canceled.`
+          ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically to this card each month starting one month after this payment, until canceled.`
           : "";
 
         // PROMPT2 item 8: "smart balance" plan switch (Founders and any
@@ -443,6 +441,13 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
+          // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: Elite only — save the
+          // card on the customer so the webhook can start the monthly
+          // platform-fee subscription with it. Every other purchase
+          // (Founders, Low Price, Premier, add-ons) is unchanged.
+          ...(eliteTierForSubscription
+            ? { payment_intent_data: { setup_future_usage: "off_session" as const } }
+            : {}),
           ...sessionTaxConfig(),
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },
@@ -498,9 +503,9 @@ export async function POST(request: Request) {
             // Read by the webhook's checkout.session.completed handler
             // to start the property's monthly maintenance-fee
             // subscription once this one-time fee succeeds. Only ever
-            // set when the property is actually assigned this Elite
-            // tier (validated above) — never trusted from raw client
-            // input.
+            // set from the purchased Elite service on an
+            // ownership-checked property (above) — never trusted from
+            // raw client input.
             ...(eliteTierForSubscription ? { elite_tier: eliteTierForSubscription } : {}),
             // PROMPT2 item 7: read by the webhook to split this one
             // Checkout Session into two `payments` rows (main plan +
@@ -586,6 +591,9 @@ export async function POST(request: Request) {
           customer: customerId,
           payment_method_types: ["card"],
           mode: "payment",
+          // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: save the card for the
+          // monthly installment subscription the webhook starts.
+          payment_intent_data: { setup_future_usage: "off_session" },
           ...sessionTaxConfig(),
           billing_address_collection: "required",
           customer_update: { address: "auto", name: "auto" },

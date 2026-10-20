@@ -60,7 +60,7 @@ export default async function PaymentsPage() {
   const isOwnerRole = profile?.role === "propietario" || profile?.role === "propietario_preferido";
 
   // Fetch payments with service/plan names
-  const { data: payments, error: paymentsError } = await supabase
+  const { data: paymentRows, error: paymentsError } = await supabase
     .from("payments")
     .select(`
       *,
@@ -69,6 +69,11 @@ export default async function PaymentsPage() {
     `)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
+  // BUGFIX_ELITE_PYME_SUBSCRIPTIONS.md: "subscription setup failed"
+  // marker rows are internal (admin follow-up), never customer history.
+  // Filtered here rather than in the query so legacy rows with a NULL
+  // payment_type are kept.
+  const payments = paymentRows?.filter((p) => p.payment_type !== "subscription_setup_failed") ?? null;
 
   if (paymentsError) {
     console.error("[payments-page] Failed to load payments", paymentsError);
