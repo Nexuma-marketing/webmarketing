@@ -89,6 +89,19 @@ async function eliteFeeLabel(propertyId: string | null | undefined): Promise<str
     : "Monthly platform fee";
 }
 
+// Checkout receipt helpers: "$200" / "$166.67", and the same long en-CA
+// date format the receipt's own Date line uses.
+function formatReceiptAmount(amount: number): string {
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+function formatReceiptDate(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString("en-CA", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 // Completed installment payments of one PYME subscription. Counted per
 // subscription and only status='completed', so failed attempts and
 // earlier subscriptions of the same plan don't shift the number.
@@ -388,6 +401,9 @@ export async function POST(request: Request) {
         // helper never throws — on failure it logs CRITICAL, writes a
         // subscription_setup_failed marker row and alerts commercial,
         // so the lead update and receipt email below always run.
+        // BUGFIX_ELITE_RECEIPT_AND_DESCRIPTION.md: the Elite/PYME line on
+        // the receipt below is only added when the subscription exists.
+        let recurringNote: string | null = null;
         if (
           paymentType === "upfront" &&
           metadata.pymes_plan_id &&
@@ -397,7 +413,7 @@ export async function POST(request: Request) {
           const installmentMonths = Number(metadata.installment_months) || 0;
 
           if (installmentAmount > 0 && installmentMonths > 0) {
-            await startSubscriptionAfterCheckout(
+            const pymeSub = await startSubscriptionAfterCheckout(
               {
                 kind: "pymes",
                 userId,
@@ -409,6 +425,9 @@ export async function POST(request: Request) {
               session,
               event.created,
             );
+            if (pymeSub.ok && pymeSub.firstChargeAt) {
+              recurringNote = `Monthly installments: ${installmentMonths} × $${formatReceiptAmount(installmentAmount)}, first charge on ${formatReceiptDate(pymeSub.firstChargeAt)}`;
+            }
           }
         }
 
@@ -420,13 +439,14 @@ export async function POST(request: Request) {
         // is only ever set server-side in /api/stripe/checkout from the
         // purchased Elite service, so it's safe to trust here. Same
         // shared helper / failure handling as PYME above.
+        let elitePropertyLabel: string | null = null;
         if (
           paymentType === "one_time" &&
           metadata.property_id &&
           metadata.elite_tier &&
           ELITE_SUB_TIERS[metadata.elite_tier]
         ) {
-          await startSubscriptionAfterCheckout(
+          const eliteSub = await startSubscriptionAfterCheckout(
             {
               kind: "elite",
               userId,
@@ -436,6 +456,15 @@ export async function POST(request: Request) {
             session,
             event.created,
           );
+          if (eliteSub.ok && eliteSub.firstChargeAt) {
+            recurringNote = `Monthly platform fee: $${formatReceiptAmount(ELITE_SUB_TIERS[metadata.elite_tier].monthlyFee)}/month, first charge on ${formatReceiptDate(eliteSub.firstChargeAt)}`;
+          }
+          const { data: eliteProperty } = await supabaseAdmin
+            .from("properties")
+            .select("address, city")
+            .eq("id", metadata.property_id)
+            .maybeSingle();
+          if (eliteProperty) elitePropertyLabel = `${eliteProperty.address}, ${eliteProperty.city}`;
         }
 
         // Update lead status
@@ -465,12 +494,13 @@ export async function POST(request: Request) {
           await sendPaymentReceiptEmail({
             to: ctx.email,
             customerName: ctx.name,
-            serviceName: ctx.serviceName,
+            serviceName: elitePropertyLabel ? `${ctx.serviceName} — ${elitePropertyLabel}` : ctx.serviceName,
             amountCents: subtotalCents,
             taxCents,
             currency: (session.currency || "cad").toUpperCase(),
             receiptUrl: null,
             foundersAvailability,
+            recurringNote,
           });
         }
 

@@ -328,7 +328,7 @@ export async function POST(request: Request) {
         // Checkout line-item description the customer sees before
         // paying, not just in our own UI copy.
         let descriptionSuffix = eliteTierInfo
-          ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (maintenance fee for this property), billed automatically to this card each month starting one month after this payment, until canceled.`
+          ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (monthly platform fee for this property), billed automatically to this card each month starting one month after this payment, until canceled.`
           : "";
 
         // PROMPT2 item 8: "smart balance" plan switch (Founders and any

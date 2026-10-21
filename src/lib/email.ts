@@ -281,6 +281,9 @@ export async function sendPaymentReceiptEmail(args: {
   // purchase branch — appended to the BCC'd commercial copy only, so
   // the customer-facing receipt is unchanged.
   foundersAvailability?: { taken: number; limit: number } | null;
+  // BUGFIX_ELITE_RECEIPT_AND_DESCRIPTION.md: Elite/PYME checkout receipt
+  // line with the monthly charge and its first date. Omitted → unchanged.
+  recurringNote?: string | null;
 }): Promise<boolean> {
   const currency = args.currency || "CAD";
   const subtotal = formatCurrency(args.amountCents, currency);
@@ -315,6 +318,7 @@ export async function sendPaymentReceiptEmail(args: {
           ${tax ? `<tr><td style="padding:8px;color:#6b7280">GST (5%)</td><td style="padding:8px;text-align:right">${tax}</td></tr>` : ""}
           <tr style="border-top:1px solid #e5e7eb"><td style="padding:8px;font-weight:600">Total paid</td><td style="padding:8px;text-align:right;font-weight:600;color:#16a34a">${total}</td></tr>
         </table>
+        ${args.recurringNote ? `<p style="font-size:14px">${escapeHtml(args.recurringNote)}</p>` : ""}
         ${args.receiptUrl ? `<p><a href="${args.receiptUrl}" style="background:#16a34a;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">View Stripe receipt</a></p>` : ""}
         <p>You can also see this payment any time in your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments">payment history</a>.</p>
         ${args.foundersAvailability ? `<p style="background:#fef3c7;border-left:4px solid #d97706;padding:10px 14px;font-size:13px"><strong>Founders Package:</strong> ${args.foundersAvailability.taken} of ${args.foundersAvailability.limit} spots taken — ${Math.max(0, args.foundersAvailability.limit - args.foundersAvailability.taken)} remaining.</p>` : ""}

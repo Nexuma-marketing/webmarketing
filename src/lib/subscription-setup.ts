@@ -173,7 +173,7 @@ export async function startSubscriptionAfterCheckout(
   plan: RecurringPlan,
   session: Stripe.Checkout.Session,
   paidAtUnix: number,
-): Promise<{ ok: true; subscriptionId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; subscriptionId: string; firstChargeAt: number | null } | { ok: false; error: string }> {
   const tag = logTag(plan);
   const customerId = customerIdOf(session);
   let lastError: unknown = null;
@@ -188,7 +188,7 @@ export async function startSubscriptionAfterCheckout(
             sessionId: session.id,
             subscriptionId: sub.id,
           });
-          return { ok: true, subscriptionId: sub.id };
+          return { ok: true, subscriptionId: sub.id, firstChargeAt: sub.trial_end ?? null };
         }
       }
     } catch (err) {
@@ -216,7 +216,8 @@ export async function startSubscriptionAfterCheckout(
         status: subscription.status,
         firstChargeAt: new Date(oneMonthAfter(paidAtUnix) * 1000).toISOString(),
       });
-      return { ok: true, subscriptionId: subscription.id };
+      // Real first-charge date from Stripe, shown on the checkout receipt.
+      return { ok: true, subscriptionId: subscription.id, firstChargeAt: subscription.trial_end ?? null };
     } catch (err) {
       lastError = err;
       // Retrying can't produce a card that isn't there.
