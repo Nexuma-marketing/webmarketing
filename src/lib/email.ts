@@ -281,7 +281,7 @@ export async function sendPaymentReceiptEmail(args: {
   // purchase branch — appended to the BCC'd commercial copy only, so
   // the customer-facing receipt is unchanged.
   foundersAvailability?: { taken: number; limit: number } | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const currency = args.currency || "CAD";
   const subtotal = formatCurrency(args.amountCents, currency);
   const tax = args.taxCents
@@ -300,7 +300,7 @@ export async function sendPaymentReceiptEmail(args: {
         day: "numeric",
       });
 
-  await sendOne({
+  return sendOne({
     to: args.to,
     notifyCommercial: true,
     subject: `Payment receipt — ${args.serviceName}`,
@@ -399,17 +399,23 @@ export async function sendSubscriptionCanceledEmail(args: {
   to: string;
   customerName: string;
   planName: string;
+  // BUGFIX_PYME_COUNT_AND_EMAIL_WORDING.md: Elite monthly platform fee
+  // wording. planName is then "Monthly platform fee — <address>, <city>".
+  // Omitted → the installment wording below, unchanged.
+  platformFee?: boolean;
 }): Promise<void> {
   await sendOne({
     to: args.to,
     notifyCommercial: true,
-    subject: `Installment plan canceled — ${args.planName}`,
+    subject: args.platformFee
+      ? `Subscription canceled — ${args.planName}`
+      : `Installment plan canceled — ${args.planName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#d97706">Your installment plan was canceled</h2>
+        <h2 style="color:#d97706">${args.platformFee ? "Your monthly platform fee subscription was canceled" : "Your installment plan was canceled"}</h2>
         <p>Hi ${args.customerName},</p>
-        <p>Your monthly installments for <strong>${args.planName}</strong> have been canceled. You will not be charged again going forward.</p>
-        <p><strong>Important:</strong> any installments already paid are not refunded automatically. If you believe a refund is due, reply to this email and our team will review.</p>
+        <p>${args.platformFee ? `Your <strong>${args.planName}</strong> subscription has been canceled.` : `Your monthly installments for <strong>${args.planName}</strong> have been canceled.`} You will not be charged again going forward.</p>
+        <p><strong>Important:</strong> any ${args.platformFee ? "monthly platform fees" : "installments"} already paid are not refunded automatically. If you believe a refund is due, reply to this email and our team will review.</p>
         <p>You can re-subscribe any time from your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/services">services dashboard</a>.</p>
         ${brandFooter()}
       </div>
@@ -423,6 +429,10 @@ export async function sendPaymentFailedEmail(args: {
   planName: string;
   amountCents: number;
   currency?: string;
+  // BUGFIX_PYME_COUNT_AND_EMAIL_WORDING.md: Elite monthly platform fee
+  // wording. planName is then "Monthly platform fee — <address>, <city>".
+  // Omitted → the installment wording below, unchanged.
+  platformFee?: boolean;
 }): Promise<void> {
   const amount = formatCurrency(args.amountCents, args.currency || "CAD");
   await sendOne({
@@ -433,7 +443,7 @@ export async function sendPaymentFailedEmail(args: {
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#dc2626">Payment failed — action needed</h2>
         <p>Hi ${args.customerName},</p>
-        <p>We were unable to charge <strong>${amount}</strong> for your <strong>${args.planName}</strong> installment.</p>
+        <p>We were unable to charge <strong>${amount}</strong> for your <strong>${args.planName}</strong>${args.platformFee ? "" : " installment"}.</p>
         <p>This usually happens when:</p>
         <ul style="line-height:1.6">
           <li>The card on file has expired</li>
@@ -443,7 +453,7 @@ export async function sendPaymentFailedEmail(args: {
         <p>Please update your payment method as soon as possible to avoid your plan being canceled:</p>
         <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/payments" style="background:#dc2626;color:white;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block">Update payment method</a></p>
         <p style="font-size:13px;color:#6b7280;margin-top:16px">
-          Stripe will automatically retry the charge a few times over the next week. If all retries fail, your installment plan will be canceled.
+          Stripe will automatically retry the charge a few times over the next week. If all retries fail, your ${args.platformFee ? "monthly platform fee subscription" : "installment plan"} will be canceled.
         </p>
         ${brandFooter()}
       </div>

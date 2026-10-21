@@ -6,6 +6,7 @@ import {
   sendRefundConfirmationEmail,
   sendSubscriptionCanceledEmail,
   sendPaymentFailedEmail,
+  sendCommercialAlertEmail,
 } from "@/lib/email";
 import { ELITE_SUB_TIERS } from "@/lib/constants";
 import { getFoundersAvailability } from "@/lib/founders-plan";
@@ -55,6 +56,94 @@ async function loadEmailContext(
     name: (profile.full_name as string) || "there",
     serviceName,
   };
+}
+
+// BUGFIX_MONTHLY_RECEIPT_EMAILS.md: Stripe's own customer emails are
+// off, so the app sends the receipt for each recurring Elite/PYME
+// charge. Retried webhooks must not double-record or double-email:
+// recurring invoices are stored with invoice.id in stripe_session_id,
+// so a completed row with that id means this invoice was already
+// handled. Failed rows for the same invoice (earlier attempts) don't
+// count — a later successful retry still has to be recorded.
+async function invoiceAlreadyRecorded(invoiceId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("payments")
+    .select("id")
+    .eq("stripe_session_id", invoiceId)
+    .eq("status", "completed")
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+// "Monthly platform fee — <address>, <city>", same label Payment
+// History shows for an Elite subscription.
+async function eliteFeeLabel(propertyId: string | null | undefined): Promise<string> {
+  if (!propertyId) return "Monthly platform fee";
+  const { data: property } = await supabaseAdmin
+    .from("properties")
+    .select("address, city")
+    .eq("id", propertyId)
+    .maybeSingle();
+  return property
+    ? `Monthly platform fee — ${property.address}, ${property.city}`
+    : "Monthly platform fee";
+}
+
+// Completed installment payments of one PYME subscription. Counted per
+// subscription and only status='completed', so failed attempts and
+// earlier subscriptions of the same plan don't shift the number.
+async function countCompletedInstallments(subscriptionId: string): Promise<number> {
+  const { count } = await supabaseAdmin
+    .from("payments")
+    .select("*", { count: "exact", head: true })
+    .eq("stripe_subscription_id", subscriptionId)
+    .eq("payment_type", "installment")
+    .eq("status", "completed");
+  return count || 0;
+}
+
+// Receipt for a recurring subscription invoice. Never throws — a Resend
+// or lookup failure must not affect the already-recorded payment.
+async function sendMonthlyReceipt(
+  invoice: Stripe.Invoice,
+  userId: string | null | undefined,
+  label: string,
+): Promise<void> {
+  try {
+    if (!userId) {
+      console.warn("[monthly-receipt] no user_id on subscription, receipt skipped", { invoiceId: invoice.id });
+      return;
+    }
+    const ctx = await loadEmailContext(userId);
+    if (!ctx) {
+      console.warn("[monthly-receipt] customer email not found, receipt skipped", { invoiceId: invoice.id, userId });
+      return;
+    }
+    const totalCents = invoice.amount_paid || 0;
+    if (totalCents <= 0) {
+      console.log("[monthly-receipt] $0 invoice, receipt skipped", { invoiceId: invoice.id });
+      return;
+    }
+    const taxCents = (invoice.total_taxes ?? []).reduce((sum, t) => sum + (t.amount || 0), 0);
+    const paidAt = invoice.status_transitions?.paid_at;
+    const sent = await sendPaymentReceiptEmail({
+      to: ctx.email,
+      customerName: ctx.name,
+      serviceName: label,
+      amountCents: Math.max(0, totalCents - taxCents),
+      taxCents,
+      currency: (invoice.currency || "cad").toUpperCase(),
+      receiptUrl: invoice.hosted_invoice_url || null,
+      paymentDate: paidAt ? new Date(paidAt * 1000).toISOString() : undefined,
+    });
+    if (sent) {
+      console.log("[monthly-receipt] receipt sent", { invoiceId: invoice.id, label });
+    } else {
+      console.error("[monthly-receipt] receipt email not sent (Resend error or no API key)", { invoiceId: invoice.id, label });
+    }
+  } catch (err) {
+    console.error("[monthly-receipt] receipt email failed", { invoiceId: invoice.id, err });
+  }
 }
 
 export async function POST(request: Request) {
@@ -544,6 +633,10 @@ export async function POST(request: Request) {
         // /api/stripe/cancel-my-subscription route when desired), and
         // are attributed by property_id rather than pymes_plan_id.
         if (metadata.kind === "elite_maintenance" && metadata.property_id) {
+          if (await invoiceAlreadyRecorded(invoice.id)) {
+            console.log("[monthly-receipt] invoice already recorded, skipping", { invoiceId: invoice.id, subscriptionId });
+            break;
+          }
           const { error: eliteInsertError } = await supabaseAdmin
             .from("payments")
             .insert({
@@ -561,7 +654,9 @@ export async function POST(request: Request) {
               "[webhook-diag] CRITICAL: elite_maintenance payments insert failed",
               { subscriptionId, metadata, error: eliteInsertError },
             );
+            break;
           }
+          await sendMonthlyReceipt(invoice, metadata.user_id, await eliteFeeLabel(metadata.property_id));
           break;
         }
 
@@ -573,18 +668,17 @@ export async function POST(request: Request) {
 
         if (!userId || !pymesPlanId) break;
 
-        // Count existing installment payments
-        const { count } = await supabaseAdmin
-          .from("payments")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("pymes_plan_id", pymesPlanId)
-          .eq("payment_type", "installment");
+        if (await invoiceAlreadyRecorded(invoice.id)) {
+          console.log("[monthly-receipt] invoice already recorded, skipping", { invoiceId: invoice.id, subscriptionId });
+          break;
+        }
 
-        const installmentNumber = (count || 0) + 1;
+        // Count this subscription's completed installment payments
+        // (BUGFIX_PYME_COUNT_AND_EMAIL_WORDING.md).
+        const installmentNumber = (await countCompletedInstallments(subscriptionId)) + 1;
 
         // Record installment payment
-        await supabaseAdmin.from("payments").insert({
+        const { error: installmentInsertError } = await supabaseAdmin.from("payments").insert({
           user_id: userId,
           pymes_plan_id: pymesPlanId,
           stripe_session_id: invoice.id,
@@ -596,6 +690,22 @@ export async function POST(request: Request) {
           total_installments: totalInstallments,
           status: "completed",
         });
+
+        if (installmentInsertError) {
+          console.error("[monthly-receipt] installment payments insert failed, receipt skipped", {
+            invoiceId: invoice.id,
+            subscriptionId,
+            error: installmentInsertError,
+          });
+        } else {
+          const ctx = await loadEmailContext(userId, null, pymesPlanId);
+          const planName = ctx?.serviceName || "Installment plan";
+          await sendMonthlyReceipt(
+            invoice,
+            userId,
+            `${planName} — installment ${installmentNumber} of ${totalInstallments}`,
+          );
+        }
 
         // Cancel subscription after all installments paid
         if (totalInstallments > 0 && installmentNumber >= totalInstallments) {
@@ -704,13 +814,70 @@ export async function POST(request: Request) {
 
           // Steve 5/20 Milestone 4: notify the customer their
           // installment plan was canceled.
-          const ctx = await loadEmailContext(userId, null, pymesPlanId || null);
-          if (ctx) {
+          // BUGFIX_PYME_COUNT_AND_EMAIL_WORDING.md: skip it when a PYME
+          // plan ended because every installment was paid (our own
+          // auto-cancel after the last installment) — nothing was cut short.
+          const totalInstallments = parseInt(metadata.total_installments || "0");
+          const pymeCompleted =
+            !!pymesPlanId &&
+            totalInstallments > 0 &&
+            (await countCompletedInstallments(subscriptionId)) >= totalInstallments;
+          const isElite = metadata.kind === "elite_maintenance";
+          const ctx = pymeCompleted ? null : await loadEmailContext(userId, null, pymesPlanId || null);
+          if (pymeCompleted) {
+            console.log("[webhook-diag] PYME plan fully paid, skipping canceled email", { subscriptionId, totalInstallments });
+          } else if (ctx) {
             await sendSubscriptionCanceledEmail({
               to: ctx.email,
               customerName: ctx.name,
-              planName: ctx.serviceName,
+              planName: isElite ? await eliteFeeLabel(metadata.property_id) : ctx.serviceName,
+              platformFee: isElite,
             });
+          }
+        }
+
+        // BUGFIX_MONTHLY_RECEIPT_EMAILS.md: Stripe auto-cancels the
+        // subscription once every retry of a failed charge is exhausted.
+        // Alert commercial so they can follow up. Voluntary cancellations
+        // (cancel_at_period_end from customer/admin, or the auto-cancel
+        // after the last PYME installment) have reason
+        // "cancellation_requested" and are not alerted.
+        if (
+          subscription.cancellation_details?.reason === "payment_failed" &&
+          (metadata.kind === "elite_maintenance" || pymesPlanId)
+        ) {
+          try {
+            const isElite = metadata.kind === "elite_maintenance";
+            const ctx = userId ? await loadEmailContext(userId, null, pymesPlanId || null) : null;
+            let target = ctx?.serviceName || "Unknown plan";
+            if (isElite) {
+              const { data: property } = metadata.property_id
+                ? await supabaseAdmin
+                    .from("properties")
+                    .select("address, city")
+                    .eq("id", metadata.property_id)
+                    .maybeSingle()
+                : { data: null };
+              target = property
+                ? `Monthly platform fee — ${property.address}, ${property.city}`
+                : `Monthly platform fee — property ${metadata.property_id || "unknown"}`;
+            }
+            await sendCommercialAlertEmail({
+              subject: `Subscription canceled after failed payments — ${isElite ? "Elite platform fee" : "PYME installments"}`,
+              intro:
+                "Stripe canceled this subscription automatically because all retries of a monthly charge failed. No further charges will be attempted.",
+              items: [
+                {
+                  Customer: ctx ? `${ctx.name} <${ctx.email}>` : `user ${userId || "unknown"}`,
+                  [isElite ? "Property" : "PYME plan"]: target,
+                  "Subscription ID": subscriptionId,
+                  Reason: "payment_failed (all retries exhausted)",
+                },
+              ],
+            });
+            console.log("[sub-payment-failed] commercial alert sent", { subscriptionId });
+          } catch (err) {
+            console.error("[sub-payment-failed] commercial alert failed", { subscriptionId, err });
           }
         }
         break;
@@ -792,9 +959,10 @@ export async function POST(request: Request) {
           await sendPaymentFailedEmail({
             to: ctx.email,
             customerName: ctx.name,
-            planName: ctx.serviceName,
+            planName: isEliteMaintenance ? await eliteFeeLabel(metadata.property_id) : ctx.serviceName,
             amountCents: invoice.amount_due || 0,
             currency: (invoice.currency || "cad").toUpperCase(),
+            platformFee: isEliteMaintenance,
           });
         }
         break;
