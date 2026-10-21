@@ -587,6 +587,17 @@ export async function POST(request: Request) {
           descriptionSuffix = `\nPromo applied: ${v.appliedLabel}`;
         }
 
+        // BUGFIX_PYME_CHECKOUT_DISCLOSURE_AND_RECEIPT.md: same disclosure
+        // as Elite — the webhook starts N monthly installment charges on
+        // this card. Only when the webhook will actually create them.
+        const pymeInstallmentAmount = Number(plan.installment_amount) || 0;
+        const pymeInstallmentMonths = Number(plan.installment_months) || 0;
+        const fmtCad = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+        const recurringDisclosure =
+          pymeInstallmentAmount > 0 && pymeInstallmentMonths > 0
+            ? `\nBy completing this payment of $${fmtCad(unitAmount / 100)} CAD, you also authorize ${pymeInstallmentMonths} recurring monthly charges of $${fmtCad(pymeInstallmentAmount)} CAD (plus applicable taxes), billed automatically to this card each month starting one month after this payment. The installment plan ends after the last charge.`
+            : "";
+
         const session = await stripe.checkout.sessions.create({
           customer: customerId,
           payment_method_types: ["card"],
@@ -612,7 +623,7 @@ export async function POST(request: Request) {
                 currency: "cad",
                 product_data: {
                   name: `${plan.name} — Initial Payment`,
-                  description: `Upfront payment for ${plan.name} plan${descriptionSuffix}`,
+                  description: `Upfront payment for ${plan.name} plan${recurringDisclosure}${descriptionSuffix}`,
                 },
                 unit_amount: unitAmount,
                 tax_behavior: "exclusive",
@@ -628,6 +639,8 @@ export async function POST(request: Request) {
             pymes_plan_id: pymesPlanId,
             payment_type: "upfront",
             plan_type: plan.plan_type,
+            // Receipt label in the webhook (BUGFIX_PYME_CHECKOUT_DISCLOSURE_AND_RECEIPT.md).
+            plan_name: String(plan.name || ""),
             installment_amount: String(plan.installment_amount || 0),
             installment_months: String(plan.installment_months || 0),
             ...(promoMeta

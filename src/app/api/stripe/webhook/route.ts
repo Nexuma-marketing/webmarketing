@@ -43,11 +43,12 @@ async function loadEmailContext(
       .single();
     if (svc?.name) serviceName = svc.name as string;
   } else if (pymesPlanId) {
-    const { data: plan } = await supabaseAdmin
+    const { data: plan, error: planError } = await supabaseAdmin
       .from("pymes_plans")
       .select("name")
       .eq("id", pymesPlanId)
       .single();
+    if (planError) console.warn("[webhook-diag] pymes_plans name lookup failed", { pymesPlanId, error: planError });
     if (plan?.name) serviceName = plan.name as string;
   }
 
@@ -494,7 +495,11 @@ export async function POST(request: Request) {
           await sendPaymentReceiptEmail({
             to: ctx.email,
             customerName: ctx.name,
-            serviceName: elitePropertyLabel ? `${ctx.serviceName} — ${elitePropertyLabel}` : ctx.serviceName,
+            serviceName: elitePropertyLabel
+              ? `${ctx.serviceName} — ${elitePropertyLabel}`
+              : paymentType === "upfront" && metadata.pymes_plan_id && metadata.plan_name
+                ? `${metadata.plan_name} — Initial Payment`
+                : ctx.serviceName,
             amountCents: subtotalCents,
             taxCents,
             currency: (session.currency || "cad").toUpperCase(),

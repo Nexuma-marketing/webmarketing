@@ -103,7 +103,7 @@ export async function createRecurringSubscription(
   const productName =
     plan.kind === "elite"
       ? `Elite ${ELITE_SUB_TIERS[plan.eliteTier].name} — Monthly Platform Fee`
-      : `${plan.planType} Plan — Monthly Installment`;
+      : `${plan.planType.charAt(0).toUpperCase()}${plan.planType.slice(1)} Plan — Monthly Installment`;
 
   const price = await stripe.prices.create(
     {
