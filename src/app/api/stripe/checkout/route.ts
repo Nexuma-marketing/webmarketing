@@ -595,7 +595,7 @@ export async function POST(request: Request) {
         const fmtCad = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
         const recurringDisclosure =
           pymeInstallmentAmount > 0 && pymeInstallmentMonths > 0
-            ? `\nBy completing this payment of $${fmtCad(unitAmount / 100)} CAD, you also authorize ${pymeInstallmentMonths} recurring monthly charges of $${fmtCad(pymeInstallmentAmount)} CAD (plus applicable taxes), billed automatically to this card each month starting one month after this payment. The installment plan ends after the last charge.`
+            ? `. By completing this payment of $${fmtCad(unitAmount / 100)} CAD, you also authorize ${pymeInstallmentMonths} recurring monthly charges of $${fmtCad(pymeInstallmentAmount)} CAD (plus applicable taxes), billed automatically to this card each month starting one month after this payment. The installment plan ends after the last charge.`
             : "";
 
         const session = await stripe.checkout.sessions.create({
@@ -623,7 +623,8 @@ export async function POST(request: Request) {
                 currency: "cad",
                 product_data: {
                   name: `${plan.name} — Initial Payment`,
-                  description: `Upfront payment for ${plan.name} plan${recurringDisclosure}${descriptionSuffix}`,
+                  // Names are stored as "Plan Rescue" — don't append "plan" again.
+                  description: `Upfront payment for ${/\bplan\b/i.test(String(plan.name)) ? plan.name : `${plan.name} plan`}${recurringDisclosure}${descriptionSuffix}`,
                 },
                 unit_amount: unitAmount,
                 tax_behavior: "exclusive",
