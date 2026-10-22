@@ -47,6 +47,7 @@ const STATUS_VARIANTS: Record<string, "default" | "secondary" | "destructive" | 
   pending: "secondary",
   failed: "destructive",
   refunded: "outline",
+  canceled: "outline",
 };
 
 export default function AdminPaymentsPage() {
@@ -177,6 +178,8 @@ export default function AdminPaymentsPage() {
             <span className="text-muted-foreground">Subscription setup failed — resolved</span>
           );
         }
+        // Cancellation marker rows (amount 0): the Status column already says "Canceled".
+        if (type === "subscription_canceled") return <span>Subscription</span>;
         return (
           <span className="capitalize">{type?.replace("_", " ") || "One-time"}</span>
         );
@@ -188,7 +191,10 @@ export default function AdminPaymentsPage() {
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
         return (
-          <Badge variant={STATUS_VARIANTS[status] || "secondary"} className="capitalize">
+          <Badge
+            variant={STATUS_VARIANTS[status] || "secondary"}
+            className={status === "canceled" ? "capitalize text-muted-foreground" : "capitalize"}
+          >
             {status}
           </Badge>
         );
@@ -369,6 +375,7 @@ export default function AdminPaymentsPage() {
               { value: "pending", label: "Pending" },
               { value: "failed", label: "Failed" },
               { value: "refunded", label: "Refunded" },
+              { value: "canceled", label: "Canceled" },
             ],
           },
         ]}

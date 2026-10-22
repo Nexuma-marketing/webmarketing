@@ -26,12 +26,17 @@ import { PriorityListingCard, PRIORITY_LISTING_SERVICE_NAME } from "@/components
 import { PLAN_UPFRONT_AMOUNT_CAD } from "@/lib/plan-percentage";
 import { resolvePropertyPlanBalance } from "@/lib/property-plan-balance";
 import { getCompletedPaymentForPropertyService } from "@/lib/payment-lookup";
+import { getUpcomingPymeCharges } from "@/lib/upcoming-charges";
 
-const STATUS_BADGES: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
+const STATUS_BADGES: Record<
+  string,
+  { variant: "default" | "secondary" | "destructive" | "outline"; label: string; className?: string }
+> = {
   completed: { variant: "default", label: "Completed" },
   pending: { variant: "secondary", label: "Pending" },
   failed: { variant: "destructive", label: "Failed" },
   refunded: { variant: "outline", label: "Refunded" },
+  canceled: { variant: "outline", label: "Canceled", className: "text-muted-foreground" },
 };
 
 // "Plan: Owner Preferred — Support Tier" → "Support Tier", etc.
@@ -78,6 +83,14 @@ export default async function PaymentsPage() {
   if (paymentsError) {
     console.error("[payments-page] Failed to load payments", paymentsError);
   }
+
+  // BUGFIX_CLIENT_UPCOMING_CHARGES.md: remaining PYME installments,
+  // read-only from Stripe. Returns [] (block hidden) on any failure.
+  const upcomingCharges = await getUpcomingPymeCharges(user.id, payments ?? []);
+  const upcomingTotal = upcomingCharges.reduce(
+    (sum, c) => sum + c.remainingInstallments * c.installmentAmount,
+    0,
+  );
 
   // Steve: property address/city is resolved with a separate lookup
   // instead of an embedded `properties:property_id (...)` join. An
@@ -266,13 +279,13 @@ export default async function PaymentsPage() {
   // status "pending" (usually 0), so it disagreed with the card.
   // Non-owner roles have no plan balances, so they keep seeing the
   // total of their pending payment rows.
-  const pendingTotal = isOwnerRole
+  const pendingTotal = (isOwnerRole
     ? planBalanceRows
         .filter((row) => row.balanceInvoiceStatus !== "paid")
         .reduce((sum, row) => sum + row.pendingBalanceCents, 0) / 100
     : payments
         ?.filter((p) => p.status === "pending")
-        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0) + upcomingTotal;
 
   // Steve 5/16 Milestone 4: surface ACTIVE installment subscriptions
   // so the user can see how many installments remain and cancel them
@@ -409,6 +422,30 @@ export default async function PaymentsPage() {
         <PriorityListingCard service={priorityListingAddOn} propertyId={priorityListingPropertyId} />
       )}
 
+      {/* BUGFIX_CLIENT_UPCOMING_CHARGES.md: remaining PYME installments from Stripe. */}
+      {upcomingCharges.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Upcoming monthly charges
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingCharges.map((c) => (
+              <div key={c.subscriptionId} className="rounded-md border p-3">
+                <p className="font-medium">{c.planName}</p>
+                <p className="text-sm text-muted-foreground">
+                  {c.remainingInstallments} installment{c.remainingInstallments === 1 ? "" : "s"} of{" "}
+                  {formatCurrency(c.installmentAmount)} — next charge{" "}
+                  {formatDate(new Date(c.nextChargeUnix * 1000).toISOString())}
+                </p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Active installment subscriptions */}
       {subscriptionGroups.length > 0 && (
         <Card>
@@ -511,7 +548,12 @@ export default async function PaymentsPage() {
                             : paymentProperty
                               ? `Monthly platform fee — ${paymentProperty.address}, ${paymentProperty.city}`
                               : "—");
-                    const badge = STATUS_BADGES[payment.status] || STATUS_BADGES.pending;
+                    // Unknown statuses show their own text, never "Pending".
+                    const badge = STATUS_BADGES[payment.status] || {
+                      variant: "secondary" as const,
+                      label: payment.status || "—",
+                      className: "capitalize",
+                    };
 
                     return (
                       <TableRow key={payment.id}>
@@ -525,7 +567,9 @@ export default async function PaymentsPage() {
                         <TableCell className="capitalize">
                           {payment.payment_type === "elite_maintenance"
                             ? "Platform fee"
-                            : payment.payment_type?.replace("_", " ") || "One-time"}
+                            : payment.payment_type === "subscription_canceled"
+                              ? "Subscription"
+                              : payment.payment_type?.replace("_", " ") || "One-time"}
                         </TableCell>
                         <TableCell>
                           {payment.installment_number
@@ -535,7 +579,7 @@ export default async function PaymentsPage() {
                               : "—"}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                          <Badge variant={badge.variant} className={badge.className}>{badge.label}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           {/* Steve 6/10 (6-2.md #52): only show Request
