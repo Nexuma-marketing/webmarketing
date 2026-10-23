@@ -43,6 +43,8 @@ import {
 import { generateCSV } from "@/lib/admin";
 import { PropertyPaymentSummaryTable } from "@/components/admin/property-payment-summary-table";
 import type { PropertyPaymentSummaryRow } from "@/lib/property-payment-summary";
+import { PymeInstallmentPlansSection } from "@/components/admin/pyme-installment-plans-section";
+import type { PymeInstallmentReport } from "@/lib/pyme-installment-report";
 
 // Steve 5/15 Milestone 4: client asked specifically to "probar con
 // módulo de pagos en milestone 4, para obtener datos de ventas".
@@ -147,6 +149,10 @@ export default function AdminReportsPage() {
   const [reconciling, setReconciling] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // BUGFIX_SALES_REPORT_PYME.md: admin-only PYME installment section,
+  // loaded separately so a slow Stripe call never delays the report.
+  const [pymeReport, setPymeReport] = useState<PymeInstallmentReport | null>(null);
+  const [pymeError, setPymeError] = useState(false);
 
   // Steve 6/5 (6-2.md #28): payments + promotions had admin-only RLS,
   // so the sales role saw CA$0 / 0 transactions even when admin saw
@@ -192,6 +198,22 @@ export default function AdminReportsPage() {
       setIsAdmin(profile?.role === "admin");
     })();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/reports/pyme-installments", { cache: "no-store" });
+        if (!res.ok) {
+          setPymeError(true);
+          return;
+        }
+        setPymeReport((await res.json()) as PymeInstallmentReport);
+      } catch {
+        setPymeError(true);
+      }
+    })();
+  }, [isAdmin]);
 
   async function reconcileFromStripe() {
     if (!confirm("Pull every paid Stripe checkout session from the last 90 days and insert any that are missing from the payments table? This may take 30s.")) return;
@@ -668,6 +690,9 @@ export default function AdminReportsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── PYME installment plans (admin only) ─────────────────── */}
+      {isAdmin && <PymeInstallmentPlansSection report={pymeReport} error={pymeError} />}
     </div>
   );
 }

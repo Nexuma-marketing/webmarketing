@@ -29,6 +29,59 @@ interface PaymentLike {
 
 const STRIPE_TIMEOUT_MS = 5000;
 
+// ─── Shared helpers (also used by src/lib/pyme-installment-report.ts) ───
+
+/** Rejects if `work` takes longer than `ms`. */
+export async function withStripeTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Stripe timeout after ${ms}ms`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Cancellation scheduled (customer/admin cancel set cancel_at_period_end;
+ * Stripe also exposes it as cancel_at): the next charge won't happen.
+ */
+export function isCancellationScheduled(sub: Stripe.Subscription): boolean {
+  return !!(sub.cancel_at_period_end || sub.cancel_at);
+}
+
+/** Per-charge amount in CAD from the subscription price, or null. */
+export function subscriptionInstallmentAmount(sub: Stripe.Subscription): number | null {
+  const unitAmount = sub.items?.data?.[0]?.price?.unit_amount;
+  return unitAmount ? unitAmount / 100 : null;
+}
+
+/** metadata.total_installments, or 0 when missing/invalid. */
+export function subscriptionTotalInstallments(sub: Stripe.Subscription): number {
+  return parseInt(sub.metadata?.total_installments || "0", 10) || 0;
+}
+
+/**
+ * Same condition as the webhook's countCompletedInstallments:
+ * payment_type 'installment', status 'completed', same subscription.
+ */
+export function countChargedInstallments(
+  payments: Pick<PaymentLike, "payment_type" | "status" | "stripe_subscription_id">[],
+  subscriptionId: string,
+): number {
+  return payments.filter(
+    (p) =>
+      p.payment_type === "installment" &&
+      p.status === "completed" &&
+      p.stripe_subscription_id === subscriptionId,
+  ).length;
+}
+
+/** trial_end if trialing; current period end if active (API 2026-03-25.dahlia: on the item). */
+export function subscriptionNextChargeUnix(sub: Stripe.Subscription): number | null {
+  if (sub.status === "trialing") return sub.trial_end ?? null;
+  if (sub.status === "active") return sub.items?.data?.[0]?.current_period_end ?? null;
+  return null;
+}
+
 export async function getUpcomingPymeCharges(
   userId: string,
   payments: PaymentLike[],
@@ -69,48 +122,32 @@ export async function getUpcomingPymeCharges(
       }
       return bySession;
     };
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Stripe timeout after ${STRIPE_TIMEOUT_MS}ms`)), STRIPE_TIMEOUT_MS);
-    });
-    const bySession = await Promise.race([listSubscriptions(), timeout]).finally(() => clearTimeout(timer));
+    const bySession = await withStripeTimeout(listSubscriptions(), STRIPE_TIMEOUT_MS);
 
     const result: UpcomingCharge[] = [];
     for (const upfront of upfronts) {
       const sub = bySession.get(upfront.stripe_session_id as string);
       if (!sub) continue;
       if (sub.status !== "trialing" && sub.status !== "active") continue;
-      // Cancellation scheduled (customer/admin cancel set
-      // cancel_at_period_end; Stripe also exposes it as cancel_at):
-      // the next charge won't happen, so nothing is upcoming.
-      if (sub.cancel_at_period_end || sub.cancel_at) continue;
+      // Cancellation scheduled: the next charge won't happen, so nothing is upcoming.
+      if (isCancellationScheduled(sub)) continue;
 
-      const item = sub.items?.data?.[0];
-      const unitAmount = item?.price?.unit_amount;
-      const totalInstallments = parseInt(sub.metadata?.total_installments || "0", 10);
-      if (!unitAmount || !totalInstallments) continue;
+      const installmentAmount = subscriptionInstallmentAmount(sub);
+      const totalInstallments = subscriptionTotalInstallments(sub);
+      if (!installmentAmount || !totalInstallments) continue;
 
-      // Same condition as the webhook's countCompletedInstallments:
-      // payment_type 'installment', status 'completed', same subscription.
-      const charged = payments.filter(
-        (p) =>
-          p.payment_type === "installment" &&
-          p.status === "completed" &&
-          p.stripe_subscription_id === sub.id,
-      ).length;
+      const charged = countChargedInstallments(payments, sub.id);
       const remaining = totalInstallments - charged;
       if (remaining <= 0) continue;
 
-      // API 2026-03-25.dahlia: current_period_end lives on the item.
-      const nextChargeUnix =
-        sub.status === "trialing" ? sub.trial_end : item?.current_period_end;
+      const nextChargeUnix = subscriptionNextChargeUnix(sub);
       if (!nextChargeUnix) continue;
 
       result.push({
         subscriptionId: sub.id,
         planName: upfront.pymes_plans?.name || "Installment plan",
         remainingInstallments: remaining,
-        installmentAmount: unitAmount / 100,
+        installmentAmount,
         nextChargeUnix,
       });
     }
