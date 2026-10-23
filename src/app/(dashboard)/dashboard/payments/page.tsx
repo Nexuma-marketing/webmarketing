@@ -19,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { CreditCard, Download, Receipt, Calendar, Wallet } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/admin";
-import { CancelSubscriptionButton } from "@/components/dashboard/cancel-subscription-button";
 import { RefundRequestButton } from "@/components/dashboard/refund-request-button";
 import { PropertyBalanceSummary, type InstallmentDisplay } from "@/components/dashboard/property-balance-summary";
 import { PriorityListingCard, PRIORITY_LISTING_SERVICE_NAME } from "@/components/dashboard/priority-listing-card";
@@ -288,9 +287,9 @@ export default async function PaymentsPage() {
         .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0) + upcomingTotal;
 
   // Steve 5/16 Milestone 4: surface ACTIVE installment subscriptions
-  // so the user can see how many installments remain and cancel them
-  // from this page. A subscription is "active" if it has at least one
-  // payment row with stripe_subscription_id, the latest row is NOT
+  // so the user can see how many installments remain (read-only:
+  // BUGFIX_CANCELLATIONS_ADMIN_ONLY.md — only admin can cancel).
+  // A subscription is "active" if it has at least one payment row with stripe_subscription_id, the latest row is NOT
   // 'canceled' and there are fewer completed installments than the
   // expected total_installments.
   type SubGroup = {
@@ -455,7 +454,7 @@ export default async function PaymentsPage() {
               Active installment plans
             </CardTitle>
             <CardDescription>
-              These plans charge your card automatically. You can cancel any time.
+              These plans charge your card automatically.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -482,7 +481,6 @@ export default async function PaymentsPage() {
                       {formatDate(g.lastDate)}
                     </p>
                   </div>
-                  <CancelSubscriptionButton subscriptionId={g.subscriptionId} />
                 </div>
               );
             })}
