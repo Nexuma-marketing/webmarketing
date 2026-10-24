@@ -45,6 +45,7 @@ import { PropertyPaymentSummaryTable } from "@/components/admin/property-payment
 import type { PropertyPaymentSummaryRow } from "@/lib/property-payment-summary";
 import { PymeInstallmentPlansSection } from "@/components/admin/pyme-installment-plans-section";
 import type { PymeInstallmentReport } from "@/lib/pyme-installment-report";
+import { StripeComparisonSection } from "@/components/admin/stripe-comparison-section";
 
 // Steve 5/15 Milestone 4: client asked specifically to "probar con
 // módulo de pagos en milestone 4, para obtener datos de ventas".
@@ -143,18 +144,15 @@ export default function AdminReportsPage() {
   const [propertySummary, setPropertySummary] = useState<PropertyPaymentSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodKey>("1y");
-  // Steve 6/10 (6-2.md #49): Stripe reconciliation state. Lets
-  // admin pull missing payment rows from Stripe when the report
-  // sums diverge from the Stripe dashboard.
-  const [reconciling, setReconciling] = useState(false);
-  const [reconcileResult, setReconcileResult] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   // BUGFIX_SALES_REPORT_PYME.md: PYME installment section, loaded
   // separately so a slow Stripe call never delays the report. Visible to
   // admin and sales (BUGFIX_SALES_REPORT_PYME_SALES_ROLE.md).
   const [canViewPyme, setCanViewPyme] = useState(false);
   const [pymeReport, setPymeReport] = useState<PymeInstallmentReport | null>(null);
   const [pymeError, setPymeError] = useState(false);
+  // FEATURE_STRIPE_DB_COMPARISON_REPORT.md: read-only Stripe vs database
+  // comparison, admin and sales only (replaces "Sync from Stripe").
+  const [canViewStripeComparison, setCanViewStripeComparison] = useState(false);
 
   // Steve 6/5 (6-2.md #28): payments + promotions had admin-only RLS,
   // so the sales role saw CA$0 / 0 transactions even when admin saw
@@ -185,8 +183,7 @@ export default function AdminReportsPage() {
     load();
   }, [load]);
 
-  // Steve 6/10 (6-2.md #49): figure out whether the current user
-  // is admin (and therefore allowed to trigger the Stripe sync).
+  // Role of the current user: decides which admin/sales-only sections show.
   useEffect(() => {
     (async () => {
       const supabase = createClient();
@@ -197,8 +194,8 @@ export default function AdminReportsPage() {
         .select("role")
         .eq("id", user.id)
         .single();
-      setIsAdmin(profile?.role === "admin");
       setCanViewPyme(profile?.role === "admin" || profile?.role === "sales");
+      setCanViewStripeComparison(profile?.role === "admin" || profile?.role === "sales");
     })();
   }, []);
 
@@ -217,39 +214,6 @@ export default function AdminReportsPage() {
       }
     })();
   }, [canViewPyme]);
-
-  async function reconcileFromStripe() {
-    if (!confirm("Pull every paid Stripe checkout session from the last 90 days and insert any that are missing from the payments table? This may take 30s.")) return;
-    setReconciling(true);
-    setReconcileResult(null);
-    try {
-      const res = await fetch("/api/admin/stripe/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: 90 }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        summary?: {
-          stripe_paid_sessions?: number;
-          already_in_db?: number;
-          inserted?: number;
-          missing_user?: number;
-        };
-        error?: string;
-      };
-      if (!res.ok) {
-        setReconcileResult(`Failed: ${body.error || res.status}`);
-        return;
-      }
-      const s = body.summary || {};
-      setReconcileResult(
-        `Stripe had ${s.stripe_paid_sessions ?? 0} paid sessions in 90d. ${s.already_in_db ?? 0} already in DB. Inserted ${s.inserted ?? 0} missing rows (${s.missing_user ?? 0} with no matching profile, kept as Unknown).`,
-      );
-      load();
-    } finally {
-      setReconciling(false);
-    }
-  }
 
   // ─── Filtered payments by selected period ─────────────────────
   const filteredPayments = useMemo(() => {
@@ -443,30 +407,8 @@ export default function AdminReportsPage() {
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
-          {/* Steve 6/10 (6-2.md #49): admin can sync missing payments
-              from Stripe when the totals diverge from the Stripe
-              dashboard (e.g., after a CASCADE cleanup or a missed
-              webhook). Admin-only — the endpoint will refuse other
-              roles. */}
-          {isAdmin && (
-            <Button variant="outline" onClick={reconcileFromStripe} disabled={reconciling}>
-              {reconciling ? "Syncing…" : "Sync from Stripe"}
-            </Button>
-          )}
         </div>
       </div>
-
-      {reconcileResult && (
-        <div
-          className={`rounded-md border p-3 text-sm ${
-            reconcileResult.startsWith("Failed")
-              ? "border-red-300 bg-red-50 text-red-800"
-              : "border-green-300 bg-green-50 text-green-800"
-          }`}
-        >
-          {reconcileResult}
-        </div>
-      )}
 
       {/* ─── Revenue cards ───────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -696,6 +638,9 @@ export default function AdminReportsPage() {
 
       {/* ─── PYME installment plans (admin + sales) ──────────────── */}
       {canViewPyme && <PymeInstallmentPlansSection report={pymeReport} error={pymeError} />}
+
+      {/* ─── Stripe vs database comparison (admin + sales) ───────── */}
+      {canViewStripeComparison && <StripeComparisonSection />}
     </div>
   );
 }

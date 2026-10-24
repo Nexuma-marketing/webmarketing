@@ -22,7 +22,16 @@ import { Resend } from "resend";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// FEATURE_STRIPE_DB_COMPARISON_REPORT.md: the "Sync from Stripe" button
+// was removed from the Sales Report and this tool is disabled. The code
+// below is kept for reference; it never runs while DISABLED is true.
+// The read-only replacement is /api/admin/reports/stripe-comparison.
+const DISABLED = true;
+
 export async function POST(request: Request) {
+  if (DISABLED) {
+    return NextResponse.json({ error: "This tool has been disabled." }, { status: 403 });
+  }
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
