@@ -244,7 +244,7 @@ export async function buildPymeInstallmentReport(): Promise<PymeInstallmentRepor
   const plans: PymePlanReport[] = PYME_PLAN_KEYS.map((planType) => {
     const purchased: PymePurchaseRow[] = upfronts
       .filter((p) => planTypeById.get(p.pymes_plan_id as string) === planType)
-      .map((p) => {
+      .map((p): PymePurchaseRow => {
         const base: PymePurchaseRow = {
           paymentId: p.id as string,
           userId: p.user_id as string,
