@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   Card,
@@ -454,7 +455,12 @@ export default async function PaymentsPage() {
               Active installment plans
             </CardTitle>
             <CardDescription>
-              These plans charge your card automatically.
+              These plans charge your card automatically. If you have any request or issue,{" "}
+              {/* BUGFIX_CANCELLATIONS_PANEL.md: contact form on the public home page. */}
+              <Link href="/#contact" className="underline">
+                contact us
+              </Link>
+              .
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">

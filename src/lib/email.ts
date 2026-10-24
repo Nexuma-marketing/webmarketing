@@ -161,6 +161,10 @@ const APP_NAME = "Nexuma Marketing";
 // `COMMERCIAL_AREA_EMAIL` is already in Vercel env.
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || NOTIFICATION_EMAIL;
 
+// BUGFIX_CANCELLATIONS_PANEL.md: the contact form on the public home page
+// (section id="contact" in src/app/page.tsx).
+const CONTACT_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/#contact`;
+
 function commercialRecipients(): string[] {
   return parseRecipients(COMMERCIAL_EMAIL);
 }
@@ -411,16 +415,14 @@ export async function sendSubscriptionCanceledEmail(args: {
   await sendOne({
     to: args.to,
     notifyCommercial: true,
-    subject: args.platformFee
-      ? `Subscription canceled — ${args.planName}`
-      : `Installment plan canceled — ${args.planName}`,
+    subject: `Payment plan canceled — ${args.planName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#d97706">${args.platformFee ? "Your monthly platform fee subscription was canceled" : "Your installment plan was canceled"}</h2>
         <p>Hi ${args.customerName},</p>
         <p>${args.platformFee ? `Your <strong>${args.planName}</strong> subscription has been canceled.` : `Your monthly installments for <strong>${args.planName}</strong> have been canceled.`} You will not be charged again going forward.</p>
         <p><strong>Important:</strong> any ${args.platformFee ? "monthly platform fees" : "installments"} already paid are not refunded automatically. If you believe a refund is due, reply to this email and our team will review.</p>
-        <p>You can re-subscribe any time from your <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/services">services dashboard</a>.</p>
+        <p>Questions? <a href="${CONTACT_URL}">Contact us</a>.</p>
         ${brandFooter()}
       </div>
     `,
@@ -494,20 +496,17 @@ export async function sendSubscriptionScheduledCancelEmail(args: {
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#d97706">Cancellation scheduled</h2>
         <p>Hi ${args.customerName},</p>
-        <p>Your cancellation request for <strong>${args.planName}</strong> has been received.</p>
+        <p>Your plan <strong>${args.planName}</strong> has been scheduled to end on ${dateLabel}.</p>
         <p style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;margin:16px 0">
           <strong>Your service stays active until ${dateLabel}.</strong><br/>
-          You have already paid for the current billing cycle, so you continue to receive all benefits of your plan until that date. On ${dateLabel} the subscription will close and no further charges will be made.
+          On ${dateLabel} the plan will close and no further charges will be made.
         </p>
         <p style="font-size:14px;color:#374151">
           Per our policy, payments already made are <strong>not refunded</strong> on cancellation
           (no prorated refunds). If you believe a refund is due because of a technical issue or
           service problem, reply to this email and our team will review your case manually.
         </p>
-        <p>Changed your mind? You can re-subscribe any time from your
-          <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.nexuma.ca"}/dashboard/services">services dashboard</a>
-          — if you do it before ${dateLabel} we simply resume billing on the existing schedule.
-        </p>
+        <p>Questions? <a href="${CONTACT_URL}">Contact us</a>.</p>
         ${brandFooter()}
       </div>
     `,

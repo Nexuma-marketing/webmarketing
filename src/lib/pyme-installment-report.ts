@@ -36,6 +36,14 @@ export type PymePurchaseStatus =
   | "subscription_not_found"
   | "unknown"; // Stripe unavailable, or a Stripe status not listed above
 
+/** Latest panel cancellation (table subscription_cancellations, migration v69). */
+export interface PymeCancellationInfo {
+  mode: "end_of_period" | "now";
+  reason: string;
+  byName: string | null;
+  at: string; // ISO
+}
+
 export interface PymePurchaseRow {
   paymentId: string;
   userId: string;
@@ -54,6 +62,8 @@ export interface PymePurchaseRow {
   status: PymePurchaseStatus;
   /** remaining x installment amount, only when status is active. */
   upcomingAmount: number;
+  /** Null when there is no panel record (e.g. canceled from the Stripe Dashboard). */
+  lastCancellation: PymeCancellationInfo | null;
 }
 
 export interface PymeRecommendedRow {
@@ -241,6 +251,50 @@ export async function buildPymeInstallmentReport(): Promise<PymeInstallmentRepor
   }
   const stripeAvailable = upfronts.length === 0 || bySession !== null;
 
+  // BUGFIX_CANCELLATIONS_PANEL.md: latest panel cancellation per
+  // subscription. If the table is missing (migration v69 not run) the
+  // report still works, just without the reason line.
+  const cancellationsBySub = new Map<string, PymeCancellationInfo>();
+  const linkedSubIds: string[] = [];
+  if (bySession) {
+    for (const p of upfronts) {
+      const linked = p.stripe_session_id ? bySession.get(p.stripe_session_id as string) : undefined;
+      if (linked) linkedSubIds.push(linked.id);
+    }
+  }
+  if (linkedSubIds.length > 0) {
+    const { data: cancelRows, error: cancelError } = await supabaseAdmin
+      .from("subscription_cancellations")
+      .select("stripe_subscription_id, mode, reason, cancelled_by, created_at")
+      .in("stripe_subscription_id", linkedSubIds)
+      .order("created_at", { ascending: false });
+    if (cancelError) {
+      console.error(`${LOG} subscription_cancellations query failed`, cancelError);
+    } else {
+      const byIds = Array.from(
+        new Set((cancelRows ?? []).map((r) => r.cancelled_by as string | null).filter((v): v is string => !!v)),
+      );
+      const names = new Map<string, string>();
+      if (byIds.length > 0) {
+        const { data: who } = await supabaseAdmin.from("profiles").select("id, full_name, email").in("id", byIds);
+        for (const w of who ?? []) {
+          names.set(w.id as string, ((w.full_name as string | null) || (w.email as string | null) || "") as string);
+        }
+      }
+      for (const r of cancelRows ?? []) {
+        const subId = r.stripe_subscription_id as string;
+        if (cancellationsBySub.has(subId)) continue; // rows are newest first
+        const cancelMode: PymeCancellationInfo["mode"] = r.mode === "now" ? "now" : "end_of_period";
+        cancellationsBySub.set(subId, {
+          mode: cancelMode,
+          reason: (r.reason as string | null) ?? "",
+          byName: r.cancelled_by ? names.get(r.cancelled_by as string) || null : null,
+          at: r.created_at as string,
+        });
+      }
+    }
+  }
+
   const plans: PymePlanReport[] = PYME_PLAN_KEYS.map((planType) => {
     const purchased: PymePurchaseRow[] = upfronts
       .filter((p) => planTypeById.get(p.pymes_plan_id as string) === planType)
@@ -262,6 +316,7 @@ export async function buildPymeInstallmentReport(): Promise<PymeInstallmentRepor
           cancelDate: null,
           status: "unknown",
           upcomingAmount: 0,
+          lastCancellation: null,
         };
         if (!bySession) return base;
         const sub = p.stripe_session_id ? bySession.get(p.stripe_session_id as string) : undefined;
@@ -292,6 +347,7 @@ export async function buildPymeInstallmentReport(): Promise<PymeInstallmentRepor
           status,
           upcomingAmount:
             status === "active" && remaining && installmentAmount ? remaining * installmentAmount : 0,
+          lastCancellation: cancellationsBySub.get(sub.id) ?? null,
         };
       })
       .sort((a, b) => b.upfrontDate.localeCompare(a.upfrontDate));

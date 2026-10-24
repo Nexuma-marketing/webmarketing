@@ -858,9 +858,14 @@ export async function POST(request: Request) {
             totalInstallments > 0 &&
             (await countCompletedInstallments(subscriptionId)) >= totalInstallments;
           const isElite = metadata.kind === "elite_maintenance";
-          const ctx = pymeCompleted ? null : await loadEmailContext(userId, null, pymesPlanId || null);
+          // BUGFIX_CANCELLATIONS_PANEL.md: "Cancel now" from the admin panel
+          // sends this email itself and flags the subscription first.
+          const panelSentEmail = metadata.panel_cancel_mode === "now";
+          const ctx = pymeCompleted || panelSentEmail ? null : await loadEmailContext(userId, null, pymesPlanId || null);
           if (pymeCompleted) {
             console.log("[webhook-diag] PYME plan fully paid, skipping canceled email", { subscriptionId, totalInstallments });
+          } else if (panelSentEmail) {
+            console.log("[webhook-diag] canceled from the admin panel (now), email already sent by the panel", { subscriptionId });
           } else if (ctx) {
             await sendSubscriptionCanceledEmail({
               to: ctx.email,

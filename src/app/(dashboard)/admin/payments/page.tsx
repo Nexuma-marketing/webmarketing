@@ -12,6 +12,12 @@ import {
 import { DollarSign, CreditCard, TrendingUp, Tag } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { stripeDashboardPaymentUrl } from "@/lib/stripe-dashboard";
+import { createClient } from "@/lib/supabase/client";
+import {
+  CancelSubscriptionDialog,
+  type CancelMode,
+  type CancelTarget,
+} from "@/components/admin/cancel-subscription-dialog";
 
 interface PaymentRow {
   id: string;
@@ -100,28 +106,27 @@ export default function AdminPaymentsPage() {
     loadPayments();
   }
 
-  async function handleCancelSubscription(row: PaymentRow) {
+  // BUGFIX_CANCELLATIONS_PANEL.md: "Cancel sub" opens the shared modal
+  // (mandatory reason, end of period or now). The route resolves the
+  // subscription from the payment row and enforces roles: "Cancel now"
+  // is offered to admin only.
+  const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
+  const [cancelModes, setCancelModes] = useState<CancelMode[]>(["end_of_period"]);
+  useEffect(() => {
+    (async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      const modes: CancelMode[] = profile?.role === "admin" ? ["end_of_period", "now"] : ["end_of_period"];
+      setCancelModes(modes);
+    })();
+  }, []);
+
+  function handleCancelSubscription(row: PaymentRow) {
     if (!row.stripe_subscription_id) return;
-    if (!confirm(
-      `Cancel installment subscription for ${row.user_name}?\n\n` +
-      "Stripe will stop charging future invoices immediately. Already-completed installments are not refunded.",
-    )) return;
-    setActionBusy(row.id);
     setActionMsg(null);
-    const res = await fetch("/api/admin/stripe/cancel-subscription", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriptionId: row.stripe_subscription_id }),
-    });
-    const json = await res.json().catch(() => ({}));
-    setActionBusy(null);
-    if (!res.ok) {
-      setActionMsg(`Error: ${json.error || res.statusText}`);
-      return;
-    }
-    setActionMsg(`Subscription canceled (Stripe status: ${json.status}).`);
-    setTimeout(() => setActionMsg(null), 8000);
-    loadPayments();
+    setCancelTarget({ paymentId: row.id, clientName: row.user_name, planName: row.service_name });
   }
 
   useEffect(() => {
@@ -252,6 +257,19 @@ export default function AdminPaymentsPage() {
 
   return (
     <div className="space-y-6">
+      <CancelSubscriptionDialog
+        target={cancelTarget}
+        allowedModes={cancelModes}
+        initialMode="end_of_period"
+        onClose={() => setCancelTarget(null)}
+        onDone={(message) => {
+          if (message) {
+            setActionMsg(message);
+            setTimeout(() => setActionMsg(null), 8000);
+          }
+          loadPayments();
+        }}
+      />
       <div>
         <h1 className="text-2xl font-bold md:text-3xl">Payment Management</h1>
         <p className="text-muted-foreground">

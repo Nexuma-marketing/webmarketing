@@ -18,8 +18,13 @@ import type {
   PymePurchaseRow,
   PymePurchaseStatus,
 } from "@/lib/pyme-installment-report";
+import {
+  CancelSubscriptionDialog,
+  type CancelMode,
+  type CancelTarget,
+} from "@/components/admin/cancel-subscription-dialog";
 
-// Sales Report → PYME installment plans (admin only). Data is built
+// Sales Report → PYME installment plans (admin and sales). Data is built
 // server-side by src/lib/pyme-installment-report.ts; this component
 // only renders it.
 
@@ -45,8 +50,22 @@ const STATUS_BADGE_CLASSES: Record<PymePurchaseStatus, string> = {
 
 // Same column widths for every plan's table, so they line up when several
 // plans are expanded. Purchased: Company, Email, Upfront paid,
-// Installments charged, Remaining, Next charge, Status.
-const PURCHASED_COL_WIDTHS: string[] = ["160px", "170px", "110px", "110px", "120px", "110px", "270px"];
+// Installments charged, Remaining, Next charge, Status, Actions.
+const PURCHASED_COL_WIDTHS: string[] = ["160px", "170px", "110px", "110px", "120px", "110px", "270px", "190px"];
+
+export type ViewerRole = "admin" | "sales" | null;
+
+// BUGFIX_CANCELLATIONS_PANEL.md: which cancel buttons a row shows.
+// Active/trialing (and past_due) not scheduled: admin both, sales end of
+// period. Scheduled: admin "Cancel now" only. Anything else: none.
+function cancelModesFor(row: PymePurchaseRow, role: ViewerRole): CancelMode[] {
+  if (!row.subscriptionId || !role) return [];
+  if (row.status === "active" || row.status === "payment_failed") {
+    return role === "admin" ? ["end_of_period", "now"] : ["end_of_period"];
+  }
+  if (row.status === "cancellation_scheduled") return role === "admin" ? ["now"] : [];
+  return [];
+}
 // Recommended, not purchased: Company, Email, Diagnosis date.
 const RECOMMENDED_COL_WIDTHS: string[] = ["220px", "260px", "200px"];
 
@@ -59,7 +78,15 @@ function statusText(row: PymePurchaseRow): string {
   return STATUS_LABELS[row.status];
 }
 
-function PlanList({ plan }: { plan: PymePlanReport }) {
+function PlanList({
+  plan,
+  viewerRole,
+  onCancel,
+}: {
+  plan: PymePlanReport;
+  viewerRole: ViewerRole;
+  onCancel: (row: PymePurchaseRow, mode: CancelMode) => void;
+}) {
   const [tab, setTab] = useState<"purchased" | "recommended">("purchased");
   return (
     <details className="rounded-md border">
@@ -93,7 +120,7 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
           ) : (
             <div className="overflow-x-auto">
               {/* Fixed column widths so the Rescue, Growth and Scale tables line up. */}
-              <table className="w-full min-w-[1050px] table-fixed text-sm">
+              <table className="w-full min-w-[1240px] table-fixed text-sm">
                 <colgroup>
                   {PURCHASED_COL_WIDTHS.map((width, i) => (
                     <col key={i} style={{ width }} />
@@ -108,6 +135,7 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
                     <th className="px-3 py-2 text-right font-medium">Remaining</th>
                     <th className="px-3 py-2 text-left font-medium">Next charge</th>
                     <th className="px-3 py-2 text-left font-medium">Status</th>
+                    <th className="px-3 py-2 text-left font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,6 +168,28 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
                         <Badge variant="outline" className={STATUS_BADGE_CLASSES[row.status]}>
                           {statusText(row)}
                         </Badge>
+                        {row.lastCancellation &&
+                          (row.status === "cancellation_scheduled" || row.status === "canceled") && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {row.lastCancellation.mode === "now" ? "Canceled now" : "Scheduled"} by{" "}
+                              {row.lastCancellation.byName || "unknown"} on {formatDate(row.lastCancellation.at)}:{" "}
+                              <span className="italic">&ldquo;{row.lastCancellation.reason}&rdquo;</span>
+                            </p>
+                          )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col items-start gap-1">
+                          {cancelModesFor(row, viewerRole).map((mode) => (
+                            <Button
+                              key={mode}
+                              size="sm"
+                              variant={mode === "now" ? "destructive" : "outline"}
+                              onClick={() => onCancel(row, mode)}
+                            >
+                              {mode === "now" ? "Cancel now" : "Cancel at end of period"}
+                            </Button>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -193,10 +243,26 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
 export function PymeInstallmentPlansSection({
   report,
   error,
+  viewerRole = null,
+  onChanged,
 }: {
   report: PymeInstallmentReport | null;
   error: boolean;
+  /** admin: both cancel modes; sales: end of period only; null: no buttons. */
+  viewerRole?: ViewerRole;
+  /** Reloads the report after a cancellation attempt. */
+  onChanged?: () => void;
 }) {
+  const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
+  const [cancelMode, setCancelMode] = useState<CancelMode>("end_of_period");
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  function openCancel(row: PymePurchaseRow, mode: CancelMode, planName: string) {
+    setSuccessMessage(null);
+    setCancelMode(mode);
+    setCancelTarget({ paymentId: row.paymentId, clientName: row.name, planName });
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -209,6 +275,11 @@ export function PymeInstallmentPlansSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {successMessage && (
+          <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+            {successMessage}
+          </div>
+        )}
         {error && (
           <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
             PYME data could not be loaded.
@@ -259,11 +330,26 @@ export function PymeInstallmentPlansSection({
 
             <div className="space-y-2">
               {report.plans.map((plan) => (
-                <PlanList key={plan.planType} plan={plan} />
+                <PlanList
+                  key={plan.planType}
+                  plan={plan}
+                  viewerRole={viewerRole}
+                  onCancel={(row, mode) => openCancel(row, mode, plan.planName)}
+                />
               ))}
             </div>
           </>
         )}
+        <CancelSubscriptionDialog
+          target={cancelTarget}
+          allowedModes={[cancelMode]}
+          initialMode={cancelMode}
+          onClose={() => setCancelTarget(null)}
+          onDone={(message) => {
+            if (message) setSuccessMessage(message);
+            onChanged?.();
+          }}
+        />
       </CardContent>
     </Card>
   );

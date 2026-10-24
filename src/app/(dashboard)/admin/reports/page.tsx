@@ -43,7 +43,7 @@ import {
 import { generateCSV } from "@/lib/admin";
 import { PropertyPaymentSummaryTable } from "@/components/admin/property-payment-summary-table";
 import type { PropertyPaymentSummaryRow } from "@/lib/property-payment-summary";
-import { PymeInstallmentPlansSection } from "@/components/admin/pyme-installment-plans-section";
+import { PymeInstallmentPlansSection, type ViewerRole } from "@/components/admin/pyme-installment-plans-section";
 import type { PymeInstallmentReport } from "@/lib/pyme-installment-report";
 import { StripeComparisonSection } from "@/components/admin/stripe-comparison-section";
 
@@ -150,6 +150,9 @@ export default function AdminReportsPage() {
   const [canViewPyme, setCanViewPyme] = useState(false);
   const [pymeReport, setPymeReport] = useState<PymeInstallmentReport | null>(null);
   const [pymeError, setPymeError] = useState(false);
+  // BUGFIX_CANCELLATIONS_PANEL.md: decides the PYME cancel buttons
+  // (admin: both modes, sales: end of period only).
+  const [pymeViewerRole, setPymeViewerRole] = useState<ViewerRole>(null);
   // FEATURE_STRIPE_DB_COMPARISON_REPORT.md: read-only Stripe vs database
   // comparison, admin and sales only (replaces "Sync from Stripe").
   const [canViewStripeComparison, setCanViewStripeComparison] = useState(false);
@@ -195,25 +198,29 @@ export default function AdminReportsPage() {
         .eq("id", user.id)
         .single();
       setCanViewPyme(profile?.role === "admin" || profile?.role === "sales");
+      setPymeViewerRole(profile?.role === "admin" ? "admin" : profile?.role === "sales" ? "sales" : null);
       setCanViewStripeComparison(profile?.role === "admin" || profile?.role === "sales");
     })();
   }, []);
 
+  const loadPyme = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/reports/pyme-installments", { cache: "no-store" });
+      if (!res.ok) {
+        setPymeError(true);
+        return;
+      }
+      setPymeError(false);
+      setPymeReport((await res.json()) as PymeInstallmentReport);
+    } catch {
+      setPymeError(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (!canViewPyme) return;
-    (async () => {
-      try {
-        const res = await fetch("/api/admin/reports/pyme-installments", { cache: "no-store" });
-        if (!res.ok) {
-          setPymeError(true);
-          return;
-        }
-        setPymeReport((await res.json()) as PymeInstallmentReport);
-      } catch {
-        setPymeError(true);
-      }
-    })();
-  }, [canViewPyme]);
+    loadPyme();
+  }, [canViewPyme, loadPyme]);
 
   // ─── Filtered payments by selected period ─────────────────────
   const filteredPayments = useMemo(() => {
@@ -637,7 +644,14 @@ export default function AdminReportsPage() {
       </Card>
 
       {/* ─── PYME installment plans (admin + sales) ──────────────── */}
-      {canViewPyme && <PymeInstallmentPlansSection report={pymeReport} error={pymeError} />}
+      {canViewPyme && (
+        <PymeInstallmentPlansSection
+          report={pymeReport}
+          error={pymeError}
+          viewerRole={pymeViewerRole}
+          onChanged={loadPyme}
+        />
+      )}
 
       {/* ─── Stripe vs database comparison (admin + sales) ───────── */}
       {canViewStripeComparison && <StripeComparisonSection />}

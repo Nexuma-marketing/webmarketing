@@ -82,6 +82,30 @@ export function subscriptionNextChargeUnix(sub: Stripe.Subscription): number | n
   return null;
 }
 
+/**
+ * The subscription started from a checkout (metadata.checkout_session_id),
+ * listed by customer (status all). Null if none. Throws on Stripe errors
+ * or timeout. Used by the admin cancel route (BUGFIX_CANCELLATIONS_PANEL.md)
+ * to resolve a purchase's subscription during the trial month, when no
+ * payments row carries stripe_subscription_id yet.
+ */
+export async function findSubscriptionByCheckoutSession(
+  customerId: string,
+  checkoutSessionId: string,
+  timeoutMs: number = STRIPE_TIMEOUT_MS,
+): Promise<Stripe.Subscription | null> {
+  const find = async (): Promise<Stripe.Subscription | null> => {
+    for await (const sub of stripe.subscriptions.list(
+      { customer: customerId, status: "all", limit: 100 },
+      { timeout: timeoutMs, maxNetworkRetries: 0 },
+    )) {
+      if (sub.metadata?.checkout_session_id === checkoutSessionId) return sub;
+    }
+    return null;
+  };
+  return withStripeTimeout(find(), timeoutMs);
+}
+
 export async function getUpcomingPymeCharges(
   userId: string,
   payments: PaymentLike[],
