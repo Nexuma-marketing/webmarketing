@@ -88,7 +88,7 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
       : Promise.resolve({ data: [], error: null }),
     supabaseAdmin
       .from("payments")
-      .select("user_id, property_id, service_id, pymes_plan_id, stripe_session_id, created_at")
+      .select("user_id, property_id, service_id, pymes_plan_id, stripe_session_id, amount, created_at")
       .eq("status", "completed")
       .eq("payment_type", "upfront")
       .not("pymes_plan_id", "is", null)
@@ -110,6 +110,7 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
     stripe_session_id: string | null;
     created_at: string;
     status?: string;
+    amount?: number | string | null;
   };
   const markers = (markerRes.data || []) as Row[];
   const dismissed = new Set(markers.filter((m) => m.status === "canceled").map((m) => m.stripe_session_id));
@@ -131,10 +132,23 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
     });
   };
   ((eliteRes.data || []) as Row[]).forEach(addRow);
-  ((pymesRes.data || []) as Row[]).forEach(addRow);
+  // FIX_PYME_MONEY_GUARDS_REPORT.md: a $0 PYME upfront (100% promo
+  // code) saved no card and must never get an installment
+  // subscription. Skip it, and skip its subscription_setup_failed
+  // marker too (that marker is not a "missing payment row" case).
+  const pymesRows = (pymesRes.data || []) as Row[];
+  const zeroAmountPymeSessions = new Set(
+    pymesRows.filter((row) => !(Number(row.amount) > 0)).map((row) => row.stripe_session_id),
+  );
+  pymesRows.filter((row) => Number(row.amount) > 0).forEach(addRow);
   // A marker whose original payment row is missing (failed insert).
   markers
-    .filter((m) => m.status === "failed" && new Date(m.created_at).getTime() < Date.now() - MIN_AGE_MS)
+    .filter(
+      (m) =>
+        m.status === "failed" &&
+        new Date(m.created_at).getTime() < Date.now() - MIN_AGE_MS &&
+        !zeroAmountPymeSessions.has(m.stripe_session_id),
+    )
     .forEach(addRow);
 
   const subsByCustomer = new Map<string, Stripe.Subscription[]>();
@@ -262,7 +276,7 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
         continue;
       }
 
-      const paymentMethodId = await findSavedCard(session, customerId);
+      const paymentMethodId = await findSavedCard(plan, session, customerId);
       if (!paymentMethodId) {
         console.warn(`${TAG} missing subscription, no saved card — commercial alerted`, { sessionId: c.sessionId, customerId });
         results.push({ sessionId: c.sessionId, outcome: "no_card" });
@@ -322,10 +336,19 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
   return { dryRun, checked: candidates.size, results };
 }
 
-/** Card saved at this checkout, else the customer's invoice default, else their most recent card. */
-async function findSavedCard(session: Stripe.Checkout.Session, customerId: string): Promise<string | null> {
+/**
+ * Card saved at this checkout. PYME: only that card — never another
+ * card the customer happens to have (FIX_PYME_MONEY_GUARDS_REPORT.md).
+ * Elite (unchanged): else the customer's invoice default, else their
+ * most recent card.
+ */
+async function findSavedCard(
+  plan: RecurringPlan,
+  session: Stripe.Checkout.Session,
+  customerId: string,
+): Promise<string | null> {
   const fromSession = await getSavedPaymentMethodFromSession(session, customerId);
-  if (fromSession) return fromSession;
+  if (fromSession || plan.kind === "pymes") return fromSession;
   const customer = await stripe.customers.retrieve(customerId);
   if (!customer.deleted) {
     const def = customer.invoice_settings?.default_payment_method;

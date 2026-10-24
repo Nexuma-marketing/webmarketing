@@ -11,7 +11,7 @@ import {
 import { ELITE_SUB_TIERS } from "@/lib/constants";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { schedulePremierInstallments } from "@/lib/premier-installments";
-import { startSubscriptionAfterCheckout } from "@/lib/subscription-setup";
+import { SUBSCRIPTION_SETUP_FAILED, startSubscriptionAfterCheckout } from "@/lib/subscription-setup";
 import type Stripe from "stripe";
 
 // Steve 5/20 Milestone 4: helper to load the customer's profile +
@@ -202,6 +202,32 @@ export async function POST(request: Request) {
         const paymentType = metadata.payment_type || "one_time";
 
         if (!userId) break;
+
+        // FIX_PYME_MONEY_GUARDS_REPORT.md: Stripe can deliver the same
+        // event twice (retries, or a resend from the Dashboard). If this
+        // session already has a payments row, it was handled: don't
+        // record it again, re-send the receipt or touch the subscription.
+        // The subscription_setup_failed marker shares the session id but
+        // is not a payment, so it doesn't count. On a lookup error we
+        // keep going: recording twice is easier to fix than not at all.
+        const { data: alreadyRecorded, error: alreadyRecordedError } = await supabaseAdmin
+          .from("payments")
+          .select("id")
+          .eq("stripe_session_id", session.id)
+          .neq("payment_type", SUBSCRIPTION_SETUP_FAILED)
+          .limit(1);
+        if (alreadyRecordedError) {
+          console.error("[webhook-diag] duplicate-session check failed, continuing", {
+            sessionId: session.id,
+            error: alreadyRecordedError,
+          });
+        } else if ((alreadyRecorded?.length ?? 0) > 0) {
+          console.log("[webhook-diag] checkout session already recorded, skipping duplicate event", {
+            sessionId: session.id,
+            eventId: event.id,
+          });
+          break;
+        }
 
         // PROMPT2 item 7: a priority-listing add-on bundled onto this
         // same Checkout Session (metadata.addon_service_id) gets its
@@ -485,8 +511,11 @@ export async function POST(request: Request) {
           metadata.pymes_plan_id || null,
         );
         if (ctx) {
-          const subtotalCents = session.amount_subtotal ?? session.amount_total ?? 0;
+          // FIX_PYME_MONEY_GUARDS_REPORT.md: the amount actually charged
+          // before tax. amount_subtotal is before discounts, so with a
+          // Stripe promotion code the receipt showed more than was paid.
           const taxCents = (session.total_details?.amount_tax ?? 0) as number;
+          const subtotalCents = Math.max(0, (session.amount_total ?? 0) - taxCents);
           // PROMPT2 item 8: Founders confirmation email (the BCC'd
           // commercial copy of this receipt) now includes live spots
           // taken/remaining instead of leaving commercial to check

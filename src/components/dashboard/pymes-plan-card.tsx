@@ -54,10 +54,6 @@ export function PymesPlanCard({
                 {planDetails.upfront}, then {planDetails.installment}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Badge variant="outline" className="text-xs shrink-0">Option 2</Badge>
-              <span className="text-muted-foreground">Full payment upfront (100%)</span>
-            </div>
             <p className="text-xs text-muted-foreground mt-1">
               Accepted: e-Transfer, credit card, or bank transfer
             </p>

@@ -167,6 +167,74 @@ async function getPaidPlanNamesForProperty(propertyId: string, ownerId: string):
   return planNamesFor(Array.from(new Set((legacyRows || []).map((r) => r.service_id as string))));
 }
 
+// FIX_PYME_MONEY_GUARDS_REPORT.md: the PYME plans used to be sold
+// both through pymes_upfront and as plain one-time services named
+// "Plan: PYMES — Rescue/Growth/Scale". Only pymes_upfront is allowed now.
+const PYME_SERVICE_PREFIX = "Plan: PYMES";
+
+/** "Plan Rescue" → "Rescue"; "Plan: PYMES — Rescue" → "Rescue". */
+function pymePlanDisplayName(name: string | null | undefined): string {
+  const raw = (name || "").trim();
+  if (!raw) return "PYME";
+  if (raw.startsWith(PYME_SERVICE_PREFIX)) {
+    const afterDash = raw.split("—").pop()?.trim();
+    return afterDash || "PYME";
+  }
+  return raw.replace(/^plan\s+/i, "").trim() || raw;
+}
+
+/**
+ * One PYME plan per client (FIX_PYME_MONEY_GUARDS_REPORT.md). Returns
+ * the display name of a PYME plan this user already bought, "" if none,
+ * or null if a lookup failed (the caller refuses instead of charging
+ * blind). A purchase counts while its payment row is `completed`:
+ * refunded / failed rows don't count. The Stripe subscription state is
+ * not checked — under this rule a canceled or finished installment plan
+ * still blocks, so it would not change the answer.
+ * Counts both the pymes_upfront payments and the legacy one-time
+ * "Plan: PYMES — …" service purchases.
+ */
+async function getPurchasedPymePlanName(userId: string): Promise<string | null> {
+  const { data: upfronts, error: upfrontError } = await supabaseAdmin
+    .from("payments")
+    .select("pymes_plan_id, created_at")
+    .eq("user_id", userId)
+    .eq("payment_type", "upfront")
+    .eq("status", "completed")
+    .not("pymes_plan_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (upfrontError) return null;
+  if (upfronts && upfronts.length > 0) {
+    const { data: plan, error: planError } = await supabaseAdmin
+      .from("pymes_plans")
+      .select("name")
+      .eq("id", upfronts[0].pymes_plan_id as string)
+      .maybeSingle();
+    if (planError) return null;
+    return pymePlanDisplayName(plan?.name as string | undefined);
+  }
+
+  const { data: pymeServices, error: servicesError } = await supabaseAdmin
+    .from("services")
+    .select("id, name")
+    .like("name", `${PYME_SERVICE_PREFIX}%`);
+  if (servicesError) return null;
+  if (!pymeServices || pymeServices.length === 0) return "";
+  const { data: servicePayments, error: servicePaymentsError } = await supabaseAdmin
+    .from("payments")
+    .select("service_id, created_at")
+    .eq("user_id", userId)
+    .eq("status", "completed")
+    .in("service_id", pymeServices.map((svc) => svc.id as string))
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (servicePaymentsError) return null;
+  if (!servicePayments || servicePayments.length === 0) return "";
+  const service = pymeServices.find((svc) => svc.id === servicePayments[0].service_id);
+  return pymePlanDisplayName(service?.name as string | undefined);
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -224,6 +292,15 @@ export async function POST(request: Request) {
           return NextResponse.json(
             { error: "Service not found" },
             { status: 404 }
+          );
+        }
+
+        // FIX_PYME_MONEY_GUARDS_REPORT.md: PYME plans are sold only
+        // through pymes_upfront (upfront + monthly installments).
+        if (String(service.name || "").startsWith(PYME_SERVICE_PREFIX)) {
+          return NextResponse.json(
+            { error: "This plan must be purchased from the PYME plans page." },
+            { status: 400 },
           );
         }
 
@@ -565,6 +642,30 @@ export async function POST(request: Request) {
           return NextResponse.json(
             { error: "Plan not found" },
             { status: 404 }
+          );
+        }
+
+        // FIX_PYME_MONEY_GUARDS_REPORT.md: one PYME plan per client.
+        // Server-side, so a stale page, a second tab or a direct POST
+        // can't start a second purchase.
+        const purchasedPlanName = await getPurchasedPymePlanName(user.id);
+        if (purchasedPlanName === null) {
+          return NextResponse.json(
+            { error: "We couldn't verify your payments. Please try again in a moment." },
+            { status: 503 },
+          );
+        }
+        if (purchasedPlanName) {
+          console.warn("[stripe-checkout] Blocked PYME checkout for a client who already bought a PYME plan", {
+            userId: user.id,
+            requestedPlanId: pymesPlanId,
+            purchasedPlanName,
+          });
+          return NextResponse.json(
+            {
+              error: `You already purchased the ${purchasedPlanName} plan. See your payments and upcoming charges in Payment History.`,
+            },
+            { status: 409 },
           );
         }
 

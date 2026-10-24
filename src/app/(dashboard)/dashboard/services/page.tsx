@@ -42,7 +42,6 @@ import { PrimaryPlanPricingCard } from "@/components/dashboard/primary-plan-pric
 import { getPymesPlanForUser } from "@/lib/pymes-plan-display";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { FoundersActivePlanCard } from "@/components/dashboard/founders-active-plan-card";
-import { PYMES_PLANS } from "@/lib/constants";
 import { CleaningServicesCard } from "@/components/dashboard/cleaning-services-card";
 import {
   getCompletedPaymentKeysForProperties,
@@ -493,21 +492,12 @@ export default async function ServicesPage() {
     return service.features || [];
   }
 
-  // The "Plan: PYMES — Rescue/Growth/Scale" rows in `services` (migration
-  // v11) carry only a one-line description and no `features` — the full
-  // checklist lives in PYMES_PLANS. Match by name so the "Recommended for
-  // You" cards can show the same checklist as the customer's own
-  // recommended plan, without touching how other services render.
-  function getPymesPlanKey(name: string): keyof typeof PYMES_PLANS | null {
-    if (!name.startsWith("Plan: PYMES")) return null;
-    const lower = name.toLowerCase();
-    if (lower.includes("rescue")) return "rescue";
-    if (lower.includes("growth")) return "growth";
-    if (lower.includes("scale")) return "scale";
-    return null;
-  }
-
+  // FIX_PYME_MONEY_GUARDS_REPORT.md: the "Plan: PYMES — Rescue/Growth/
+  // Scale" rows in `services` are no longer sold as one-time services
+  // (their "Purchase — $X CAD" cards are gone; the checkout refuses
+  // them too). A PYME client buys their plan from the plan card above.
   const relevantServices = allServices?.filter((s) => {
+    if (s.name?.startsWith("Plan: PYMES")) return false;
     if (!s.target_roles || s.target_roles.length === 0) return true;
     return s.target_roles.includes(profile.role);
   });
@@ -1285,8 +1275,6 @@ export default async function ServicesPage() {
           </h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {relevantServices.map((service) => {
-              const pymesPlanKey = getPymesPlanKey(service.name);
-              const pymesPlan = pymesPlanKey ? PYMES_PLANS[pymesPlanKey] : null;
               return (
               <Card key={service.id} className="flex flex-col">
                 <CardHeader>
@@ -1315,27 +1303,6 @@ export default async function ServicesPage() {
                   <span className="text-lg font-bold">
                     {formatServicePrice(service)}
                   </span>
-                  {pymesPlan && (
-                    <details className="group mt-3 rounded-lg border bg-card">
-                      <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">
-                        <span className="flex items-center justify-between gap-3">
-                          View Details
-                          <span className="text-xs font-normal text-muted-foreground">
-                            <span className="group-open:hidden">+ Show full checklist</span>
-                            <span className="hidden group-open:inline">− Hide</span>
-                          </span>
-                        </span>
-                      </summary>
-                      <ul className="space-y-1.5 border-t p-3">
-                        {pymesPlan.features.map((feature, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm">
-                            <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${pymesPlan.color}`} />
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
                 </CardContent>
                 {service.price > 0 && (
                   <div className="p-6 pt-0">
