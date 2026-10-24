@@ -149,8 +149,10 @@ export default function AdminReportsPage() {
   const [reconciling, setReconciling] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  // BUGFIX_SALES_REPORT_PYME.md: admin-only PYME installment section,
-  // loaded separately so a slow Stripe call never delays the report.
+  // BUGFIX_SALES_REPORT_PYME.md: PYME installment section, loaded
+  // separately so a slow Stripe call never delays the report. Visible to
+  // admin and sales (BUGFIX_SALES_REPORT_PYME_SALES_ROLE.md).
+  const [canViewPyme, setCanViewPyme] = useState(false);
   const [pymeReport, setPymeReport] = useState<PymeInstallmentReport | null>(null);
   const [pymeError, setPymeError] = useState(false);
 
@@ -196,11 +198,12 @@ export default function AdminReportsPage() {
         .eq("id", user.id)
         .single();
       setIsAdmin(profile?.role === "admin");
+      setCanViewPyme(profile?.role === "admin" || profile?.role === "sales");
     })();
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canViewPyme) return;
     (async () => {
       try {
         const res = await fetch("/api/admin/reports/pyme-installments", { cache: "no-store" });
@@ -213,7 +216,7 @@ export default function AdminReportsPage() {
         setPymeError(true);
       }
     })();
-  }, [isAdmin]);
+  }, [canViewPyme]);
 
   async function reconcileFromStripe() {
     if (!confirm("Pull every paid Stripe checkout session from the last 90 days and insert any that are missing from the payments table? This may take 30s.")) return;
@@ -691,8 +694,8 @@ export default function AdminReportsPage() {
         </CardContent>
       </Card>
 
-      {/* ─── PYME installment plans (admin only) ─────────────────── */}
-      {isAdmin && <PymeInstallmentPlansSection report={pymeReport} error={pymeError} />}
+      {/* ─── PYME installment plans (admin + sales) ──────────────── */}
+      {canViewPyme && <PymeInstallmentPlansSection report={pymeReport} error={pymeError} />}
     </div>
   );
 }

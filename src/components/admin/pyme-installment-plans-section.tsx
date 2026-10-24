@@ -43,6 +43,13 @@ const STATUS_BADGE_CLASSES: Record<PymePurchaseStatus, string> = {
   unknown: "bg-muted text-muted-foreground border-border",
 };
 
+// Same column widths for every plan's table, so they line up when several
+// plans are expanded. Purchased: Company, Email, Upfront paid,
+// Installments charged, Remaining, Next charge, Status.
+const PURCHASED_COL_WIDTHS: string[] = ["160px", "170px", "110px", "110px", "120px", "110px", "270px"];
+// Recommended, not purchased: Company, Email, Diagnosis date.
+const RECOMMENDED_COL_WIDTHS: string[] = ["220px", "260px", "200px"];
+
 function statusText(row: PymePurchaseRow): string {
   if (row.status === "cancellation_scheduled" && row.cancelDate) {
     return `${STATUS_LABELS.cancellation_scheduled} (${formatDate(row.cancelDate)})`;
@@ -85,44 +92,51 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              {/* Fixed column widths so the Rescue, Growth and Scale tables line up. */}
+              <table className="w-full min-w-[1050px] table-fixed text-sm">
+                <colgroup>
+                  {PURCHASED_COL_WIDTHS.map((width, i) => (
+                    <col key={i} style={{ width }} />
+                  ))}
+                </colgroup>
                 <thead className="border-b text-muted-foreground">
                   <tr>
-                    <th className="py-2 text-left font-medium">Company</th>
-                    <th className="py-2 text-left font-medium">Email</th>
-                    <th className="py-2 text-right font-medium">Upfront paid</th>
-                    <th className="py-2 text-right font-medium">Installments charged</th>
-                    <th className="py-2 text-right font-medium">Remaining</th>
-                    <th className="py-2 text-left font-medium">Next charge</th>
-                    <th className="py-2 text-left font-medium">Status</th>
+                    <th className="px-3 py-2 text-left font-medium">Company</th>
+                    <th className="px-3 py-2 text-left font-medium">Email</th>
+                    <th className="px-3 py-2 text-right font-medium">Upfront paid</th>
+                    <th className="px-3 py-2 text-right font-medium">Installments charged</th>
+                    <th className="px-3 py-2 text-right font-medium">Remaining</th>
+                    <th className="px-3 py-2 text-left font-medium">Next charge</th>
+                    <th className="px-3 py-2 text-left font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {plan.purchased.map((row) => (
                     <tr key={row.paymentId} className="border-b last:border-0">
-                      <td className="py-2">{row.name}</td>
-                      <td className="py-2 text-xs text-muted-foreground">{row.email || "—"}</td>
-                      <td className="py-2 text-right">
+                      <td className="truncate px-3 py-2" title={row.name}>{row.name}</td>
+                      <td className="truncate px-3 py-2 text-xs text-muted-foreground" title={row.email || undefined}>
+                        {row.email || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
                         <span className="font-mono">{formatCurrency(row.upfrontAmount)}</span>
                         <div className="text-xs text-muted-foreground">{formatDate(row.upfrontDate)}</div>
                       </td>
-                      <td className="py-2 text-right font-mono">
+                      <td className="px-3 py-2 text-right font-mono">
                         {row.chargedInstallments !== null && row.totalInstallments
                           ? `${row.chargedInstallments} of ${row.totalInstallments}`
                           : "—"}
                       </td>
-                      <td className="py-2 text-right font-mono">
-                        {row.remainingInstallments ?? "—"}
-                        {row.remainingInstallments && row.installmentAmount ? (
-                          <div className="text-xs text-muted-foreground">
-                            × {formatCurrency(row.installmentAmount)}
-                          </div>
-                        ) : null}
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono">
+                        {row.remainingInstallments === null
+                          ? "—"
+                          : row.remainingInstallments && row.installmentAmount
+                            ? `${row.remainingInstallments} × ${formatCurrency(row.installmentAmount)}`
+                            : String(row.remainingInstallments)}
                       </td>
-                      <td className="py-2 text-xs">
+                      <td className="whitespace-nowrap px-3 py-2 text-xs">
                         {row.nextChargeDate ? formatDate(row.nextChargeDate) : "—"}
                       </td>
-                      <td className="py-2">
+                      <td className="px-3 py-2">
                         <Badge variant="outline" className={STATUS_BADGE_CLASSES[row.status]}>
                           {statusText(row)}
                         </Badge>
@@ -139,20 +153,27 @@ function PlanList({ plan }: { plan: PymePlanReport }) {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[600px] table-fixed text-sm">
+              <colgroup>
+                {RECOMMENDED_COL_WIDTHS.map((width, i) => (
+                  <col key={i} style={{ width }} />
+                ))}
+              </colgroup>
               <thead className="border-b text-muted-foreground">
                 <tr>
-                  <th className="py-2 text-left font-medium">Company</th>
-                  <th className="py-2 text-left font-medium">Email</th>
-                  <th className="py-2 text-left font-medium">Diagnosis date</th>
+                  <th className="px-3 py-2 text-left font-medium">Company</th>
+                  <th className="px-3 py-2 text-left font-medium">Email</th>
+                  <th className="px-3 py-2 text-left font-medium">Diagnosis date</th>
                 </tr>
               </thead>
               <tbody>
                 {plan.recommendedNotPurchased.map((row) => (
                   <tr key={row.userId} className="border-b last:border-0">
-                    <td className="py-2">{row.name}</td>
-                    <td className="py-2 text-xs text-muted-foreground">{row.email || "—"}</td>
-                    <td className="py-2 text-xs">
+                    <td className="truncate px-3 py-2" title={row.name}>{row.name}</td>
+                    <td className="truncate px-3 py-2 text-xs text-muted-foreground" title={row.email || undefined}>
+                      {row.email || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
                       {formatDate(row.diagnosisDate)}
                       {row.source === "pymes_captacion" && (
                         <span className="text-muted-foreground"> (Client Acquisition)</span>

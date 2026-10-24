@@ -3,11 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { buildPymeInstallmentReport } from "@/lib/pyme-installment-report";
 
 // BUGFIX_SALES_REPORT_PYME.md: "PYME installment plans" section of the
-// Sales Report. Admin only (same check as /api/admin/stripe/reconcile).
+// Sales Report. Admin and sales only
+// (BUGFIX_SALES_REPORT_PYME_SALES_ROLE.md); any other role gets 403.
 // Read-only: Supabase SELECTs + Stripe subscriptions list.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+const PYME_REPORT_ROLES = ["admin", "sales"];
 
 export async function GET() {
   const supabase = await createClient();
@@ -20,8 +23,8 @@ export async function GET() {
     .select("role")
     .eq("id", user.id)
     .single();
-  if (callerProfile?.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 });
+  if (!callerProfile?.role || !PYME_REPORT_ROLES.includes(callerProfile.role as string)) {
+    return NextResponse.json({ error: "Forbidden — admin or sales only" }, { status: 403 });
   }
 
   try {
