@@ -26,6 +26,12 @@ import { PymesRadarChart } from "@/components/charts/pymes-radar-chart";
 import { CheckoutButton } from "@/components/checkout/checkout-button";
 import { ScheduleRescueButton } from "@/components/pymes/schedule-rescue-button";
 import { PYMES_PLANS } from "@/lib/constants";
+import {
+  getPymesPlanDetails,
+  loadPymesPlanPricing,
+  PYME_PLAN_TYPES,
+  type PymesPlanDetails,
+} from "@/lib/pymes-plan-pricing";
 
 // Steve — PYME_GROWTH_SCALE_FEATURES_FIX.md: this page used to keep its
 // own separate PLAN_DETAILS + ALL_FEATURES copies of the Rescue/Growth/
@@ -36,11 +42,11 @@ import { PYMES_PLANS } from "@/lib/constants";
 // to happen in one place. ALL_FEATURES (the row list for the "Compare
 // All Plans" table) is derived from it rather than hand-maintained, so
 // it can't silently miss a newly added feature again either.
-const PLAN_DETAILS = PYMES_PLANS;
-
+// FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: prices are no longer in
+// PYMES_PLANS; PLAN_DETAILS is built per request from pymes_plans.
 const ALL_FEATURES = Array.from(
   new Set(
-    (["rescue", "growth", "scale"] as const).flatMap((key) => PLAN_DETAILS[key].features),
+    (["rescue", "growth", "scale"] as const).flatMap((key) => PYMES_PLANS[key].features),
   ),
 );
 
@@ -96,16 +102,14 @@ export default async function PymesResultsPage({
           ? "scale"
           : null;
 
-  const { data: pymesPlanRecord } = scorePlanType
-    ? await supabase
-        .from("pymes_plans")
-        .select("id")
-        .eq("plan_type", scorePlanType)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single()
-    : { data: null };
+  // Prices and checkout row id from the same pymes_plans rows.
+  const pricing = await loadPymesPlanPricing(supabase);
+  const PLAN_DETAILS = Object.fromEntries(
+    PYME_PLAN_TYPES.map((key) => [key, getPymesPlanDetails(key, pricing)!]),
+  ) as Record<string, PymesPlanDetails>;
+
+  const pymesPlanRecord =
+    scorePlanType && pricing[scorePlanType] ? { id: pricing[scorePlanType].id } : null;
 
   const recommendedKey = diagnosis.recommended_plan ?? "growth";
   const plan = PLAN_DETAILS[recommendedKey];
@@ -333,15 +337,19 @@ export default async function PymesResultsPage({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <span className={`text-4xl font-bold ${plan.color}`}>
-                {plan.price}
-              </span>
+              {plan.price && (
+                <span className={`text-4xl font-bold ${plan.color}`}>
+                  {plan.price}
+                </span>
+              )}
               <p className="text-sm text-muted-foreground">{plan.duration}</p>
               <div className="rounded-md border bg-muted/30 p-3 space-y-1">
                 <p className="text-xs font-medium">Payment Options:</p>
-                <p className="text-sm text-muted-foreground">
-                  {plan.upfront}, then {plan.installment}
-                </p>
+                {plan.upfront && plan.installment && (
+                  <p className="text-sm text-muted-foreground">
+                    {plan.upfront}, then {plan.installment}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Or full payment upfront. Accepted: e-Transfer, credit card, or bank transfer.
                 </p>
@@ -407,7 +415,7 @@ export default async function PymesResultsPage({
                       >
                         <div className={p.color}>{p.name}</div>
                         <div className="text-xs font-normal text-muted-foreground">
-                          {p.price}
+                          {p.price ?? "—"}
                         </div>
                         {isRecommended && (
                           <Badge variant="default" className="mt-1 text-xs">
@@ -458,7 +466,7 @@ export default async function PymesResultsPage({
                           isRecommended ? "bg-primary/5" : ""
                         }`}
                       >
-                        {p.price}
+                        {p.price ?? "—"}
                       </td>
                     );
                   })}
@@ -477,9 +485,9 @@ export default async function PymesResultsPage({
                           isRecommended ? "bg-primary/5" : ""
                         }`}
                       >
-                        {p.upfront}
+                        {p.upfront ?? "—"}
                         <br />
-                        {p.installment}
+                        {p.installment ?? ""}
                       </td>
                     );
                   })}

@@ -37,6 +37,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, DollarSign, Tag, Users } from "lucide-react";
+import { PymesPlansEditor } from "@/components/admin/pymes-plans-editor";
+
+// FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: the "Plan: PYMES — X" services
+// rows are read-only here. PYME prices live in pymes_plans and are edited
+// in the PYME Plans section below (admin only).
+const isPymePlanService = (name: string | null | undefined) =>
+  (name || "").startsWith("Plan: PYMES");
 
 interface ServicePrice {
   id: string;
@@ -156,6 +163,7 @@ export default function AdminPricingPage() {
 
   async function updatePrice(id: string) {
     if (!newPrice) return;
+    if (isPymePlanService(services.find((s) => s.id === id)?.name)) return;
     // Steve 5/11: verify the write actually changed a row. An empty
     // `data` array means RLS blocked the UPDATE silently.
     const { data: returned, error } = await supabase
@@ -249,7 +257,10 @@ export default function AdminPricingPage() {
         <p className="font-semibold text-blue-900 mb-2">Where to edit what:</p>
         <ul className="list-disc ml-5 space-y-1 text-blue-900">
           <li>
-            <strong>Here (Pricing)</strong>: the dollar amount on the &ldquo;Pay $X CAD upfront&rdquo; button (the total price field per service).
+            <strong>Service Prices (below)</strong>: the one-time price of each service, used on its purchase button (for example the Founders upgrade and add-on services). The &ldquo;Plan: PYMES&rdquo; rows are read-only here.
+          </li>
+          <li>
+            <strong>PYME Plans (below, admin only)</strong>: upfront payment, installment amount and number of installments for Rescue, Growth and Scale. These are what checkout charges and what every PYME page and email shows (&ldquo;Pay $X CAD upfront&rdquo;, &ldquo;N installments of $Y&rdquo;). Changes apply to new purchases only.
           </li>
           <li>
             <strong><a href="/admin/plans" className="underline font-semibold">Plan Checklists →</a></strong>: the feature bullets (e.g. &ldquo;$200 system fee upfront&rdquo;, &ldquo;Pay the balance only after tenant signs the lease&rdquo;) and the tagline (e.g. &ldquo;35% of first month&apos;s rent&rdquo;).
@@ -318,6 +329,9 @@ export default function AdminPricingPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* PYME Plans — only source of PYME prices */}
+      <PymesPlansEditor />
 
       {/* Service Prices */}
       <Card>
@@ -388,16 +402,22 @@ export default function AdminPricingPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setEditingPrice(svc.id);
-                          setNewPrice(String(svc.price));
-                        }}
-                      >
-                        Edit Price
-                      </Button>
+                      {isPymePlanService(svc.name) ? (
+                        <span className="text-xs text-muted-foreground">
+                          Edit PYME plan prices in PYME Plans
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingPrice(svc.id);
+                            setNewPrice(String(svc.price));
+                          }}
+                        >
+                          Edit Price
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

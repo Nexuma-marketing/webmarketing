@@ -6,7 +6,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createClient } from "@/lib/supabase/client";
 import { pymesCalculatorSchema, type PymesCalculatorData } from "@/types/forms";
-import { PYMES_PLANS } from "@/lib/constants";
+import {
+  fetchPymesPlanPricing,
+  getPymesPlanDetails,
+  type PymesPlanPricing,
+} from "@/lib/pymes-plan-pricing";
 import { PymesPlanCard } from "@/components/dashboard/pymes-plan-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -267,6 +271,8 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
     "rescue" | "growth" | "scale" | null
   >(null);
   const [captPlanRecordId, setCaptPlanRecordId] = useState<string | null>(null);
+  // Prices from pymes_plans (FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md).
+  const [captPricing, setCaptPricing] = useState<Record<string, PymesPlanPricing>>({});
 
   function updateField(name: string, value: string | number | string[]) {
     setCaptData((prev) => ({ ...prev, [name]: value }));
@@ -344,20 +350,15 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
 
       if (insertError) throw insertError;
 
-      // Reuse the exact same pymes_plans-by-plan_type lookup Sales Leak
-      // Diagnosis and /dashboard/services already use, so the success
-      // screen's checkout button (below) targets a real plan row.
-      const { data: planRecord } = await supabase
-        .from("pymes_plans")
-        .select("id")
-        .eq("plan_type", recommendedPlan)
-        .eq("is_active", true)
-        .limit(1)
-        .single();
+      // Same active pymes_plans row Sales Leak Diagnosis and
+      // /dashboard/services use: the success screen's checkout button
+      // (below) and its prices come from that one row.
+      const pricing = await fetchPymesPlanPricing();
 
       setCaptId(captRow?.id ?? null);
       setCaptRecommendedPlan(recommendedPlan);
-      setCaptPlanRecordId(planRecord?.id ?? null);
+      setCaptPricing(pricing);
+      setCaptPlanRecordId(pricing[recommendedPlan]?.id ?? null);
 
       await fetch("/api/leads", {
         method: "POST",
@@ -418,12 +419,15 @@ function CaptacionForm({ onBack }: { onBack: () => void }) {
             {/* Steve — Client Acquisition plan scoring fix: reuses the
                 exact same plan card (and working checkout button) Sales
                 Leak Diagnosis and /dashboard/services already render. */}
-            {captRecommendedPlan && PYMES_PLANS[captRecommendedPlan] && (
-              <PymesPlanCard
-                planDetails={PYMES_PLANS[captRecommendedPlan]}
-                pymesPlanRecordId={captPlanRecordId}
-              />
-            )}
+            {(() => {
+              const captPlanDetails = getPymesPlanDetails(captRecommendedPlan, captPricing);
+              return captPlanDetails ? (
+                <PymesPlanCard
+                  planDetails={captPlanDetails}
+                  pymesPlanRecordId={captPlanRecordId}
+                />
+              ) : null;
+            })()}
             <div className="flex flex-col gap-2">
               {/* Steve 4/21 #7: Primary CTA — AGENDAR MI SESIÓN DE RESCATE */}
               <Button
@@ -642,6 +646,19 @@ export default function PymesCalculatorPage() {
 
   // Steve 4/28 round 2: admin-editable form metadata overlay.
   const fieldMeta = useFormFieldMeta("pymes_diagnosis");
+
+  // Plan prices for the review step, from pymes_plans
+  // (FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md).
+  const [planPricing, setPlanPricing] = useState<Record<string, PymesPlanPricing>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchPymesPlanPricing().then((p) => {
+      if (!cancelled) setPlanPricing(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const {
     register,
@@ -1084,9 +1101,10 @@ export default function PymesCalculatorPage() {
                       </p>
 
                       {/* Steve #6-2 (4/19): Plan description uses centralized PYMES_PLANS
-                          data — single source of truth matches Services page and Results page */}
+                          data — single source of truth matches Services page and Results page.
+                          Prices come from pymes_plans (FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md). */}
                       {(() => {
-                        const plan = PYMES_PLANS[results.recommendedPlan];
+                        const plan = getPymesPlanDetails(results.recommendedPlan, planPricing);
                         if (!plan) return null;
                         return (
                           <div className="rounded-lg border p-4 space-y-3">
@@ -1094,17 +1112,21 @@ export default function PymesCalculatorPage() {
                             <p className={`text-lg font-bold ${plan.color}`}>
                               Plan {plan.name}
                             </p>
-                            <p className="text-sm font-semibold">
-                              {plan.price}
-                            </p>
+                            {plan.price && (
+                              <p className="text-sm font-semibold">
+                                {plan.price}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                               {plan.tagline}
                             </p>
                             <div className="rounded-md border bg-muted/30 p-2 space-y-1">
                               <p className="text-xs font-medium">Payment Options:</p>
-                              <p className="text-xs text-muted-foreground">
-                                {plan.upfront}, then {plan.installment}
-                              </p>
+                              {plan.upfront && plan.installment && (
+                                <p className="text-xs text-muted-foreground">
+                                  {plan.upfront}, then {plan.installment}
+                                </p>
+                              )}
                               <p className="text-xs text-muted-foreground">
                                 Or full payment upfront. Accepted: e-Transfer, credit card, or bank transfer.
                               </p>

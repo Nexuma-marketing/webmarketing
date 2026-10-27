@@ -792,10 +792,10 @@ export async function POST(request: Request) {
       }
 
       // ── Steve 5/16 Milestone 4: Charge refunded ──
-      // Either a partial or full refund triggered from the Stripe
-      // dashboard or our admin UI. We flag the payment as refunded
-      // and stamp refunded_at so the Sales Report can chart refund
-      // volume by date.
+      // A partial or full refund triggered from the Stripe dashboard or
+      // our admin UI. A full refund flags the payment as refunded and
+      // stamps refunded_at so the Sales Report can chart refund volume
+      // by date. A partial refund leaves the row as it is (see below).
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
         const paymentIntentId =
@@ -803,6 +803,68 @@ export async function POST(request: Request) {
             ? charge.payment_intent
             : charge.payment_intent?.id;
         if (paymentIntentId) {
+          // FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md point 5: only a FULL
+          // refund marks the row 'refunded'. A partial refund leaves it
+          // 'completed' (so it still blocks a second PYME purchase / still
+          // counts as paid), is logged, and commercial is alerted.
+          const fullyRefunded =
+            charge.refunded === true || (charge.amount > 0 && (charge.amount_refunded || 0) >= charge.amount);
+
+          if (!fullyRefunded) {
+            const { data: row } = await supabaseAdmin
+              .from("payments")
+              .select("id, user_id, service_id, pymes_plan_id, status")
+              .eq("stripe_payment_intent_id", paymentIntentId)
+              .limit(1)
+              .maybeSingle();
+            console.warn("[charge.refunded] partial refund — payment row left unchanged", {
+              chargeId: charge.id,
+              paymentIntentId,
+              amountCents: charge.amount,
+              amountRefundedCents: charge.amount_refunded,
+              paymentId: row?.id || null,
+              paymentStatus: row?.status || null,
+            });
+            const ctx = row?.user_id
+              ? await loadEmailContext(
+                  row.user_id as string,
+                  (row.service_id as string | null) || null,
+                  (row.pymes_plan_id as string | null) || null,
+                )
+              : null;
+            const currency = (charge.currency || "cad").toUpperCase();
+            try {
+              await sendCommercialAlertEmail({
+                subject: "Partial refund — payment still counts as paid",
+                intro:
+                  "A partial refund was issued for this payment. The payment stays 'completed' in our records, so the customer still cannot buy a second PYME plan. If the purchase should be undone, refund the rest from the admin panel or Stripe.",
+                items: [
+                  {
+                    Customer: ctx ? `${ctx.name} <${ctx.email}>` : `user ${row?.user_id || "unknown"}`,
+                    Item: ctx?.serviceName || "Unknown",
+                    Charged: `${((charge.amount || 0) / 100).toFixed(2)} ${currency}`,
+                    "Refunded so far": `${((charge.amount_refunded || 0) / 100).toFixed(2)} ${currency}`,
+                    "Payment ID": row?.id || "not found",
+                    "Payment intent": paymentIntentId,
+                  },
+                ],
+              });
+            } catch (err) {
+              console.error("[charge.refunded] partial refund alert failed", { paymentIntentId, err });
+            }
+            // Customer confirmation email, as before for any refund.
+            if (ctx) {
+              await sendRefundConfirmationEmail({
+                to: ctx.email,
+                customerName: ctx.name,
+                serviceName: ctx.serviceName,
+                amountCents: charge.amount_refunded || 0,
+                currency,
+              });
+            }
+            break;
+          }
+
           const { data: updated } = await supabaseAdmin
             .from("payments")
             .update({

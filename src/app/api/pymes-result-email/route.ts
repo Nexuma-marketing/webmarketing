@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
+import { loadPymesPlanPricing, pymesPriceText } from "@/lib/pymes-plan-pricing";
 
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Nexuma Marketing <notifications@nexuma.ca>";
 const COMMERCIAL_EMAIL = process.env.COMMERCIAL_AREA_EMAIL || "alexsanabria33@hotmail.com";
@@ -13,7 +14,7 @@ function buildEmailHtml(params: {
   score: number;
   urgencyLevel: string;
   recommendedPlan: string;
-  planPrice: string;
+  planPrice: string | null;
   dashboardUrl: string;
   scheduleUrl: string;
 }): string {
@@ -48,7 +49,7 @@ function buildEmailHtml(params: {
     <div style="background:#f8f9fa;border-left:4px solid #0FA37F;padding:16px;margin:24px 0;border-radius:4px">
       <p style="margin:0;font-size:14px;color:#666">Your recommended plan</p>
       <p style="margin:4px 0 0;font-size:20px;font-weight:700;color:#0B38D9;text-transform:capitalize">
-        Plan ${recommendedPlan} — ${planPrice}
+        Plan ${recommendedPlan}${planPrice ? ` — ${planPrice}` : ""}
       </p>
     </div>
 
@@ -134,11 +135,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, skipped: true });
     }
 
-    const planPrices: Record<string, string> = {
-      rescue: "$1,500 CAD",
-      growth: "$2,500 CAD",
-      scale: "$3,800 CAD",
-    };
+    // FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: total from pymes_plans
+    // (was a hand-written rescue/growth/scale map).
+    const recommendedPlanKey = diagnosis.recommended_plan || "growth";
+    const planPricing = await loadPymesPlanPricing(supabase);
+    const planPrice = pymesPriceText(planPricing[recommendedPlanKey]).price;
 
     // Steve's formula: monthly_loss = monthly_revenue * 0.3
     const monthlyLoss = Math.round((Number(monthly_revenue) || 0) * 0.3);
@@ -152,8 +153,8 @@ export async function POST(request: Request) {
       monthlyLoss,
       score: Number(diagnosis.total_score) || 0,
       urgencyLevel: diagnosis.urgency_level || "moderate",
-      recommendedPlan: diagnosis.recommended_plan || "growth",
-      planPrice: planPrices[diagnosis.recommended_plan] || "$2,500 CAD",
+      recommendedPlan: recommendedPlanKey,
+      planPrice,
       dashboardUrl: `${baseUrl}/dashboard/services`,
       scheduleUrl: `${baseUrl}/dashboard/services#contact`,
     });

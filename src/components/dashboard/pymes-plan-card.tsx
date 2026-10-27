@@ -42,18 +42,23 @@ export function PymesPlanCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <span className={`text-3xl font-bold ${planDetails.color}`}>
-            {planDetails.price}
-          </span>
+          {/* Prices come from the pymes_plans table (FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md). */}
+          {planDetails.price && (
+            <span className={`text-3xl font-bold ${planDetails.color}`}>
+              {planDetails.price}
+            </span>
+          )}
           <p className="text-sm text-muted-foreground">{planDetails.duration}</p>
           <div className="rounded-md border bg-card p-3 space-y-1.5">
             <p className="text-xs font-medium">Payment Options:</p>
-            <div className="flex items-center gap-2 text-sm">
-              <Badge variant="outline" className="text-xs shrink-0">Option 1</Badge>
-              <span className="text-muted-foreground">
-                {planDetails.upfront}, then {planDetails.installment}
-              </span>
-            </div>
+            {planDetails.upfront && planDetails.installment && (
+              <div className="flex items-center gap-2 text-sm">
+                <Badge variant="outline" className="text-xs shrink-0">Option 1</Badge>
+                <span className="text-muted-foreground">
+                  {planDetails.upfront}, then {planDetails.installment}
+                </span>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground mt-1">
               Accepted: e-Transfer, credit card, or bank transfer
             </p>
@@ -73,7 +78,7 @@ export function PymesPlanCard({
               alreadyPaid={alreadyPaid}
               type="pymes_upfront"
               pymesPlanId={pymesPlanRecordId}
-              label={`Pay ${planDetails.upfront}`}
+              label={planDetails.upfront ? `Pay ${planDetails.upfront}` : "Pay upfront"}
               className="flex-1"
             />
           ) : (

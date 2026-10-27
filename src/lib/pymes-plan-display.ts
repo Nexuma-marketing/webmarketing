@@ -1,7 +1,11 @@
-import { PYMES_PLANS } from "@/lib/constants";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  getPymesPlanDetails,
+  loadPymesPlanPricing,
+  type PymesPlanDetails,
+} from "@/lib/pymes-plan-pricing";
 
-export type PymesPlanDetails = (typeof PYMES_PLANS)[string];
+export type { PymesPlanDetails };
 
 export interface PymesPlanInfo {
   pymesPlan: string | null;
@@ -84,21 +88,18 @@ export async function getPymesPlanForUser(
     };
   }
 
-  const baseDetails = PYMES_PLANS[pymesPlan] || null;
-
-  const [{ data: planRecord }, { data: overrideRows }] = await Promise.all([
-    supabase
-      .from("pymes_plans")
-      .select("id")
-      .eq("plan_type", pymesPlan)
-      .eq("is_active", true)
-      .limit(1)
-      .single(),
+  // FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: prices and the checkout
+  // row id come from the same pymes_plans row.
+  const [pricing, { data: overrideRows }] = await Promise.all([
+    loadPymesPlanPricing(supabase),
     supabase
       .from("app_config")
       .select("key, value")
       .eq("category", `plan_features:pymes_${pymesPlan}`),
   ]);
+
+  const baseDetails = getPymesPlanDetails(pymesPlan, pricing);
+  const planRecord = pricing[pymesPlan] ? { id: pricing[pymesPlan].id } : null;
 
   let pymesPlanDetails = baseDetails;
   if (baseDetails && overrideRows && overrideRows.length > 0) {

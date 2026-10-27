@@ -145,26 +145,23 @@ export const OWNER_TIERS: Record<
   },
 };
 
-export const PYMES_PLANS: Record<
-  string,
-  {
-    name: string;
-    price: string;
-    upfront: string;
-    installment: string;
-    duration: string;
-    tagline: string;
-    features: string[];
-    color: string;
-    bgColor: string;
-    borderColor: string;
-  }
-> = {
+// FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: no prices here. Total,
+// upfront and installments come from the `pymes_plans` table (the same
+// rows checkout charges), edited by admin in Admin → Pricing → PYME
+// Plans. See src/lib/pymes-plan-pricing.ts.
+export type PymesPlanBase = {
+  name: string;
+  duration: string;
+  tagline: string;
+  features: string[];
+  color: string;
+  bgColor: string;
+  borderColor: string;
+};
+
+export const PYMES_PLANS: Record<string, PymesPlanBase> = {
   rescue: {
     name: "Rescue",
-    price: "$1,500 CAD",
-    upfront: "$750 CAD upfront (50%)",
-    installment: "$375 CAD × 2 monthly payments",
     duration: "Minimum 2.5 months",
     tagline:
       "Intensive intervention plan to exit critical mode and move to growth",
@@ -182,9 +179,6 @@ export const PYMES_PLANS: Record<
   },
   growth: {
     name: "Growth",
-    price: "$2,500 CAD",
-    upfront: "$1,250 CAD upfront (50%)",
-    installment: "$625 CAD × 2 monthly payments",
     duration: "Minimum 4–5 months",
     tagline:
       "Plan to overcome stagnation, correct weaknesses and start growing",
@@ -203,9 +197,6 @@ export const PYMES_PLANS: Record<
   },
   scale: {
     name: "Scale",
-    price: "$3,800 CAD",
-    upfront: "$1,520 CAD upfront (40%)",
-    installment: "$570 CAD × 4 monthly payments",
     duration: "Minimum 6 months",
     tagline: "Plan to scale and maximize revenue with advanced strategies",
     features: [
