@@ -6,6 +6,13 @@ import { ELITE_SUB_TIERS, displayServiceName } from "@/lib/constants";
 import { computeNetAmountDueCents } from "@/lib/plan-switch";
 import { FOUNDERS_SERVICE_NAME, LOW_PRICE_SERVICE_NAME } from "@/lib/payment-lookup";
 import { eliteTierForServiceName } from "@/lib/subscription-setup";
+import { PROMO_FLOW_VERSION, validatePromoForCheckout, type CheckoutPromo } from "@/lib/promotions-server";
+import {
+  getActivePlanPromoDiscount,
+  isBalancePlan,
+  resolvePlanBalanceTerms,
+  type PlanBalanceTerms,
+} from "@/lib/plan-promo-discount";
 
 // Steve 6/10 (6-2.md #51): GST workaround per Alex's WhatsApp guide.
 // `automatic_tax: { enabled: true }` requires the Stripe Tax module
@@ -33,86 +40,17 @@ function sessionTaxConfig(): { automatic_tax?: { enabled: true } } {
   return STRIPE_GST_RATE_ID ? {} : { automatic_tax: { enabled: true } };
 }
 
-// Steve 5/4 / Milestone 4: validate an admin-defined promo code from the
-// promotions table and return either an error message or a discount
-// amount in cents to subtract from the line item.
-//
-// Rules (in order):
-//   - exists / is_active = true
-//   - valid_from <= today
-//   - valid_until null OR >= today
-//   - max_uses null OR used_count < max_uses
-//   - target_roles empty OR includes profile.role
-//
-// target_zones is intentionally NOT enforced here — zones gate which
-// promotions appear on the user's banner (active-promotions-banner.tsx),
-// but at checkout time the user has explicitly typed a code so we trust
-// their intent and let it through.
-async function validatePromoCode(
-  code: string,
-  baseAmountCad: number,
-  userRole: string | null,
-): Promise<
-  | { ok: true; promotionId: string; discountCents: number; appliedLabel: string }
-  | { ok: false; error: string }
-> {
-  const trimmed = code.trim().toUpperCase();
-  if (!trimmed) return { ok: false, error: "Empty code" };
-
-  // Steve 5/22 Milestone 4: promotions has admin-only RLS, so reading
-  // via the caller's cookie-context client returned null for every
-  // non-admin user → "Promo code not found" even when the code existed.
-  // Use service-role here (server-only) so the lookup actually finds
-  // the row. We still re-check all eligibility rules below.
-  const { data: promo } = await supabaseAdmin
-    .from("promotions")
-    .select(
-      "id, code, discount_type, discount_value, valid_from, valid_until, is_active, max_uses, used_count, target_roles",
-    )
-    .eq("code", trimmed)
-    .maybeSingle();
-
-  if (!promo) return { ok: false, error: "Promo code not found" };
-  if (!promo.is_active) return { ok: false, error: "Promo code inactive" };
-
-  const today = new Date().toISOString().split("T")[0];
-  if (promo.valid_from && promo.valid_from > today) {
-    return { ok: false, error: "Promo code not yet active" };
-  }
-  if (promo.valid_until && promo.valid_until < today) {
-    return { ok: false, error: "Promo code expired" };
-  }
-  if (
-    promo.max_uses !== null &&
-    promo.used_count >= promo.max_uses
-  ) {
-    return { ok: false, error: "Promo code usage limit reached" };
-  }
-  const roles = (promo.target_roles as string[] | null) || [];
-  if (roles.length > 0 && (!userRole || !roles.includes(userRole))) {
-    return {
-      ok: false,
-      error: "Promo code is not eligible for your account",
-    };
-  }
-
-  let discountCents = 0;
-  let appliedLabel = "";
-  const baseCents = Math.round(baseAmountCad * 100);
-  if (promo.discount_type === "percentage") {
-    discountCents = Math.round((baseCents * promo.discount_value) / 100);
-    appliedLabel = `${promo.discount_value}% off (${trimmed})`;
-  } else {
-    discountCents = Math.round(promo.discount_value * 100);
-    appliedLabel = `$${promo.discount_value} CAD off (${trimmed})`;
-  }
-  if (discountCents > baseCents) discountCents = baseCents;
-
+// FIX_PROMOTIONS_REPORT.md: read by the webhook, which counts the use
+// and stores the redemption once the payment completes. promo_v marks
+// sessions created with this flow (older sessions were already counted
+// when they were created).
+function promoMetadata(promo: CheckoutPromo | null): Record<string, string> {
+  if (!promo) return {};
   return {
-    ok: true,
-    promotionId: promo.id,
-    discountCents,
-    appliedLabel,
+    promotion_id: promo.promotionId,
+    promo_label: promo.label,
+    promo_discount_cents: String(promo.totalDiscountCents),
+    promo_v: PROMO_FLOW_VERSION,
   };
 }
 
@@ -408,6 +346,9 @@ export async function POST(request: Request) {
           ? `\nBy completing this one-time payment of $${chargeAmount} CAD, you also authorize a separate recurring monthly charge of $${eliteTierInfo.monthlyFee} CAD (monthly platform fee for this property), billed automatically to this card each month starting one month after this payment, until canceled.`
           : "";
 
+        // Set by the plan switch below when this property already has an
+        // upfront paid (FIX_PROMOTIONS_BALANCE_REPORT.md).
+        let alreadyPaidForSwitchCents = 0;
         // PROMPT2 item 8: "smart balance" plan switch (Founders and any
         // future plan-to-plan switch on the same property). Nets
         // whatever was already paid upfront for this property (any
@@ -424,7 +365,26 @@ export async function POST(request: Request) {
               { status: 404 },
             );
           }
-          if (net.netDueCents === 0) {
+          // FIX_PROMOTIONS_BALANCE_REPORT.md: a promo discount already
+          // stored for this property's plan (code used on the earlier
+          // upfront) still comes off the plan's value, so the switch
+          // charges the difference minus that discount. Without this the
+          // customer would pay it here and lose it.
+          let netDueCents = net.netDueCents;
+          let storedPromoDiscountCents = 0;
+          if (net.alreadyPaidCents > 0) {
+            const stored = await getActivePlanPromoDiscount(propertyId);
+            if (!stored.ok) {
+              return NextResponse.json(
+                { error: "We couldn't verify this property's payments. Please try again in a moment." },
+                { status: 503 },
+              );
+            }
+            storedPromoDiscountCents = stored.discount?.discountCents ?? 0;
+            netDueCents = Math.max(0, netDueCents - storedPromoDiscountCents);
+          }
+          alreadyPaidForSwitchCents = net.alreadyPaidCents;
+          if (netDueCents === 0) {
             // Already fully covered by a prior payment on this property —
             // no new Stripe charge. Record a $0 audit row (never a
             // silent no-op) and send the user straight to Payment
@@ -447,30 +407,108 @@ export async function POST(request: Request) {
               redirectUrl: `${APP_URL}/dashboard/payments?planSwitched=1`,
             });
           }
-          chargeAmount = net.netDueCents / 100;
+          chargeAmount = netDueCents / 100;
           if (net.alreadyPaidCents > 0) {
             descriptionSuffix += `\nNetted against $${net.alreadyPaidCents / 100} CAD already paid on this property — you only pay the difference.`;
+          }
+          if (storedPromoDiscountCents > 0) {
+            descriptionSuffix += `\nYour promo discount of $${(storedPromoDiscountCents / 100).toFixed(2)} CAD on this property's plan is also deducted.`;
           }
         }
 
         const baseCents = Math.round(chargeAmount * 100);
         let unitAmount = baseCents;
-        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
+        let promo: CheckoutPromo | null = null;
+        let planPromoTerms: PlanBalanceTerms | null = null;
         if (promoCode) {
-          const v = await validatePromoCode(
-            String(promoCode),
-            chargeAmount,
-            userRole,
-          );
-          if (!v.ok) {
-            return NextResponse.json({ error: v.error }, { status: 400 });
+          // FIX_PROMOTIONS_REPORT.md: the code discounts this one charge
+          // only. Elite: the one-time portfolio fee, never the monthly
+          // platform fee. The priority-listing add-on is never discounted.
+          if (service.category === "addon") {
+            return NextResponse.json(
+              { error: "Promo codes don't apply to add-ons." },
+              { status: 400 },
+            );
           }
-          unitAmount = Math.max(0, baseCents - v.discountCents);
-          promoMeta = { promotionId: v.promotionId, appliedLabel: v.appliedLabel };
+        }
+        if (promoCode && service.category === "plan" && isBalancePlan(service.name)) {
+          // FIX_PROMOTIONS_BALANCE_REPORT.md: Low Price, Founders, Support
+          // and Premier. The code discounts the plan's value to charge
+          // (rent × plan %), not today's upfront: the upfront stays as it
+          // is and the balance billed later is reduced. The webhook stores
+          // the discount with the property.
+          if (!propertyId) {
+            return NextResponse.json(
+              { error: "Choose a property to apply a promo code to this plan." },
+              { status: 400 },
+            );
+          }
+          const stored = await getActivePlanPromoDiscount(propertyId);
+          if (!stored.ok) {
+            return NextResponse.json(
+              { error: "We couldn't check this promo code. Please try again in a moment." },
+              { status: 503 },
+            );
+          }
+          if (stored.discount) {
+            return NextResponse.json(
+              { error: "This property's plan already has a promo code applied." },
+              { status: 400 },
+            );
+          }
+          const terms = await resolvePlanBalanceTerms({
+            serviceName: service.name as string,
+            propertyId,
+            ownerId: user.id,
+            monthlyRentCad: propertyMonthlyRent,
+          });
+          if (!terms.ok) {
+            return NextResponse.json({ error: terms.error }, { status: terms.status });
+          }
+          // Plan switch with an upfront already paid: today's charge is
+          // the whole remaining balance (that is how the switch bills it).
+          const isSwitchBalance = alreadyPaidForSwitchCents > 0;
+          const v = await validatePromoForCheckout({
+            code: String(promoCode),
+            userId: user.id,
+            userRole,
+            purchaseKind: "property",
+            chargesCents: [baseCents],
+            planBalance: {
+              planTotalCents: terms.terms.planTotalCents,
+              upfrontCents: isSwitchBalance ? alreadyPaidForSwitchCents : baseCents,
+              installmentShares: isSwitchBalance ? [1] : terms.terms.installmentShares,
+            },
+          });
+          if (!v.ok) {
+            return NextResponse.json({ error: v.error }, { status: v.status });
+          }
+          promo = v.promo;
+          planPromoTerms = terms.terms;
+          const offCad = (promo.totalDiscountCents / 100).toFixed(2);
+          if (isSwitchBalance) {
+            unitAmount = promo.planBalance!.balanceCents;
+            descriptionSuffix += `\nPromo applied: ${promo.label} — $${offCad} CAD off this plan's total fee, deducted from today's payment.`;
+          } else {
+            descriptionSuffix += `\nPromo applied: ${promo.label} — $${offCad} CAD off this plan's total fee. Today's payment is not discounted; the discount is deducted from your remaining balance.`;
+          }
+        } else if (promoCode) {
+          const v = await validatePromoForCheckout({
+            code: String(promoCode),
+            userId: user.id,
+            userRole,
+            purchaseKind: propertyId || service.category === "plan" ? "property" : "other",
+            chargesCents: [baseCents],
+          });
+          if (!v.ok) {
+            return NextResponse.json({ error: v.error }, { status: v.status });
+          }
+          promo = v.promo;
+          unitAmount = promo.discountedCents[0];
           // Append rather than overwrite so the Elite recurring-fee
           // disclosure above (when present) still reaches the customer
           // even when a promo code is also applied.
-          descriptionSuffix += `\nPromo applied: ${v.appliedLabel}`;
+          descriptionSuffix += `\nPromo applied: ${promo.label}`;
         }
 
         // PROMPT2 item 7: optional +$100 priority listing placement
@@ -533,9 +571,9 @@ export async function POST(request: Request) {
           //   Stripe Checkout page footer so the customer sees the
           //   legal docs before paying (client said "No vi este al
           //   momento de pagar").
-          // - allow_promotion_codes: show Stripe's native promo input
-          //   on the checkout page so the customer can enter a code
-          //   there even if they missed the one on our page.
+          // FIX_PROMOTIONS_REPORT.md: no allow_promotion_codes — Stripe's
+          // own promo box is off; only the app's code (promotions table)
+          // is accepted.
           consent_collection: {
             terms_of_service: "required",
           },
@@ -544,7 +582,6 @@ export async function POST(request: Request) {
               message: "I agree to the [Terms of Service](https://webmarketing-lyart.vercel.app/legal/terms_of_service) and [Privacy Policy](https://webmarketing-lyart.vercel.app/legal/privacy_policy). All sales are final per our [Refund Policy](https://webmarketing-lyart.vercel.app/legal/refund_policy).",
             },
           },
-          allow_promotion_codes: !promoCode,
           line_items: [
             {
               price_data: {
@@ -591,35 +628,26 @@ export async function POST(request: Request) {
             ...(addOnLineItem
               ? { addon_service_id: addOnServiceId, addon_amount_cents: String(addOnAmountCents) }
               : {}),
-            ...(promoMeta
+            ...promoMetadata(promo),
+            // FIX_PROMOTIONS_BALANCE_REPORT.md: read by the webhook to
+            // store the plan discount with the property.
+            ...(promo?.planBalance && planPromoTerms
               ? {
-                  promotion_id: promoMeta.promotionId,
-                  promo_label: promoMeta.appliedLabel,
+                  promo_scope: "plan_balance",
+                  promo_code: promo.code,
+                  promo_discount_type: promo.discountType,
+                  promo_discount_value: String(promo.discountValue),
+                  promo_plan_percentage: String(planPromoTerms.planPercentage),
+                  promo_monthly_rent: String(propertyMonthlyRent),
+                  promo_plan_total_cents: String(promo.planBalance.planTotalCents),
+                  promo_upfront_cents: String(promo.planBalance.upfrontCents),
                 }
               : {}),
           },
         });
 
-        // Increment used_count immediately. Stripe webhook could roll it
-        // back on payment failure; for our demo + testing flow we accept
-        // the slight over-counting risk.
-        // Steve 5/22 Milestone 4: was writing via the cookie-context
-        // client and RLS denied it for every non-admin user, so the
-        // counter never moved. Service-role write to bypass RLS.
-        if (promoMeta) {
-          const { data: p } = await supabaseAdmin
-            .from("promotions")
-            .select("used_count")
-            .eq("id", promoMeta.promotionId)
-            .single();
-          if (p) {
-            await supabaseAdmin
-              .from("promotions")
-              .update({ used_count: (p.used_count ?? 0) + 1 })
-              .eq("id", promoMeta.promotionId);
-          }
-        }
-
+        // FIX_PROMOTIONS_REPORT.md: the use is counted by the webhook
+        // when the payment completes, not here.
         return NextResponse.json({ url: session.url });
       }
 
@@ -671,33 +699,46 @@ export async function POST(request: Request) {
 
         const upfrontAmount = plan.upfront_amount || plan.price * 0.5;
         const baseCents = Math.round(upfrontAmount * 100);
+        const pymeInstallmentAmount = Number(plan.installment_amount) || 0;
+        const pymeInstallmentMonths = Number(plan.installment_months) || 0;
+        const hasInstallments = pymeInstallmentAmount > 0 && pymeInstallmentMonths > 0;
+        const baseInstallmentCents = Math.round(pymeInstallmentAmount * 100);
         let unitAmount = baseCents;
-        let promoMeta: { promotionId: string; appliedLabel: string } | null = null;
+        // FIX_PROMOTIONS_REPORT.md: with a promo code, every installment
+        // is discounted too. The discounted amount goes in the session
+        // metadata, which is what the webhook and the daily reconcile
+        // use to create the installment subscription.
+        let installmentCents = baseInstallmentCents;
+        let promo: CheckoutPromo | null = null;
         let descriptionSuffix = "";
         if (promoCode) {
-          const v = await validatePromoCode(
-            String(promoCode),
-            upfrontAmount,
+          const v = await validatePromoForCheckout({
+            code: String(promoCode),
+            userId: user.id,
             userRole,
-          );
+            purchaseKind: "pymes",
+            chargesCents: [
+              baseCents,
+              ...(hasInstallments ? Array<number>(pymeInstallmentMonths).fill(baseInstallmentCents) : []),
+            ],
+          });
           if (!v.ok) {
-            return NextResponse.json({ error: v.error }, { status: 400 });
+            return NextResponse.json({ error: v.error }, { status: v.status });
           }
-          unitAmount = Math.max(0, baseCents - v.discountCents);
-          promoMeta = { promotionId: v.promotionId, appliedLabel: v.appliedLabel };
-          descriptionSuffix = `\nPromo applied: ${v.appliedLabel}`;
+          promo = v.promo;
+          unitAmount = promo.discountedCents[0];
+          // Equal installments get the same discount (same share of the total).
+          if (hasInstallments) installmentCents = promo.discountedCents[1];
+          descriptionSuffix = `\nPromo applied: ${promo.label}`;
         }
 
         // BUGFIX_PYME_CHECKOUT_DISCLOSURE_AND_RECEIPT.md: same disclosure
         // as Elite — the webhook starts N monthly installment charges on
         // this card. Only when the webhook will actually create them.
-        const pymeInstallmentAmount = Number(plan.installment_amount) || 0;
-        const pymeInstallmentMonths = Number(plan.installment_months) || 0;
         const fmtCad = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
-        const recurringDisclosure =
-          pymeInstallmentAmount > 0 && pymeInstallmentMonths > 0
-            ? `. By completing this payment of $${fmtCad(unitAmount / 100)} CAD, you also authorize ${pymeInstallmentMonths} recurring monthly charges of $${fmtCad(pymeInstallmentAmount)} CAD (plus applicable taxes), billed automatically to this card each month starting one month after this payment. The installment plan ends after the last charge.`
-            : "";
+        const recurringDisclosure = hasInstallments
+          ? `. By completing this payment of $${fmtCad(unitAmount / 100)} CAD, you also authorize ${pymeInstallmentMonths} recurring monthly charges of $${fmtCad(installmentCents / 100)} CAD (plus applicable taxes), billed automatically to this card each month starting one month after this payment. The installment plan ends after the last charge.`
+          : "";
 
         const session = await stripe.checkout.sessions.create({
           customer: customerId,
@@ -717,7 +758,6 @@ export async function POST(request: Request) {
               message: "I agree to the [Terms of Service](https://webmarketing-lyart.vercel.app/legal/terms_of_service) and [Privacy Policy](https://webmarketing-lyart.vercel.app/legal/privacy_policy). All sales are final per our [Refund Policy](https://webmarketing-lyart.vercel.app/legal/refund_policy).",
             },
           },
-          allow_promotion_codes: !promoCode,
           line_items: [
             {
               price_data: {
@@ -743,30 +783,20 @@ export async function POST(request: Request) {
             plan_type: plan.plan_type,
             // Receipt label in the webhook (BUGFIX_PYME_CHECKOUT_DISCLOSURE_AND_RECEIPT.md).
             plan_name: String(plan.name || ""),
-            installment_amount: String(plan.installment_amount || 0),
+            // Already discounted when a promo code was applied.
+            installment_amount: promo && hasInstallments
+              ? (installmentCents / 100).toFixed(2)
+              : String(plan.installment_amount || 0),
             installment_months: String(plan.installment_months || 0),
-            ...(promoMeta
+            ...promoMetadata(promo),
+            ...(promo
               ? {
-                  promotion_id: promoMeta.promotionId,
-                  promo_label: promoMeta.appliedLabel,
+                  upfront_amount_original: (baseCents / 100).toFixed(2),
+                  installment_amount_original: (baseInstallmentCents / 100).toFixed(2),
                 }
               : {}),
           },
         });
-
-        if (promoMeta) {
-          const { data: p } = await supabaseAdmin
-            .from("promotions")
-            .select("used_count")
-            .eq("id", promoMeta.promotionId)
-            .single();
-          if (p) {
-            await supabaseAdmin
-              .from("promotions")
-              .update({ used_count: (p.used_count ?? 0) + 1 })
-              .eq("id", promoMeta.promotionId);
-          }
-        }
 
         return NextResponse.json({ url: session.url });
       }

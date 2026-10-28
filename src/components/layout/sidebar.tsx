@@ -31,6 +31,7 @@ import {
   ArrowRightLeft,
   BarChart3,
   Briefcase,
+  Tag,
 } from "lucide-react";
 
 interface NavItem {
@@ -194,6 +195,13 @@ const NAV_ITEMS: NavItem[] = [
     href: "/admin/pricing",
     icon: DollarSign,
     roles: ["admin", "marketing"],
+  },
+  // FIX_PROMOTIONS_REPORT.md: promo codes — admin, marketing and sales.
+  {
+    label: "Promotions",
+    href: "/admin/promotions",
+    icon: Tag,
+    roles: ["admin", "marketing", "sales"],
   },
   {
     label: "Content",

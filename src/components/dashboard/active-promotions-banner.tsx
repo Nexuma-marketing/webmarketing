@@ -1,5 +1,6 @@
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { Tag } from "lucide-react";
+import { vancouverToday } from "@/lib/promotions";
 
 // Steve 4/28: question — "where do promotions appear for the customer?".
 // This component fetches active, in-date, role-targeted promotions and renders
@@ -10,18 +11,18 @@ import { Tag } from "lucide-react";
 // Switched to the service-role client (server-only) — same pattern as
 // the public PublicPromotionsBanner. We still only return non-sensitive
 // columns and only for active in-date rows, so the bypass is safe.
+// FIX_PROMOTIONS_REPORT.md: zones are no longer used (they were never
+// enforced at checkout); dates are Vancouver dates, same as checkout.
 export async function ActivePromotionsBanner({
   userRole,
-  userCity,
 }: {
   userRole?: string | null;
-  userCity?: string | null;
 }) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return null;
   const supabase = createSbClient(url, serviceKey, { auth: { persistSession: false } });
-  const today = new Date().toISOString().split("T")[0];
+  const today = vancouverToday();
   const { data } = await supabase
     .from("promotions")
     .select("*")
@@ -32,9 +33,7 @@ export async function ActivePromotionsBanner({
 
   const matched = (data || []).filter((p) => {
     const roles = (p.target_roles || []) as string[];
-    const zones = (p.target_zones || []) as string[];
     if (roles.length > 0 && userRole && !roles.includes(userRole)) return false;
-    if (zones.length > 0 && userCity && !zones.includes(userCity)) return false;
     return true;
   });
 

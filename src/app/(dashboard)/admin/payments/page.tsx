@@ -12,6 +12,7 @@ import {
 import { DollarSign, CreditCard, TrendingUp, Tag } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { stripeDashboardPaymentUrl } from "@/lib/stripe-dashboard";
+import { promoDateStatus } from "@/lib/promotions";
 import { createClient } from "@/lib/supabase/client";
 import {
   CancelSubscriptionDialog,
@@ -42,13 +43,18 @@ interface PaymentRow {
 }
 
 interface PromoStat {
+  id: string;
   code: string;
   used_count: number;
   max_uses: number | null;
   is_active: boolean;
+  valid_from: string | null;
   valid_until: string | null;
   discount_type: "percentage" | "fixed";
   discount_value: number;
+  // FIX_PROMOTIONS_REPORT.md: from promotion_redemptions.
+  discount_total: number;
+  over_limit: number;
 }
 
 const STATUS_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -376,13 +382,13 @@ export default function AdminPaymentsPage() {
         <CardContent>
           {promoStats.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">
-              No promotion codes created yet. Create one in <b>Pricing &amp; Promotions</b>.
+              No promotion codes created yet. Create one in <b>Promotions</b>.
             </p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {promoStats.map((p) => {
-                const today = new Date().toISOString().split("T")[0];
-                const expired = !!(p.valid_until && p.valid_until < today);
+                // Same Vancouver-date rule as checkout.
+                const expired = promoDateStatus(p) === "expired";
                 const exhausted = p.max_uses !== null && p.used_count >= p.max_uses;
                 const status = !p.is_active
                   ? { label: "Inactive", color: "bg-gray-100 text-gray-700" }
@@ -397,7 +403,7 @@ export default function AdminPaymentsPage() {
                     : `$${p.discount_value} off`;
                 return (
                   <div
-                    key={p.code}
+                    key={p.id}
                     className="rounded-md border p-3 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
@@ -407,6 +413,13 @@ export default function AdminPaymentsPage() {
                         {p.used_count}
                         {p.max_uses ? ` / ${p.max_uses}` : ""} redeemed
                       </p>
+                      {(p.discount_total > 0 || p.over_limit > 0) && (
+                        <p className="text-xs text-muted-foreground">
+                          {p.discount_total > 0 ? `$${p.discount_total.toFixed(2)} CAD discounted` : ""}
+                          {p.discount_total > 0 && p.over_limit > 0 ? " · " : ""}
+                          {p.over_limit > 0 ? `${p.over_limit} paid over the limit` : ""}
+                        </p>
+                      )}
                     </div>
                     <Badge className={`${status.color} border-0 capitalize text-xs shrink-0`}>
                       {status.label}

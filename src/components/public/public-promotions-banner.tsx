@@ -1,16 +1,17 @@
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { Tag } from "lucide-react";
+import { vancouverToday } from "@/lib/promotions";
 
 // Steve 5/20 (docx feedback): client asked "Crear promociones temporales —
 // este como funciona, en la web donde aparece para el cliente porque no
 // lo vi?" The authenticated dashboard already has ActivePromotionsBanner,
 // but a customer browsing the public site had no way to discover that
 // promotions exist. This component fetches active, in-date promotions
-// that are NOT role/zone-restricted (i.e. visible to anonymous visitors)
+// that are NOT role-restricted (i.e. visible to anonymous visitors)
 // and renders a compact strip near the public Services / Pricing area.
 //
-// Role/zone-restricted promos still only surface inside the dashboard
-// where userRole + userCity are known.
+// Role-restricted promos still only surface inside the dashboard
+// where userRole is known.
 export async function PublicPromotionsBanner() {
   // promotions table has admin-only RLS, so anon reads return [].
   // Use the service-role client (server-only) to fetch active promos.
@@ -20,23 +21,24 @@ export async function PublicPromotionsBanner() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return null;
   const sb = createSbClient(url, serviceKey, { auth: { persistSession: false } });
-  const today = new Date().toISOString().split("T")[0];
+  // FIX_PROMOTIONS_REPORT.md: Vancouver date, same as checkout.
+  const today = vancouverToday();
 
   const { data } = await sb
     .from("promotions")
-    .select("code, discount_type, discount_value, description, valid_until, target_roles, target_zones")
+    .select("code, discount_type, discount_value, description, valid_until, target_roles")
     .eq("is_active", true)
     .lte("valid_from", today)
     .or(`valid_until.is.null,valid_until.gte.${today}`)
     .order("created_at", { ascending: false });
 
-  // Only show promos that have no role/zone targeting — those are the
+  // Only show promos that have no client-type targeting — those are the
   // ones a public visitor can actually redeem. Targeted promos remain
-  // visible in the authenticated dashboard.
+  // visible in the authenticated dashboard. Zones are no longer used
+  // (FIX_PROMOTIONS_REPORT.md).
   const publiclyVisible = (data || []).filter((p) => {
     const roles = (p.target_roles || []) as string[];
-    const zones = (p.target_zones || []) as string[];
-    return roles.length === 0 && zones.length === 0;
+    return roles.length === 0;
   });
 
   if (publiclyVisible.length === 0) return null;

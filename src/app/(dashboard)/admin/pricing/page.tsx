@@ -13,14 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -29,14 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, DollarSign, Tag, Users } from "lucide-react";
+import { DollarSign, Tag, Users } from "lucide-react";
 import { PymesPlansEditor } from "@/components/admin/pymes-plans-editor";
 
 // FIX_PYME_PRICES_SINGLE_SOURCE_REPORT.md: the "Plan: PYMES — X" services
@@ -55,37 +40,9 @@ interface ServicePrice {
   is_active: boolean;
 }
 
-interface Promotion {
-  id: string;
-  code: string;
-  description: string | null;
-  discount_type: "percentage" | "fixed";
-  discount_value: number;
-  valid_from: string;
-  valid_until: string;
-  is_active: boolean;
-  max_uses: number | null;
-  used_count: number;
-  target_zones: string[];
-  target_roles: string[];
-}
-
-const ROLE_TARGET_OPTIONS = [
-  { value: "propietario", label: "Property Owner" },
-  { value: "propietario_preferido", label: "Preferred Owner" },
-  { value: "inversionista", label: "Investor" },
-  { value: "inquilino", label: "Tenant" },
-  { value: "inquilino_premium", label: "Premium Tenant" },
-  { value: "pymes", label: "Business Owner" },
-];
-
 export default function AdminPricingPage() {
   const [services, setServices] = useState<ServicePrice[]>([]);
-  const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editPromo, setEditPromo] = useState<Partial<Promotion> | null>(null);
-  const [isNewPromo, setIsNewPromo] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [newPrice, setNewPrice] = useState("");
   const [foundersTaken, setFoundersTaken] = useState<number>(0);
@@ -96,18 +53,12 @@ export default function AdminPricingPage() {
   const supabase = createClient();
 
   const load = useCallback(async () => {
-    // Steve 6/8 (6-2.md #36): promo list/save now go through the
-    // service-role API. Cookie-context reads on promotions worked
-    // for the admin row but cookie-context writes silently failed —
-    // Alex's date edit on POR_CREER never persisted.
-    const [{ data: svcData }, promoRes, { data: cfgData }] = await Promise.all([
+    // FIX_PROMOTIONS_REPORT.md: promotions moved to /admin/promotions.
+    const [{ data: svcData }, { data: cfgData }] = await Promise.all([
       supabase
         .from("services")
         .select("id, name, description, category, price, currency, is_active")
         .order("name"),
-      fetch("/api/admin/promotions", { cache: "no-store" }).then(async (r) =>
-        r.ok ? ((await r.json()) as { promotions: Promotion[] }) : { promotions: [] as Promotion[] },
-      ),
       supabase
         .from("app_config")
         .select("key, value")
@@ -115,7 +66,6 @@ export default function AdminPricingPage() {
     ]);
 
     setServices(svcData || []);
-    setPromotions(promoRes.promotions || []);
     const cfg = Object.fromEntries(
       ((cfgData || []) as { key: string; value: string }[]).map((r) => [r.key, r.value]),
     );
@@ -186,48 +136,6 @@ export default function AdminPricingPage() {
     setNewPrice("");
     setFoundersMessage(`Price updated & verified at ${new Date().toLocaleTimeString()}.`);
     setTimeout(() => setFoundersMessage(null), 4000);
-    load();
-  }
-
-  async function savePromotion() {
-    if (!editPromo?.code) return;
-    setSaving(true);
-
-    const payload = {
-      code: editPromo.code,
-      description: editPromo.description || null,
-      discount_type: editPromo.discount_type || "percentage",
-      discount_value: editPromo.discount_value || 0,
-      valid_from: editPromo.valid_from || new Date().toISOString().split("T")[0],
-      valid_until: editPromo.valid_until || null,
-      is_active: editPromo.is_active ?? true,
-      max_uses: editPromo.max_uses || null,
-      target_zones: editPromo.target_zones || [],
-      target_roles: editPromo.target_roles || [],
-    };
-
-    // Steve 6/8 (6-2.md #36): service-role API instead of
-    // cookie-context writes — see load() for context.
-    const res = isNewPromo
-      ? await fetch("/api/admin/promotions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      : await fetch("/api/admin/promotions", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editPromo.id, ...payload }),
-        });
-
-    setSaving(false);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      alert(`Save failed: ${body.error || res.status}`);
-      return;
-    }
-
-    setEditPromo(null);
     load();
   }
 
@@ -434,350 +342,19 @@ export default function AdminPricingPage() {
         </CardContent>
       </Card>
 
-      {/* Promotions */}
+      {/* FIX_PROMOTIONS_REPORT.md: promo codes have their own page now. */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Tag className="h-5 w-5" />
-              Promotions / Campaigns
-            </CardTitle>
-            <CardDescription>
-              Discount codes, seasonal campaigns, and targeted offers.
-              Each promotion can be scoped by <b>date range</b> (Temporada),
-              <b>city</b> (Zona), and <b>customer type</b> (Tipo de cliente)
-              — click New or Edit to set these. No separate "campaigns" section is needed.
-            </CardDescription>
-          </div>
-          <Button
-            onClick={() => {
-              setEditPromo({
-                code: "",
-                description: "",
-                discount_type: "percentage",
-                discount_value: 10,
-                valid_from: new Date().toISOString().split("T")[0],
-                valid_until: "",
-                is_active: true,
-                max_uses: null,
-                target_zones: [],
-                target_roles: [],
-              });
-              setIsNewPromo(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New Promotion
-          </Button>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tag className="h-5 w-5" />
+            Promotions / Campaigns
+          </CardTitle>
+          <CardDescription>
+            Promo codes are managed in{" "}
+            <a href="/admin/promotions" className="underline font-semibold">Promotions →</a>
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead>Valid Period</TableHead>
-                  <TableHead>Uses</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {promotions.map((promo) => (
-                  <TableRow key={promo.id}>
-                    <TableCell className="font-mono font-medium">{promo.code}</TableCell>
-                    <TableCell>
-                      {promo.discount_type === "percentage"
-                        ? `${promo.discount_value}%`
-                        : `$${promo.discount_value}`}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {new Date(promo.valid_from).toLocaleDateString("en-CA")} —{" "}
-                      {promo.valid_until
-                        ? new Date(promo.valid_until).toLocaleDateString("en-CA")
-                        : "No end"}
-                    </TableCell>
-                    <TableCell>
-                      {promo.used_count}
-                      {promo.max_uses ? ` / ${promo.max_uses}` : ""}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={promo.is_active ? "default" : "secondary"}>
-                        {promo.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="space-x-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setEditPromo({ ...promo });
-                          setIsNewPromo(false);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={async () => {
-                          if (!confirm(`Delete promotion "${promo.code}" permanently? This cannot be undone.`)) return;
-                          const res = await fetch(`/api/admin/promotions?id=${encodeURIComponent(promo.id)}`, {
-                            method: "DELETE",
-                          });
-                          if (!res.ok) {
-                            const body = (await res.json().catch(() => ({}))) as { error?: string };
-                            alert(`Delete failed: ${body.error || res.status}`);
-                            return;
-                          }
-                          load();
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {promotions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No promotions yet
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
       </Card>
-
-      {/* Promotion Editor Dialog */}
-      <Dialog open={!!editPromo} onOpenChange={() => setEditPromo(null)}>
-        {/* Steve 5/22 Milestone 4: client said "no vi donde crearlo" for
-            Temporada / Zona / Tipo de cliente fields — all those exist
-            below but were hidden by the modal's default height clipping.
-            Make the dialog tall enough and explicitly scrollable, and
-            add a one-line index of sections at the top. */}
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{isNewPromo ? "New Promotion / Campaign" : "Edit Promotion"}</DialogTitle>
-            <DialogDescription className="space-y-1">
-              <span>
-                {isNewPromo ? "Create a discount code or seasonal campaign." : `Editing: ${editPromo?.code}`}
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                Sections in this form: <b>Basic info</b> · <b>Validity dates (Temporada)</b> · <b>Max uses</b> · <b>Targeting (Zona + Tipo de cliente)</b> · <b>Active toggle</b>. Scroll down to see them all.
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-          {editPromo && (
-            <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label>Promo Code</Label>
-                <Input
-                  value={editPromo.code || ""}
-                  onChange={(e) =>
-                    setEditPromo({ ...editPromo, code: e.target.value.toUpperCase() })
-                  }
-                  placeholder="SAVE20"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Discount Type</Label>
-                  <Select
-                    value={editPromo.discount_type || "percentage"}
-                    onValueChange={(v) =>
-                      setEditPromo({
-                        ...editPromo,
-                        discount_type: v as "percentage" | "fixed",
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percentage">Percentage (%)</SelectItem>
-                      <SelectItem value="fixed">Fixed Amount ($)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Discount Value</Label>
-                  <Input
-                    type="number"
-                    value={editPromo.discount_value || 0}
-                    onChange={(e) =>
-                      setEditPromo({
-                        ...editPromo,
-                        discount_value: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              {/* Steve 5/22 Milestone 4: client said "Temporada No vi
-                  donde crearlo" — the date pair IS the seasonal control.
-                  Label it explicitly so an admin understands. */}
-              <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-3">
-                <p className="text-sm font-semibold">
-                  📅 Temporada / Validity dates
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Set start/end dates to make this a <b>seasonal campaign</b>
-                  {" "}(e.g., Spring sale, Black Friday). Outside this range the
-                  code is rejected at checkout. Leave Valid Until blank for an
-                  open-ended promo.
-                </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Valid From</Label>
-                    <Input
-                      type="date"
-                      value={editPromo.valid_from || ""}
-                      onChange={(e) =>
-                        setEditPromo({ ...editPromo, valid_from: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Valid Until</Label>
-                    <Input
-                      type="date"
-                      value={editPromo.valid_until || ""}
-                      onChange={(e) =>
-                        setEditPromo({ ...editPromo, valid_until: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Max Uses (blank = unlimited)</Label>
-                <Input
-                  type="number"
-                  value={editPromo.max_uses ?? ""}
-                  onChange={(e) =>
-                    setEditPromo({
-                      ...editPromo,
-                      max_uses: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Description (shown to clients)</Label>
-                <Input
-                  value={editPromo.description || ""}
-                  onChange={(e) =>
-                    setEditPromo({ ...editPromo, description: e.target.value })
-                  }
-                  placeholder="e.g., Spring season — Vancouver only"
-                />
-              </div>
-              {/* Steve 5/16: client May docx said 'Zona Pendiente: No
-                  lovi' / 'Tipo de cliente Pendiente: No lovi' — fields
-                  WERE in this dialog all along but were too easy to
-                  miss between Description and Active switch. Wrap them
-                  in a labeled section with explicit "Zone / Tipo de
-                  cliente" wording and helper sentences so a non-tech
-                  admin can find them on first read. */}
-              <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-4 space-y-4">
-                <div>
-                  <p className="text-sm font-semibold text-amber-900 mb-1">
-                    Promotion targeting (Zona / Tipo de cliente)
-                  </p>
-                  <p className="text-xs text-amber-800">
-                    Leave both fields empty to apply the promo to every visitor.
-                    Fill one to restrict by zone (city) only, or fill both for
-                    fine-grained targeting.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-medium">
-                    Zona — Target zones / cities
-                  </Label>
-                  <Input
-                    value={(editPromo.target_zones || []).join(", ")}
-                    onChange={(e) =>
-                      setEditPromo({
-                        ...editPromo,
-                        target_zones: e.target.value
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    placeholder="e.g., Vancouver, Burnaby, Richmond"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Comma-separated city names. Promo banner will only appear to
-                    users whose property/preference matches one of these cities.
-                    Blank = all cities.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-medium">
-                    Tipo de cliente — Target client types
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {ROLE_TARGET_OPTIONS.map((opt) => {
-                      const active = (editPromo.target_roles || []).includes(opt.value);
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => {
-                            const current = editPromo.target_roles || [];
-                            setEditPromo({
-                              ...editPromo,
-                              target_roles: active
-                                ? current.filter((r) => r !== opt.value)
-                                : [...current, opt.value],
-                            });
-                          }}
-                          className={`rounded-full border px-3 py-1 text-xs ${
-                            active
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background hover:bg-muted"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Click each role to toggle. Blank = visible to all client types.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={editPromo.is_active ?? true}
-                  onCheckedChange={(checked) =>
-                    setEditPromo({ ...editPromo, is_active: checked })
-                  }
-                />
-                <Label>Active</Label>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setEditPromo(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={savePromotion} disabled={saving}>
-                  {saving ? "Saving..." : isNewPromo ? "Create" : "Update"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

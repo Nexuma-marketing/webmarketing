@@ -105,10 +105,10 @@ export async function GET() {
     };
   });
 
-  const { data: promoStats, error: promoErr } = await supabaseAdmin
+  const { data: promoRows, error: promoErr } = await supabaseAdmin
     .from("promotions")
     .select(
-      "code, used_count, max_uses, is_active, valid_until, discount_type, discount_value",
+      "id, code, used_count, max_uses, is_active, valid_from, valid_until, discount_type, discount_value, applies_to",
     )
     .order("used_count", { ascending: false });
   if (promoErr) {
@@ -118,5 +118,34 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json({ payments, promoStats: promoStats ?? [] });
+  // FIX_PROMOTIONS_REPORT.md: used_count is now raised by the webhook
+  // when a payment completes. promotion_redemptions adds the discount
+  // given and the payments that went over the limit. If that table
+  // can't be read (e.g. migration v72 not run yet) the panel still
+  // shows used_count.
+  const { data: redemptionRows, error: redemptionErr } = await supabaseAdmin
+    .from("promotion_redemptions")
+    .select("promotion_id, discount_amount, counted");
+  if (redemptionErr) {
+    console.error("[admin-payments] promotion_redemptions fetch failed", redemptionErr);
+  }
+  const redemptionsByPromo = new Map<string, { discountTotal: number; overLimit: number }>();
+  for (const r of redemptionRows ?? []) {
+    if (!r.promotion_id) continue;
+    const agg = redemptionsByPromo.get(r.promotion_id as string) ?? { discountTotal: 0, overLimit: 0 };
+    agg.discountTotal += Number(r.discount_amount) || 0;
+    if (r.counted === false) agg.overLimit += 1;
+    redemptionsByPromo.set(r.promotion_id as string, agg);
+  }
+  const promoStats = (promoRows ?? []).map((p) => {
+    const agg = redemptionsByPromo.get(p.id as string);
+    return {
+      ...p,
+      used_count: Number(p.used_count) || 0,
+      discount_total: agg ? Math.round(agg.discountTotal * 100) / 100 : 0,
+      over_limit: agg?.overLimit ?? 0,
+    };
+  });
+
+  return NextResponse.json({ payments, promoStats });
 }

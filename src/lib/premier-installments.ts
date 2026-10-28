@@ -1,6 +1,12 @@
 import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { computeBalanceCents } from "@/lib/plan-percentage";
+import {
+  computeBalanceCents,
+  PLAN_UPFRONT_AMOUNT_CAD,
+  premierInstallmentShares,
+  splitBalanceCents,
+} from "@/lib/plan-percentage";
+import { getActivePlanPromoDiscount } from "@/lib/plan-promo-discount";
 import { isPremierTierPlan, ensureStripeCustomer, createAndSendStripeInvoice } from "@/lib/balance-invoice";
 import { sendBalanceInvoiceAvailableEmail } from "@/lib/email";
 
@@ -70,7 +76,12 @@ interface ScheduleParams {
  */
 async function computePremierSchedule(
   params: ScheduleParams,
-): Promise<{ rank: number; rows: NewInstallmentRow[]; skipped?: "rank_out_of_range" | "no_balance" }> {
+): Promise<{
+  rank: number;
+  rows: NewInstallmentRow[];
+  skipped?: "rank_out_of_range" | "no_balance";
+  error?: string;
+}> {
   const { propertyId, ownerId, serviceId, monthlyRentCad, upfrontPaidAt } = params;
 
   const { data: ownerProperties } = await supabaseAdmin
@@ -91,7 +102,29 @@ async function computePremierSchedule(
   }
 
   const percentage = rank === 0 ? 0.3 : 0.28;
-  const balanceCents = computeBalanceCents({ monthlyRentCad, planPercentage: percentage });
+  // FIX_PROMOTIONS_BALANCE_REPORT.md: a promo code used on the upfront
+  // discounts the plan's value (rent × %); the $200 upfront is not
+  // discounted. Balance = value − discount − upfront. Without a stored
+  // discount the calculation is exactly the previous one. A failed
+  // lookup schedules nothing (the admin can Reschedule later) rather
+  // than billing the full amount.
+  const promo = await getActivePlanPromoDiscount(propertyId);
+  if (!promo.ok) return { rank, rows: [], error: promo.error };
+  const promoDiscountCents = promo.discount?.discountCents ?? 0;
+  const balanceCents =
+    promoDiscountCents > 0
+      ? Math.max(0, Math.round(monthlyRentCad * percentage * 100) - promoDiscountCents - PLAN_UPFRONT_AMOUNT_CAD * 100)
+      : computeBalanceCents({ monthlyRentCad, planPercentage: percentage });
+  if (promo.discount) {
+    console.log("[premier-installments] Promo discount applied to the balance", {
+      propertyId,
+      promotionCode: promo.discount.promotionCode,
+      discountCents: promoDiscountCents,
+      planTotalCentsAtCheckout: promo.discount.planTotalCents,
+      planTotalCentsNow: Math.round(monthlyRentCad * percentage * 100),
+      balanceCents,
+    });
+  }
   if (balanceCents <= 0) {
     console.log("[premier-installments] No balance owed after upfront — nothing to schedule", {
       propertyId,
@@ -112,17 +145,16 @@ async function computePremierSchedule(
     status: "scheduled",
   });
 
+  // Shares from premierInstallmentShares (also used by the promo check
+  // at checkout); the last installment takes the rounding remainder so
+  // they always sum exactly to balanceCents.
+  const parts = splitBalanceCents(balanceCents, premierInstallmentShares(rank));
   if (rank === 0) {
     // Property #1: single installment, 100% of the balance, +2 months.
-    return { rank, rows: [row(1, 2, 100, balanceCents)] };
+    return { rank, rows: [row(1, 2, 100, parts[0])] };
   }
-  // Property #2/#3: 50% / 30% / 20% at +1 / +2 / +3 months. The third
-  // installment takes the rounding remainder so the three always sum
-  // exactly to balanceCents.
-  const p1 = Math.round(balanceCents * 0.5);
-  const p2 = Math.round(balanceCents * 0.3);
-  const p3 = balanceCents - p1 - p2;
-  return { rank, rows: [row(1, 1, 50, p1), row(2, 2, 30, p2), row(3, 3, 20, p3)] };
+  // Property #2/#3: 50% / 30% / 20% at +1 / +2 / +3 months.
+  return { rank, rows: [row(1, 1, 50, parts[0]), row(2, 2, 30, parts[1]), row(3, 3, 20, parts[2])] };
 }
 
 async function insertSchedule(
@@ -184,7 +216,11 @@ export async function schedulePremierInstallments(params: ScheduleParams): Promi
     return { success: true, skipped: "already_scheduled", rank: null, created: [] };
   }
 
-  const { rank, rows, skipped } = await computePremierSchedule(params);
+  const { rank, rows, skipped, error: scheduleError } = await computePremierSchedule(params);
+  if (scheduleError) {
+    console.error("[premier-installments] CRITICAL: could not calculate the schedule", { propertyId, error: scheduleError });
+    return { success: false, rank, created: [], error: scheduleError };
+  }
   if (skipped) return { success: skipped === "no_balance", skipped, rank, created: [] };
 
   const { created, error } = await insertSchedule(propertyId, rank, rows);
@@ -320,13 +356,14 @@ export async function reschedulePremierInstallments(propertyId: string): Promise
     status: r.status as string,
   }));
 
-  const { rank, rows, skipped } = await computePremierSchedule({
+  const { rank, rows, skipped, error: scheduleError } = await computePremierSchedule({
     propertyId,
     ownerId: property.owner_id as string,
     serviceId,
     monthlyRentCad: Number(property.monthly_rent),
     upfrontPaidAt,
   });
+  if (scheduleError) return fail(500, `Could not calculate the schedule: ${scheduleError}`);
   const base = { rank, deletedCount: deletable.length, kept, upfrontPaidAt: upfrontPaidAt.toISOString() };
   if (skipped === "rank_out_of_range") {
     return {

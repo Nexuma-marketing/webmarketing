@@ -26,6 +26,10 @@ export type RecurringPlan =
       planType: string;
       installmentAmount: number;
       installmentMonths: number;
+      // FIX_PROMOTIONS_REPORT.md: set when a promo code was used.
+      // installmentAmount is then already discounted.
+      promotionId?: string;
+      originalInstallmentAmount?: number;
     };
 
 export function logTag(plan: RecurringPlan): string {
@@ -133,6 +137,13 @@ export async function createRecurringSubscription(
           pymes_plan_id: plan.pymesPlanId,
           total_installments: String(plan.installmentMonths),
           checkout_session_id: args.checkoutSessionId,
+          // FIX_PROMOTIONS_REPORT.md: the per-installment amount this
+          // subscription charges (after any promo code), for reference.
+          installment_amount: plan.installmentAmount.toFixed(2),
+          ...(plan.promotionId ? { promotion_id: plan.promotionId } : {}),
+          ...(plan.promotionId && plan.originalInstallmentAmount
+            ? { installment_amount_original: plan.originalInstallmentAmount.toFixed(2) }
+            : {}),
         };
 
   // Steve 6/10 (6-2.md #51): manual GST rate when STRIPE_GST_RATE_ID is

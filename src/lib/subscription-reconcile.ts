@@ -224,6 +224,13 @@ export async function reconcileMissingSubscriptions(options: { dryRun?: boolean 
           planType: md.plan_type || "PYME",
           installmentAmount: Number(md.installment_amount),
           installmentMonths: Number(md.installment_months),
+          // FIX_PROMOTIONS_REPORT.md: installment_amount is already discounted.
+          ...(md.promotion_id
+            ? {
+                promotionId: md.promotion_id,
+                originalInstallmentAmount: Number(md.installment_amount_original) || undefined,
+              }
+            : {}),
         };
       } else if ((md.payment_type || "one_time") === "one_time" && (md.property_id || c.propertyId)) {
         // Pre-fix sessions may lack elite_tier (it came from

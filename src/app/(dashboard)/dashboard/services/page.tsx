@@ -623,24 +623,6 @@ export default async function ServicesPage() {
   const foundersActive = isOwnerNotInvestor && basicPlanStatus.activePlan === "founders";
   const foundersActiveInPlanCard = foundersActive && !!tierDetails && !!primaryPlan && ownerTier === "basic";
 
-  // Determine the user's primary city for promotion zone targeting.
-  // Steve 4/30 #12: zones in /admin/pricing → Promotions used to be ignored
-  // because we always passed null. Owners have a city via their property,
-  // tenants have one in their preferences, pymes leave it null.
-  let userCity: string | null = null;
-  if (isOwnerRole && ownerProperties.length > 0) {
-    userCity = ownerProperties[0].city || null;
-  } else if (isTenantRole) {
-    const { data: pref } = await supabase
-      .from("tenant_preferences")
-      .select("preferred_zones")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (pref?.preferred_zones && Array.isArray(pref.preferred_zones) && pref.preferred_zones.length > 0) {
-      userCity = pref.preferred_zones[0];
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -650,7 +632,7 @@ export default async function ServicesPage() {
         </p>
       </div>
 
-      {!isOwnerRole && <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />}
+      {!isOwnerRole && <ActivePromotionsBanner userRole={profile.role} />}
 
       {/* ═══ Owner: Service Tier Card ═══ */}
       {isOwnerRole && tierDetails && (
@@ -1053,7 +1035,7 @@ export default async function ServicesPage() {
       )}
 
       {/* Keep owner service + pricing decisions above secondary promotions. */}
-      {isOwnerRole && <ActivePromotionsBanner userRole={profile.role} userCity={userCity} />}
+      {isOwnerRole && <ActivePromotionsBanner userRole={profile.role} />}
 
       {/* ═══ PYMES: Recommended Plan ═══ */}
       {isPymesRole && pymesPlanDetails && (

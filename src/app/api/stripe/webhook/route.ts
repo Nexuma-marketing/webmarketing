@@ -12,6 +12,8 @@ import { ELITE_SUB_TIERS } from "@/lib/constants";
 import { getFoundersAvailability } from "@/lib/founders-plan";
 import { schedulePremierInstallments } from "@/lib/premier-installments";
 import { SUBSCRIPTION_SETUP_FAILED, startSubscriptionAfterCheckout } from "@/lib/subscription-setup";
+import { PROMO_FLOW_VERSION, recordPromotionRedemption } from "@/lib/promotions-server";
+import { savePlanPromoDiscount } from "@/lib/plan-promo-discount";
 import type Stripe from "stripe";
 
 // Steve 5/20 Milestone 4: helper to load the customer's profile +
@@ -320,6 +322,61 @@ export async function POST(request: Request) {
           );
         }
 
+        // FIX_PROMOTIONS_REPORT.md: the promo code use is counted here,
+        // once the payment is completed (not when the session was
+        // created). Atomic and idempotent per session; when the last use
+        // was already taken or this customer had used the code, the
+        // payment stands and commercial is emailed. Sessions without
+        // promo_v were created by the old flow, which already counted
+        // the use at checkout.
+        if (
+          metadata.promotion_id &&
+          metadata.promo_v === PROMO_FLOW_VERSION &&
+          session.payment_status !== "unpaid"
+        ) {
+          await recordPromotionRedemption({
+            promotionId: metadata.promotion_id,
+            userId,
+            sessionId: session.id,
+            paymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
+            discountCents: Number(metadata.promo_discount_cents) || 0,
+            promoLabel: metadata.promo_label || null,
+            amountPaidCents: totalCents,
+          });
+        }
+
+        // FIX_PROMOTIONS_BALANCE_REPORT.md: upfront + balance plans (Low
+        // Price, Founders, Support, Premier). The code discounted the
+        // plan's value, not this payment: store the discount with the
+        // property so the balance invoice / Premier installments bill it
+        // already reduced. Idempotent per session. Stored even when the
+        // use couldn't be counted above — the customer paid under it.
+        // null = no plan discount on this session.
+        let planPromoSaved: boolean | null = null;
+        if (
+          metadata.promo_scope === "plan_balance" &&
+          metadata.promotion_id &&
+          metadata.property_id &&
+          metadata.promo_v === PROMO_FLOW_VERSION &&
+          session.payment_status !== "unpaid"
+        ) {
+          planPromoSaved = await savePlanPromoDiscount({
+            propertyId: metadata.property_id,
+            userId,
+            serviceId: metadata.service_id || null,
+            promotionId: metadata.promotion_id,
+            promotionCode: metadata.promo_code || metadata.promo_label || metadata.promotion_id,
+            discountType: metadata.promo_discount_type || "",
+            discountValue: Number(metadata.promo_discount_value) || 0,
+            planPercentage: Number(metadata.promo_plan_percentage) || null,
+            monthlyRentCad: Number(metadata.promo_monthly_rent) || null,
+            planTotalCents: Number(metadata.promo_plan_total_cents) || 0,
+            discountCents: Number(metadata.promo_discount_cents) || 0,
+            upfrontCents: Number(metadata.promo_upfront_cents) || 0,
+            stripeSessionId: session.id,
+          });
+        }
+
         // Steve 5/22 Milestone 4 (#7 docx): when an owner buys the
         // Founders Package, increment the `founders_plan.taken` counter
         // in app_config so the "X owners have already chosen" banner on
@@ -406,7 +463,15 @@ export async function POST(request: Request) {
             data: premierProperty,
             error: premierPropertyError,
           });
-          if (premierProperty?.owner_id && premierProperty.monthly_rent) {
+          if (planPromoSaved === false) {
+            // The schedule would be billed without the promo discount.
+            // Commercial was emailed by savePlanPromoDiscount; once the
+            // row is saved, use Admin → Reschedule installments.
+            console.error("[webhook-diag] CRITICAL: Premier installments NOT scheduled — promo discount could not be saved", {
+              propertyId: metadata.property_id,
+              sessionId: session.id,
+            });
+          } else if (premierProperty?.owner_id && premierProperty.monthly_rent) {
             await schedulePremierInstallments({
               propertyId: metadata.property_id,
               ownerId: premierProperty.owner_id as string,
@@ -448,6 +513,12 @@ export async function POST(request: Request) {
                 planType: metadata.plan_type || "PYME",
                 installmentAmount,
                 installmentMonths,
+                ...(metadata.promotion_id
+                  ? {
+                      promotionId: metadata.promotion_id,
+                      originalInstallmentAmount: Number(metadata.installment_amount_original) || undefined,
+                    }
+                  : {}),
               },
               session,
               event.created,

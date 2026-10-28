@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getStripeServer } from "@/lib/stripe";
 import { getPlanPercentage } from "@/lib/plan-percentage";
 import { getCompletedUpfrontForProperty } from "@/lib/payment-lookup";
+import { getActivePlanPromoDiscount } from "@/lib/plan-promo-discount";
 
 // Steve 6/11 (6-2.md #53): residential plan % balance invoice logic
 // — extracted into a library so it can be called both from the
@@ -562,13 +563,34 @@ export async function generateBalanceInvoice(
   // owner already covered via a plan switch.
   const { totalAmount: alreadyPaidCad } = await getCompletedUpfrontForProperty(supabaseAdmin, propertyId);
   const alreadyPaidCents = Math.round(alreadyPaidCad * 100);
-  const balanceCents = Math.max(0, totalFeeCents - alreadyPaidCents);
+  // FIX_PROMOTIONS_BALANCE_REPORT.md: a promo code used on the upfront
+  // discounts the plan's value (totalFee); the upfront itself was paid
+  // in full. Balance = totalFee − discount − already paid. No stored
+  // discount → same calculation as before. A failed lookup bills
+  // nothing, so a discounted balance is never invoiced in full.
+  const promo = await getActivePlanPromoDiscount(propertyId);
+  if (!promo.ok) {
+    return { success: false, error: `Could not check this property's promo discount — not invoicing. ${promo.error}` };
+  }
+  const promoDiscountCents = promo.discount?.discountCents ?? 0;
+  if (promo.discount && promo.discount.planTotalCents !== totalFeeCents) {
+    // Rent or plan changed since checkout: the stored discount amount is
+    // kept as it was (see the report's open questions).
+    console.warn("[balance-invoice-diag] Plan value changed since the promo code was applied", {
+      propertyId,
+      planTotalCentsAtCheckout: promo.discount.planTotalCents,
+      totalFeeCentsNow: totalFeeCents,
+      discountCents: promoDiscountCents,
+    });
+  }
+  const balanceCents = Math.max(0, totalFeeCents - promoDiscountCents - alreadyPaidCents);
   console.log("[balance-invoice-diag] Balance calculated", {
     propertyId,
     planName,
     percentage,
     monthlyRent,
     totalFeeCents,
+    promoDiscountCents,
     alreadyPaidCents,
     balanceCents,
   });
@@ -590,7 +612,9 @@ export async function generateBalanceInvoice(
   });
 
   // 5. InvoiceItem + Invoice + finalize + send (shared helper)
-  const balanceDescription = `Balance for ${planName} — ${(percentage * 100).toFixed(0)}% of first month's rent on ${property.address}, ${property.city} (minus $${(alreadyPaidCents / 100).toFixed(2)} already paid)`;
+  const balanceDescription = promo.discount
+    ? `Balance for ${planName} — ${(percentage * 100).toFixed(0)}% of first month's rent on ${property.address}, ${property.city} (minus $${(promoDiscountCents / 100).toFixed(2)} promo discount ${promo.discount.promotionCode} and $${(alreadyPaidCents / 100).toFixed(2)} already paid)`
+    : `Balance for ${planName} — ${(percentage * 100).toFixed(0)}% of first month's rent on ${property.address}, ${property.city} (minus $${(alreadyPaidCents / 100).toFixed(2)} already paid)`;
 
   let created: CreateAndSendInvoiceResult;
   try {
@@ -606,6 +630,12 @@ export async function generateBalanceInvoice(
         plan_name: planName,
         percentage: String(percentage),
         monthly_rent: String(monthlyRent),
+        ...(promo.discount
+          ? {
+              promo_code: promo.discount.promotionCode,
+              promo_discount_cents: String(promoDiscountCents),
+            }
+          : {}),
       },
     });
   } catch (err) {

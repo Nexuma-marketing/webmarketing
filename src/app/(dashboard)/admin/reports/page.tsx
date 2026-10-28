@@ -588,7 +588,7 @@ export default function AdminReportsPage() {
         <CardContent>
           {promoSummary.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
-              No promo codes configured yet. Add one in <code>/admin/pricing</code>.
+              No promo codes configured yet. Add one in <code>/admin/promotions</code>.
             </p>
           ) : (
             <div className="overflow-x-auto">

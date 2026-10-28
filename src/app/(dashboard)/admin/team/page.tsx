@@ -48,7 +48,7 @@ interface InternalUser {
 const INTERNAL_ROLES = [
   { value: "admin", label: "Administrator", description: "Full access to every section." },
   { value: "marketing", label: "Marketing", description: "Manages content, articles, promotions and matching." },
-  { value: "sales", label: "Sales", description: "Manages leads and clients only." },
+  { value: "sales", label: "Sales", description: "Manages leads, clients and promotions." },
   { value: "support", label: "Support", description: "Read-only access to clients and leads." },
 ];
 
@@ -56,14 +56,15 @@ const PERMISSIONS_BY_ROLE: Record<string, string[]> = {
   admin: [
     "Read/write all data",
     "Manage users and assign roles",
-    "Edit pricing, promotions, plans",
+    "Edit pricing, promotions (including delete), plans",
     "Edit content, articles, legal docs",
     "Configure forms and matching engine",
     "Export data",
   ],
   marketing: [
     "Read/write content, articles, FAQ",
-    "Manage promotions and pricing",
+    "Create, edit and activate/deactivate promotions (no delete)",
+    "Manage pricing",
     "Edit matching engine rules",
     "Read leads (no writes)",
     "Read users (no role changes)",
@@ -72,6 +73,7 @@ const PERMISSIONS_BY_ROLE: Record<string, string[]> = {
     "Read/write leads (status, notes, assignment)",
     "Read clients and their data",
     "Reassign service recommendations",
+    "Create, edit and activate/deactivate promotions (no delete)",
     "No access to pricing, content, legal",
   ],
   support: [
