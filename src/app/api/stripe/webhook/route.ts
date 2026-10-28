@@ -795,7 +795,12 @@ export async function POST(request: Request) {
       // A partial or full refund triggered from the Stripe dashboard or
       // our admin UI. A full refund flags the payment as refunded and
       // stamps refunded_at so the Sales Report can chart refund volume
-      // by date. A partial refund leaves the row as it is (see below).
+      // by date. A partial refund keeps the row 'completed'.
+      // FIX_REFUND_VISIBILITY_REPORT.md: every event (partial or full)
+      // stores the cumulative refunded_amount (charge.amount_refunded,
+      // in dollars). The emails use THIS refund = new cumulative minus
+      // the stored value read before the update; 0 or less means a
+      // repeated event, so nothing is sent again.
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
         const paymentIntentId =
@@ -809,30 +814,120 @@ export async function POST(request: Request) {
           // counts as paid), is logged, and commercial is alerted.
           const fullyRefunded =
             charge.refunded === true || (charge.amount > 0 && (charge.amount_refunded || 0) >= charge.amount);
+          const currency = (charge.currency || "cad").toUpperCase();
+          const refundedTotalCents = charge.amount_refunded || 0;
+
+          // Read the stored value BEFORE updating the row.
+          const { data: foundRows } = await supabaseAdmin
+            .from("payments")
+            .select("id, user_id, service_id, pymes_plan_id, status, amount, refunded_amount")
+            .eq("stripe_payment_intent_id", paymentIntentId);
+          const paymentRows = foundRows ?? [];
+          const row = paymentRows[0] ?? null;
+
+          // A Checkout with a priority-listing add-on writes two rows
+          // with the same payment intent. How a PARTIAL refund splits
+          // between them is not defined (see the report), so that case
+          // keeps the previous behavior: no refunded_amount written and
+          // the cumulative amount in the emails.
+          const bundled = paymentRows.length > 1;
+          const previousRefundedCents = paymentRows.reduce(
+            (sum, r) => sum + Math.round((Number(r.refunded_amount) || 0) * 100),
+            0,
+          );
+          const thisRefundCents = bundled && !fullyRefunded
+            ? refundedTotalCents
+            : refundedTotalCents - previousRefundedCents;
+
+          if (row && !bundled && thisRefundCents <= 0) {
+            // Repeated (or out-of-order) event: the stored total is
+            // already this high. No email. Only make sure a full refund
+            // still ends as 'refunded'.
+            console.log("[charge.refunded] refund already recorded, no email sent", {
+              chargeId: charge.id,
+              paymentIntentId,
+              eventId: event.id,
+              amountRefundedCents: refundedTotalCents,
+              storedRefundedCents: previousRefundedCents,
+            });
+            if (fullyRefunded && row.status !== "refunded") {
+              await supabaseAdmin
+                .from("payments")
+                .update({ status: "refunded", refunded_at: new Date().toISOString() })
+                .eq("id", row.id);
+            }
+            break;
+          }
+
+          if (row && !bundled) {
+            // Conditional update: only the delivery that raises the
+            // stored total sends the emails (guards two concurrent
+            // deliveries of the same event).
+            const { data: claimed, error: updateError } = await supabaseAdmin
+              .from("payments")
+              .update({
+                refunded_amount: refundedTotalCents / 100,
+                ...(fullyRefunded && row.status !== "refunded"
+                  ? { status: "refunded", refunded_at: new Date().toISOString() }
+                  : {}),
+              })
+              .eq("id", row.id)
+              .lt("refunded_amount", refundedTotalCents / 100)
+              .select("id");
+            if (updateError) {
+              console.error("[charge.refunded] payments update failed", { paymentIntentId, error: updateError });
+              break;
+            }
+            if (!claimed || claimed.length === 0) {
+              console.log("[charge.refunded] refund recorded by a concurrent delivery, no email sent", {
+                chargeId: charge.id,
+                paymentIntentId,
+                eventId: event.id,
+              });
+              break;
+            }
+          } else if (bundled && fullyRefunded) {
+            // Fully refunded: every row of the bundle is refunded in full.
+            for (const r of paymentRows) {
+              await supabaseAdmin
+                .from("payments")
+                .update({
+                  refunded_amount: Number(r.amount) || 0,
+                  ...(r.status !== "refunded"
+                    ? { status: "refunded", refunded_at: new Date().toISOString() }
+                    : {}),
+                })
+                .eq("id", r.id);
+            }
+            if (thisRefundCents <= 0) {
+              console.log("[charge.refunded] bundled refund already recorded, no email sent", {
+                chargeId: charge.id,
+                paymentIntentId,
+                eventId: event.id,
+              });
+              break;
+            }
+          }
+
+          const ctx = row?.user_id
+            ? await loadEmailContext(
+                row.user_id as string,
+                (row.service_id as string | null) || null,
+                (row.pymes_plan_id as string | null) || null,
+              )
+            : null;
 
           if (!fullyRefunded) {
-            const { data: row } = await supabaseAdmin
-              .from("payments")
-              .select("id, user_id, service_id, pymes_plan_id, status")
-              .eq("stripe_payment_intent_id", paymentIntentId)
-              .limit(1)
-              .maybeSingle();
-            console.warn("[charge.refunded] partial refund — payment row left unchanged", {
+            console.warn("[charge.refunded] partial refund — payment row stays completed", {
               chargeId: charge.id,
               paymentIntentId,
               amountCents: charge.amount,
-              amountRefundedCents: charge.amount_refunded,
+              amountRefundedCents: refundedTotalCents,
+              thisRefundCents,
               paymentId: row?.id || null,
               paymentStatus: row?.status || null,
+              bundled,
             });
-            const ctx = row?.user_id
-              ? await loadEmailContext(
-                  row.user_id as string,
-                  (row.service_id as string | null) || null,
-                  (row.pymes_plan_id as string | null) || null,
-                )
-              : null;
-            const currency = (charge.currency || "cad").toUpperCase();
             try {
               await sendCommercialAlertEmail({
                 subject: "Partial refund — payment still counts as paid",
@@ -843,7 +938,8 @@ export async function POST(request: Request) {
                     Customer: ctx ? `${ctx.name} <${ctx.email}>` : `user ${row?.user_id || "unknown"}`,
                     Item: ctx?.serviceName || "Unknown",
                     Charged: `${((charge.amount || 0) / 100).toFixed(2)} ${currency}`,
-                    "Refunded so far": `${((charge.amount_refunded || 0) / 100).toFixed(2)} ${currency}`,
+                    ...(bundled ? {} : { "This refund": `${(thisRefundCents / 100).toFixed(2)} ${currency}` }),
+                    "Refunded so far": `${(refundedTotalCents / 100).toFixed(2)} ${currency}`,
                     "Payment ID": row?.id || "not found",
                     "Payment intent": paymentIntentId,
                   },
@@ -852,46 +948,21 @@ export async function POST(request: Request) {
             } catch (err) {
               console.error("[charge.refunded] partial refund alert failed", { paymentIntentId, err });
             }
-            // Customer confirmation email, as before for any refund.
-            if (ctx) {
-              await sendRefundConfirmationEmail({
-                to: ctx.email,
-                customerName: ctx.name,
-                serviceName: ctx.serviceName,
-                amountCents: charge.amount_refunded || 0,
-                currency,
-              });
-            }
-            break;
           }
 
-          const { data: updated } = await supabaseAdmin
-            .from("payments")
-            .update({
-              status: "refunded",
-              refunded_at: new Date().toISOString(),
-            })
-            .eq("stripe_payment_intent_id", paymentIntentId)
-            .select("user_id, service_id, pymes_plan_id")
-            .single();
-
-          // Steve 5/20 Milestone 4: notify the customer that the
-          // refund was issued. amount_refunded is in cents.
-          if (updated?.user_id) {
-            const ctx = await loadEmailContext(
-              updated.user_id as string,
-              (updated.service_id as string | null) || null,
-              (updated.pymes_plan_id as string | null) || null,
-            );
-            if (ctx) {
-              await sendRefundConfirmationEmail({
-                to: ctx.email,
-                customerName: ctx.name,
-                serviceName: ctx.serviceName,
-                amountCents: charge.amount_refunded || 0,
-                currency: (charge.currency || "cad").toUpperCase(),
-              });
-            }
+          // Steve 5/20 Milestone 4: customer confirmation (BCC'd to
+          // commercial) for any refund — the amount of THIS refund, plus
+          // the running total when an earlier refund exists.
+          if (ctx) {
+            const hadEarlierRefund = !(bundled && !fullyRefunded) && previousRefundedCents > 0;
+            await sendRefundConfirmationEmail({
+              to: ctx.email,
+              customerName: ctx.name,
+              serviceName: ctx.serviceName,
+              amountCents: thisRefundCents,
+              currency,
+              totalRefundedCents: hadEarlierRefund ? refundedTotalCents : null,
+            });
           }
         }
         break;

@@ -219,6 +219,8 @@ export interface Payment {
   stripe_payment_intent_id: string | null;
   stripe_subscription_id: string | null;
   amount: number;
+  // Cumulative amount refunded in Stripe, dollars (migration v71).
+  refunded_amount: number;
   currency: string;
   payment_type: string | null;
   installment_number: number | null;

@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
   const { data: payment, error: fetchErr } = await supabaseAdmin
     .from("payments")
-    .select("id, stripe_payment_intent_id, status, amount")
+    .select("id, stripe_payment_intent_id, status, amount, refunded_amount")
     .eq("id", body.paymentId)
     .single();
   if (fetchErr || !payment) {
@@ -56,6 +56,18 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  // FIX_REFUND_VISIBILITY_REPORT.md: a partial refund leaves the row
+  // 'completed'. When nothing is left to refund, answer clearly instead
+  // of calling Stripe.
+  const remainingCents =
+    Math.round((Number(payment.amount) || 0) * 100) -
+    Math.round((Number(payment.refunded_amount) || 0) * 100);
+  if (remainingCents <= 0) {
+    return NextResponse.json(
+      { error: "Nothing left to refund: this payment is already fully refunded." },
+      { status: 400 },
+    );
+  }
   if (!payment.stripe_payment_intent_id) {
     return NextResponse.json(
       { error: "Payment has no Stripe payment_intent — refund manually." },
@@ -63,6 +75,7 @@ export async function POST(request: Request) {
     );
   }
 
+  // No `amount`: Stripe refunds whatever is left on the charge.
   try {
     const refund = await stripe.refunds.create({
       payment_intent: payment.stripe_payment_intent_id,

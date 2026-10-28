@@ -35,7 +35,7 @@ export async function GET() {
   const { data: paymentRows, error: payErr } = await supabaseAdmin
     .from("payments")
     .select(
-      "id, user_id, service_id, pymes_plan_id, amount, currency, payment_type, installment_number, status, created_at, stripe_payment_intent_id, stripe_subscription_id, stripe_session_id",
+      "id, user_id, service_id, pymes_plan_id, amount, refunded_amount, currency, payment_type, installment_number, status, created_at, stripe_payment_intent_id, stripe_subscription_id, stripe_session_id",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -93,6 +93,7 @@ export async function GET() {
         (p.pymes_plan_id && planMap[p.pymes_plan_id as string]) ||
         "—",
       amount: Number(p.amount) || 0,
+      refunded_amount: Number(p.refunded_amount) || 0,
       currency: (p.currency as string) || "CAD",
       payment_type: (p.payment_type as string | null) ?? null,
       installment_number: (p.installment_number as number | null) ?? null,

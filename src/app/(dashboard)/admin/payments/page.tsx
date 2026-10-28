@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { DataTable } from "@/components/dashboard/data-table";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +25,9 @@ interface PaymentRow {
   user_email: string;
   service_name: string;
   amount: number;
+  // FIX_REFUND_VISIBILITY_REPORT.md: cumulative amount refunded in
+  // Stripe (dollars). > 0 on a 'completed' row = partial refund.
+  refunded_amount: number;
   currency: string;
   payment_type: string | null;
   installment_number: number | null;
@@ -83,9 +86,21 @@ export default function AdminPaymentsPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
+  // FIX_REFUND_VISIBILITY_REPORT.md: the webhook updates the row a few
+  // seconds after the refund is requested, so re-load at 4s and 10s.
+  const reloadTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => reloadTimers.current.forEach(clearTimeout), []);
+
   async function handleRefund(row: PaymentRow) {
+    // Stripe refunds what is left on the charge (amount − refunded_amount).
+    const refunded = row.refunded_amount || 0;
+    const remaining = row.amount - refunded;
+    const question =
+      refunded > 0
+        ? `Refund $${remaining.toFixed(2)} ${row.currency} of $${row.amount.toFixed(2)} (already refunded $${refunded.toFixed(2)}) to ${row.user_name}?`
+        : `Refund $${row.amount.toFixed(2)} ${row.currency} to ${row.user_name}?`;
     if (!confirm(
-      `Refund $${row.amount.toLocaleString()} ${row.currency} to ${row.user_name}?\n\n` +
+      `${question}\n\n` +
       "This issues a Stripe refund. The payment row will be marked 'refunded' once Stripe fires the webhook (usually within seconds).",
     )) return;
     setActionBusy(row.id);
@@ -101,9 +116,13 @@ export default function AdminPaymentsPage() {
       setActionMsg(`Error: ${json.error || res.statusText}`);
       return;
     }
-    setActionMsg(`Refund submitted (Stripe id ${json.refundId}). Status updates when webhook fires.`);
-    setTimeout(() => setActionMsg(null), 8000);
-    loadPayments();
+    setActionMsg("Refund requested. The status updates in a few seconds.");
+    reloadTimers.current.forEach(clearTimeout);
+    reloadTimers.current = [
+      setTimeout(() => loadPayments(), 4000),
+      setTimeout(() => loadPayments(), 10000),
+      setTimeout(() => setActionMsg(null), 12000),
+    ];
   }
 
   // BUGFIX_CANCELLATIONS_PANEL.md: "Cancel sub" opens the shared modal
@@ -169,6 +188,16 @@ export default function AdminPaymentsPage() {
         `$${(row.getValue("amount") as number).toLocaleString()} ${row.original.currency}`,
     },
     {
+      accessorKey: "refunded_amount",
+      header: "Refunded",
+      cell: ({ row }) => {
+        const refunded = row.original.refunded_amount || 0;
+        return refunded > 0
+          ? `$${refunded.toLocaleString()} ${row.original.currency}`
+          : "—";
+      },
+    },
+    {
       accessorKey: "payment_type",
       header: "Type",
       cell: ({ row }) => {
@@ -195,13 +224,21 @@ export default function AdminPaymentsPage() {
       header: "Status",
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
+        const partiallyRefunded = status === "completed" && (row.original.refunded_amount || 0) > 0;
         return (
-          <Badge
-            variant={STATUS_VARIANTS[status] || "secondary"}
-            className={status === "canceled" ? "capitalize text-muted-foreground" : "capitalize"}
-          >
-            {status}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge
+              variant={STATUS_VARIANTS[status] || "secondary"}
+              className={status === "canceled" ? "capitalize text-muted-foreground" : "capitalize"}
+            >
+              {status}
+            </Badge>
+            {partiallyRefunded && (
+              <Badge variant="outline" className="text-xs">
+                Partially refunded
+              </Badge>
+            )}
+          </div>
         );
       },
       filterFn: "equals",
@@ -211,7 +248,11 @@ export default function AdminPaymentsPage() {
       header: "Actions",
       cell: ({ row }) => {
         const p = row.original;
-        const canRefund = p.status === "completed" && !!p.stripe_payment_intent_id;
+        // Hidden once nothing is left to refund (amount − refunded_amount).
+        const canRefund =
+          p.status === "completed" &&
+          !!p.stripe_payment_intent_id &&
+          Math.round((p.amount - (p.refunded_amount || 0)) * 100) > 0;
         const canCancel = !!p.stripe_subscription_id && p.status !== "canceled";
         const stripeUrl = stripeDashboardPaymentUrl(p);
         if (!canRefund && !canCancel && !stripeUrl) {

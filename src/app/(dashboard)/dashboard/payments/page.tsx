@@ -584,6 +584,13 @@ export default async function PaymentsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant={badge.variant} className={badge.className}>{badge.label}</Badge>
+                          {/* FIX_REFUND_VISIBILITY_REPORT.md: partial refund
+                              on a payment that stays completed. */}
+                          {payment.status === "completed" && Number(payment.refunded_amount) > 0 && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {formatCurrency(Number(payment.refunded_amount))} refunded
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {/* Steve 6/10 (6-2.md #52): only show Request

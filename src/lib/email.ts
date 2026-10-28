@@ -383,10 +383,18 @@ export async function sendRefundConfirmationEmail(args: {
   to: string;
   customerName: string;
   serviceName: string;
+  // Amount of THIS refund (not the cumulative total).
   amountCents: number;
   currency?: string;
+  // FIX_REFUND_VISIBILITY_REPORT.md: cumulative refunded total, set only
+  // when an earlier refund exists for the same payment. Omitted/null →
+  // no "Total refunded so far" line.
+  totalRefundedCents?: number | null;
 }): Promise<void> {
   const amount = formatCurrency(args.amountCents, args.currency || "CAD");
+  const totalLine = args.totalRefundedCents
+    ? `<p>Total refunded so far: <strong>${formatCurrency(args.totalRefundedCents, args.currency || "CAD")}</strong></p>`
+    : "";
   await sendOne({
     to: args.to,
     notifyCommercial: true,
@@ -395,6 +403,7 @@ export async function sendRefundConfirmationEmail(args: {
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#2563eb">Refund processed for ${args.customerName}</h2>
         <p>We've issued a refund for <strong>${amount}</strong> for your purchase of <strong>${args.serviceName}</strong>.</p>
+        ${totalLine}
         <p>The refund will appear on your original payment method within <strong>5–10 business days</strong>, depending on your bank.</p>
         <p>If you don't see it after 10 business days, contact your bank and reference the original transaction date.</p>
         ${brandFooter()}
